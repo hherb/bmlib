@@ -118,6 +118,61 @@ def contradiction(theirs: PaperIds, ours: PaperIds) -> tuple[str, str, str] | No
     return None
 
 
+def newest_source(scan: Scan, ids: PaperIds, kind: SourceKind) -> FileRef | None:
+    """The paper's newest source file of *kind* in *scan* that may be served for *ids*, not yet
+    read: the rule :meth:`LibraryStore.find_source_in` reads by, for a caller with its own read
+    (an app's own lookup chain, through bmlib-ffi). Rust's ``newest_source`` is the same.
+
+    Looks in the paper's whole linked group of folders (:func:`find`, not only an
+    exact-identifier folder) for files of *kind* that are on disk and that at least one record
+    lists under identifiers not contradicting *ids* (field by field; a field absent on either
+    side agrees), so a file only another paper's records list is never chosen. Each such file
+    ranks by the earliest ``saved_at`` among the records listing it, since noting a use stamps
+    the time of the note; the latest wins, and ties go to the lower digest. A ``saved_at`` not
+    of the exact form ``YYYY-MM-DDTHH:MM:SSZ`` counts only when no record has a well-formed one,
+    and then sorts below every well-formed one. Read the file with :meth:`Library.read`, which
+    checks its digest; a file that fails that check is reported, not passed over for an older
+    one.
+    """
+    # Per digest: its earliest well-formed ``saved_at`` (``""`` when none), its file, and
+    # whether a record not contradicting *ids* lists it.
+    seen: dict[str, tuple[str, FileRef, bool]] = {}
+    for folder in find(scan, ids):
+        for record in folder.records:
+            agrees = contradiction(record.paper.ids, ids) is None
+            for entry in record.files:
+                if entry.kind != kind or entry.name not in folder.files_on_disk:
+                    continue
+                at = _saved_at_key(entry.saved_at)
+                file = FileRef(folder.folder, entry.name, entry.sha256, kind)
+                if entry.sha256 in seen:
+                    was, file, ok = seen[entry.sha256]
+                    at, agrees = _earliest(was, at), agrees or ok
+                seen[entry.sha256] = (at, file, agrees)
+    best: tuple[str, FileRef] | None = None
+    for at, file, ok in seen.values():
+        # Later ``saved_at`` wins; on a tie the lower digest does.
+        if ok and (best is None or (at, best[1].sha256) > (best[0], file.sha256)):
+            best = (at, file)
+    return best[1] if best else None
+
+
+def lists_use(scan: Scan, who: Installation, file: FileRef) -> bool:
+    """Whether *who*'s record in *file*'s folder already lists *file* (digest and kind) in
+    *scan*: the check :meth:`LibraryStore.note_use_in` makes before it writes, for a caller with
+    its own write (:meth:`Library.record_use`). A *scan* older than the record only costs a write
+    that changes nothing. Rust's ``lists_use`` is the same.
+    """
+    return any(
+        r.installation.app == who.app
+        and r.installation.id == who.id
+        and any(e.sha256 == file.sha256 and e.kind == file.kind for e in r.files)
+        for f in scan.folders
+        if f.folder == file.folder
+        for r in f.records
+    )
+
+
 @dataclass(frozen=True)
 class Held:
     """A source file read from the library, its bytes already checked against its digest."""
@@ -168,45 +223,15 @@ class LibraryStore:
 
     def find_source_in(self, scan: Scan, ids: PaperIds, kind: SourceKind) -> Held | None:
         """The paper's newest source file of *kind* in *scan*, read and digest-checked, or
-        ``None``.
-
-        Looks in the paper's whole linked group of folders (:func:`find`, not only an
-        exact-identifier folder) for files of *kind* that are on disk and that at least one
-        record lists under identifiers not contradicting *ids* (field by field; a field absent on
-        either side agrees), so a file only another paper's records list is never served. Each
-        such file ranks by the earliest ``saved_at`` among the records listing it, since noting
-        a use stamps the time of the note; the latest wins, and ties go to the lower digest. A
-        ``saved_at`` not of the exact form ``YYYY-MM-DDTHH:MM:SSZ`` counts only when no record
-        has a well-formed one, and then sorts below every well-formed one; fixed-width UTC
-        compares in time order as a string. If the newest file cannot be read that is an error:
+        ``None``: the file :func:`newest_source` chooses. If it cannot be read that is an error:
         a tampered file is reported, not skipped for an older one.
 
         :raises LibraryStoreFailure: the read failed; the message names the paper's identifiers,
             the file and the library's error.
         """
-        # Per digest: its earliest well-formed ``saved_at`` (``""`` when none), its file, and
-        # whether a record not contradicting *ids* lists it.
-        seen: dict[str, tuple[str, FileRef, bool]] = {}
-        for folder in find(scan, ids):
-            for record in folder.records:
-                agrees = contradiction(record.paper.ids, ids) is None
-                for entry in record.files:
-                    if entry.kind != kind or entry.name not in folder.files_on_disk:
-                        continue
-                    at = _saved_at_key(entry.saved_at)
-                    file = FileRef(folder.folder, entry.name, entry.sha256, kind)
-                    if entry.sha256 in seen:
-                        was, file, ok = seen[entry.sha256]
-                        at, agrees = _earliest(was, at), agrees or ok
-                    seen[entry.sha256] = (at, file, agrees)
-        best: tuple[str, FileRef] | None = None
-        for at, file, ok in seen.values():
-            # Later ``saved_at`` wins; on a tie the lower digest does.
-            if ok and (best is None or (at, best[1].sha256) > (best[0], file.sha256)):
-                best = (at, file)
-        if best is None:
+        file = newest_source(scan, ids, kind)
+        if file is None:
             return None
-        file = best[1]
         try:
             return Held(file, self.library.read(file))
         except LibraryError as e:
@@ -232,22 +257,14 @@ class LibraryStore:
         return self.note_use_in(self.scan(paper.ids), paper, file)
 
     def note_use_in(self, scan: Scan, paper: PaperInfo, file: FileRef) -> bool:
-        """Note in this installation's record that it uses *file*, unless that record (in the
-        file's folder) already lists that file (digest and kind) in *scan*, in which case
-        nothing is written. Returns whether a use was written. A *scan* older than the record
-        only costs a write that changes nothing.
+        """Note in this installation's record that it uses *file*, unless :func:`lists_use`
+        finds that record already lists it in *scan*, in which case nothing is written. Returns
+        whether a use was written.
 
         :raises LibraryStoreFailure: the write failed; the message names the paper, the file and
             the cause.
         """
-        already = any(
-            r.installation.app == self.who.app
-            and r.installation.id == self.who.id
-            and any(e.sha256 == file.sha256 and e.kind == file.kind for e in r.files)
-            for f in scan.folders
-            if f.folder == file.folder
-            for r in f.records
-        )
+        already = lists_use(scan, self.who, file)
         if already:
             return False
         try:

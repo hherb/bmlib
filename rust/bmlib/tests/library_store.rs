@@ -50,7 +50,7 @@ fn library_ids_match_the_fixture() {
 use std::fs;
 
 use bmlib::fulltext::jats_reader::parse;
-use bmlib::fulltext::{paper_info, LibraryStore};
+use bmlib::fulltext::{contradiction, lists_use, newest_source, paper_info, LibraryStore};
 use bmlib::library::{
     parse_record, render_record, Installation, Library, PaperIds, PaperInfo, SourceKind,
 };
@@ -511,4 +511,63 @@ fn note_use_in_tells_the_same_bytes_of_another_kind_apart() {
     assert!(store.note_use_in(&scan, &paper, &jats).unwrap());
     let scan = store.scan(&paper.ids).unwrap();
     assert!(!store.note_use_in(&scan, &paper, &jats).unwrap());
+}
+
+#[test]
+fn newest_source_is_the_file_find_source_in_reads() {
+    // #784: the rule alone, for an app that reads the file itself.
+    let (_d, store) = scratch("newest");
+    let paper = info(Some("42"), None);
+    let kept = store.keep(&paper, b"%PDF-1", SourceKind::Pdf, "t").unwrap();
+    let scan = store.scan(&paper.ids).unwrap();
+    assert_eq!(
+        newest_source(&scan, &paper.ids, SourceKind::Pdf),
+        Some(kept.clone())
+    );
+    let held = store
+        .find_source_in(&scan, &paper.ids, SourceKind::Pdf)
+        .unwrap()
+        .unwrap();
+    assert_eq!(held.file, kept);
+    assert_eq!(newest_source(&scan, &paper.ids, SourceKind::Jats), None);
+    // A request contradicting the only record is served nothing.
+    let other = PaperIds::canonical(Some("42"), Some("10.9/other"), None).unwrap();
+    let mut record_doi = paper.clone();
+    record_doi.ids.doi = Some("10.1/mine".into());
+    let (_d2, store2) = scratch("newest-contra");
+    store2
+        .keep(&record_doi, b"%PDF-2", SourceKind::Pdf, "t")
+        .unwrap();
+    let scan2 = store2.scan(&other).unwrap();
+    assert_eq!(newest_source(&scan2, &other, SourceKind::Pdf), None);
+}
+
+#[test]
+fn lists_use_is_true_only_for_the_installation_and_kind_listed() {
+    // #784: the check note_use_in makes before it writes.
+    let (_d, store) = scratch("lists");
+    let paper = info(Some("43"), None);
+    let mine = store
+        .keep(&paper, b"<article/>", SourceKind::Text, "t")
+        .unwrap();
+    let scan = store.scan(&paper.ids).unwrap();
+    assert!(lists_use(&scan, &me(), &mine));
+    assert!(!lists_use(&scan, &app("medicalfactchecker", "bbbb"), &mine));
+    let as_jats = bmlib::library::FileRef {
+        kind: SourceKind::Jats,
+        ..mine.clone()
+    };
+    assert!(!lists_use(&scan, &me(), &as_jats));
+}
+
+#[test]
+fn contradiction_names_the_first_field_that_differs() {
+    let ours = PaperIds::canonical(Some("1"), Some("10.1/a"), None).unwrap();
+    let theirs = PaperIds::canonical(Some("1"), Some("10.1/b"), Some("PMC9")).unwrap();
+    assert_eq!(
+        contradiction(&theirs, &ours),
+        Some(("doi", "10.1/b", "10.1/a"))
+    );
+    let partial = PaperIds::canonical(None, None, Some("PMC9")).unwrap();
+    assert_eq!(contradiction(&partial, &ours), None);
 }

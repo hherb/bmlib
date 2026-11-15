@@ -742,3 +742,105 @@ fn a_refused_save_writes_nothing() {
     assert!(library.scan().unwrap().folders().is_empty());
     let _ = std::fs::remove_dir_all(base);
 }
+
+#[test]
+fn library_ids_match_the_fixture() {
+    // #784: the service's `library_ids` fixture, through the FFI.
+    let root: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/fulltext_library_ids.json"
+    ))
+    .unwrap();
+    for case in root["cases"].as_array().unwrap() {
+        let got = library_ids(opt(case, "pmid"), opt(case, "doi"), opt(case, "pmc_id"));
+        let want = &case["ids"];
+        assert_eq!(got.ids.pmid, opt(want, "pmid"), "{}", case["name"]);
+        assert_eq!(got.ids.doi, opt(want, "doi"), "{}", case["name"]);
+        assert_eq!(got.ids.pmcid, opt(want, "pmcid"), "{}", case["name"]);
+        let dropped: Vec<String> = serde_json::from_value(case["dropped"].clone()).unwrap();
+        assert_eq!(got.dropped, dropped, "{}", case["name"]);
+    }
+}
+
+#[test]
+fn newest_source_and_lists_use_follow_the_service() {
+    // #784: what an app's own lookup chain reads by.
+    let base = scratch("newest");
+    let library = PaperLibrary::open(base.display().to_string()).unwrap();
+    let (mfc, sa) = (who("medicalfactchecker"), who("studyanalyzer"));
+    let saved = library
+        .save(
+            sa.clone(),
+            paper("7"),
+            b"%PDF-1".to_vec(),
+            SourceKind::Pdf,
+            "t".into(),
+        )
+        .unwrap();
+    let scan = library.scan().unwrap();
+    let ids = paper("7").ids;
+    assert_eq!(
+        scan.newest_source(ids.clone(), SourceKind::Pdf).unwrap(),
+        Some(saved.clone())
+    );
+    assert_eq!(
+        scan.newest_source(ids.clone(), SourceKind::Jats).unwrap(),
+        None
+    );
+    // Another paper's request is served nothing from this paper's record.
+    let other = PaperIds {
+        pmid: Some("7".into()),
+        doi: Some("10.9/other".into()),
+        pmcid: None,
+    };
+    let mut known = paper("7");
+    known.ids.doi = Some("10.1/mine".into());
+    library
+        .record_use(sa.clone(), known, saved.clone())
+        .unwrap();
+    let scan = library.scan().unwrap();
+    assert_eq!(scan.newest_source(other, SourceKind::Pdf).unwrap(), None);
+    assert!(scan.lists_use(sa, saved.clone()).unwrap());
+    assert!(!scan.lists_use(mfc.clone(), saved.clone()).unwrap());
+    let bad = FileRef {
+        sha256: "ABC".into(),
+        ..saved
+    };
+    assert_eq!(
+        error_field(&scan.lists_use(mfc, bad).unwrap_err()),
+        "sha256"
+    );
+    let bad_ids = PaperIds {
+        pmid: Some("x".into()),
+        doi: None,
+        pmcid: None,
+    };
+    assert_eq!(
+        error_field(&scan.newest_source(bad_ids, SourceKind::Pdf).unwrap_err()),
+        "pmid"
+    );
+}
+
+#[test]
+fn paper_ids_contradiction_names_the_field() {
+    let ids = |pmid: &str, doi: Option<&str>| PaperIds {
+        pmid: Some(pmid.into()),
+        doi: doi.map(str::to_owned),
+        pmcid: None,
+    };
+    assert_eq!(
+        paper_ids_contradiction(ids("01", Some("10.1/A")), ids("1", Some("10.1/b"))).unwrap(),
+        Some(IdContradiction {
+            field: "doi".into(),
+            theirs: "10.1/a".into(),
+            ours: "10.1/b".into(),
+        })
+    );
+    assert_eq!(
+        paper_ids_contradiction(ids("1", None), ids("1", Some("10.1/b"))).unwrap(),
+        None
+    );
+    assert_eq!(
+        error_field(&paper_ids_contradiction(ids("x", None), ids("1", None)).unwrap_err()),
+        "pmid"
+    );
+}

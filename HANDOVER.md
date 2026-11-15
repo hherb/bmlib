@@ -1,33 +1,32 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-15 (**#780, PR #779's review follow-ups, on
-`fix/library-quiet-id-parse-780`**). Merged since the last update: #779
-(#766, below). **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge
-of #736) and **the Rust crate 0.4.0 on crates.io** from the same commit;
+_Last updated: 2026-11-15 (**#784, the lookup's library rules through the
+FFI, on `feat/ffi-lookup-rules`**). Merged since the last update: #781 (#780,
+below). **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge of
+#736) and **the Rust crate 0.4.0 on crates.io** from the same commit;
 everything since is under Unreleased._
 
-## This session: a library save repeats no parse warnings (#780)
+## This session: the lookup's library rules, for an app's own chain (#784)
 
-Both languages. `save` and `record_use` read the identifiers of every JATS in
-the folder they write to (#766), and that read logged the parser's audit each
-time. It now reads by the same parse without the audit's warnings (Python
-`JATSParser._own_identifiers`, Rust's crate-private
-`jats_reader::parse_unwarned`); its ERROR lines, which say bmlib misread the
-document, are still logged. The article's warnings are logged when it is
-parsed to be shown. Item 2 of the issue, "only the target folder is checked",
-is now pinned by `test_only_the_folder_written_to_is_checked` in
-`test_library_save.py` and `only_the_folder_written_to_is_checked` in
-`library_save.rs`, for `save` and `record_use`. The foreign JATS's folder
-("Zebra", named to sort last) joins the paper's group only through a second
-installation's record, in the PDF's folder, that carries the pmcid of the
-Zebra folder's record. The new tests were mutation-checked in both languages.
-The renderer digests were re-pinned without a version bump, because neither
-`to_html()` nor the canonical JATS text can move. `save`'s docstring and both
-manuals now say "the first of the paper's folders `find` returns": the old
-wording, "the first folder holding a record that shares an identifier", was
-wrong for a folder linked only through another. The review found Rust warning
-on every author-less article where Python logs at DEBUG, since the port:
-filed as **#782**.
+Both languages, and bmlib-ffi. MedicalFactChecker's full-text fetch is its
+own Swift chain, so for StudyAnalyzer's design step 3b it must read the
+library by the service's rules. `newest_source(scan, ids, kind)` (the file
+`find_source_in` reads) and `lists_use(scan, who, file)` (the check
+`note_use_in` makes before writing) are split out of the two methods,
+unchanged, and Rust's `contradiction` is public as Python's was. bmlib-ffi
+exposes `LibraryScan.newest_source`, `LibraryScan.lists_use`, `library_ids`
+(run against `fulltext_library_ids.json`) and `paper_ids_contradiction`; the
+read and the write stay `read` / `record_use` with their typed errors. The
+consumer is bmlibrarian_lite #788 (step 3b), which re-pins its xcframework
+past this.
+
+## Merged: a library save repeats no parse warnings (#780, PR #781)
+
+The identifier read in `save` and `record_use` skips the audit's warnings
+(Python `JATSParser._own_identifiers`, Rust's crate-private
+`jats_reader::parse_unwarned`) but keeps its ERROR lines; "only the target
+folder is checked" is pinned in both languages. Rust warns on an author-less
+article where Python logs at DEBUG: **#782**.
 
 ## Merged: no file beside another paper's JATS (#766, PR #779)
 

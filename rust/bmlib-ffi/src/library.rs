@@ -1001,6 +1001,61 @@ impl LibraryScan {
                 .any(|p| uncounted_record(p) == Some(folder.as_str())),
         }))
     }
+
+    /// The paper's newest source file of `kind` that may be served for `ids`,
+    /// not yet read: the full-text service's rule (`newest_source`), for an
+    /// app whose own lookup chain reads the library. Only a file a record lists
+    /// under identifiers not contradicting `ids` is chosen, newest by
+    /// `saved_at`. Read it with [`PaperLibrary::read`], which checks its
+    /// digest; a file that fails that check is to be reported, not passed
+    /// over for an older one.
+    ///
+    /// # Errors
+    ///
+    /// `BadIdentifier` for an identifier that is not valid.
+    pub fn newest_source(
+        &self,
+        ids: PaperIds,
+        kind: SourceKind,
+    ) -> Result<Option<FileRef>, LibraryError> {
+        let ids = ids.try_into()?;
+        Ok(bmlib::fulltext::newest_source(&self.0, &ids, kind.into()).map(Into::into))
+    }
+
+    /// Whether `who`'s record in `file.folder` already lists `file` (digest
+    /// and kind): the service's check before it notes a use (`lists_use`).
+    /// When it does not, note the use with [`PaperLibrary::record_use`].
+    ///
+    /// # Errors
+    ///
+    /// `BadInstallation` naming the field that is not acceptable;
+    /// `BadIdentifier` (field `"sha256"`) for a digest that is not 64
+    /// lowercase hex digits, which would otherwise read as "not listed".
+    pub fn lists_use(&self, who: Installation, file: FileRef) -> Result<bool, LibraryError> {
+        let who = who.try_into()?;
+        check_digest(&file.sha256)?;
+        Ok(bmlib::fulltext::lists_use(&self.0, &who, &file.into()))
+    }
+}
+
+/// A request's identifiers as the library's, with the fields refused.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct LibraryIds {
+    /// The identifiers that are valid, canonical.
+    pub ids: PaperIds,
+    /// The fields refused, as `"pmid"`, `"doi"` or `"pmc_id"`, in that order.
+    pub dropped: Vec<String>,
+}
+
+/// Where two sets of identifiers name different papers.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct IdContradiction {
+    /// The field, as `"pmid"`, `"doi"` or `"pmc_id"`.
+    pub field: String,
+    /// The first set's value.
+    pub theirs: String,
+    /// The second set's value.
+    pub ours: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -1034,6 +1089,49 @@ pub fn installation_new(
     label: String,
 ) -> Result<Installation, LibraryError> {
     Ok(lib::Installation::new(&app, &id, &label)?.into())
+}
+
+/// A lookup's identifiers as the library's: each of `pmid`, `doi` and `pmcid`
+/// made canonical on its own, so one bad value costs only that identifier
+/// (the full-text service's `library_ids`; blank and absent are the same).
+/// Unlike [`paper_ids_canonical`], it never fails: what it refuses is listed.
+#[uniffi::export]
+pub fn library_ids(pmid: Option<String>, doi: Option<String>, pmcid: Option<String>) -> LibraryIds {
+    let (ids, dropped) = bmlib::fulltext::library_ids(
+        pmid.as_deref().unwrap_or(""),
+        doi.as_deref(),
+        pmcid.as_deref(),
+    );
+    LibraryIds {
+        ids: ids.into(),
+        dropped: dropped.into_iter().map(str::to_owned).collect(),
+    }
+}
+
+/// The first identifier on which `theirs` contradicts `ours`, or `None` when
+/// they agree; a field absent on either side agrees. The full-text service's
+/// rule (`contradiction`) for a library JATS's own identifiers (from
+/// [`parse_jats`](crate::parse_jats), through [`library_ids`]) against the
+/// request's: a contradiction means the file is another paper's.
+///
+/// # Errors
+///
+/// `BadIdentifier` for an identifier that is not valid.
+#[uniffi::export]
+pub fn paper_ids_contradiction(
+    theirs: PaperIds,
+    ours: PaperIds,
+) -> Result<Option<IdContradiction>, LibraryError> {
+    let (theirs, ours): (lib::PaperIds, lib::PaperIds) = (theirs.try_into()?, ours.try_into()?);
+    Ok(
+        bmlib::fulltext::contradiction(&theirs, &ours).map(|(field, theirs, ours)| {
+            IdContradiction {
+                field: field.to_owned(),
+                theirs: theirs.to_owned(),
+                ours: ours.to_owned(),
+            }
+        }),
+    )
 }
 
 #[cfg(test)]
