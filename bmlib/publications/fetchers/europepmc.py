@@ -324,6 +324,10 @@ def fetch_europepmc(
 
         try:
             for raw in results:
+                # `normalize_europepmc` reads a non-object as an empty record;
+                # a walk refuses it, as Rust's `normalize` returns `None`.
+                if not isinstance(raw, dict):
+                    raise TypeError(f"a result that is a {type(raw).__name__}, not an object")
                 on_record(normalize_europepmc(raw))
                 records_processed += 1
         except Exception as exc:

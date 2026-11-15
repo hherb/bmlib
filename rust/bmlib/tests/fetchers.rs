@@ -21,6 +21,7 @@
 //! which is the part a corpus of messages cannot say.
 
 use bmlib::publications::fetchers::biorxiv::{BIORXIV_SETTLE_DAYS, DETAILS_SETTLE_DAYS};
+use bmlib::publications::fetchers::europepmc::EUROPEPMC_SETTLE_DAYS;
 use std::sync::Arc;
 
 use bmlib::publications::fetchers::{
@@ -561,14 +562,14 @@ fn an_unknown_source_is_not_resumable_rather_than_an_error() {
     assert!(registry.descriptor("never-registered").is_err());
 }
 
-/// The six built-in descriptors, diffed against Python in the corpus, are
+/// The seven built-in descriptors, diffed against Python in the corpus, are
 /// checked here for the two facts the corpus cannot express: PubMed is the only
-/// **resumable** one, and OpenAlex is the only one with a **required**
-/// parameter.
+/// **resumable** one, and OpenAlex (`email`) and Europe PMC (`query`) are the
+/// only ones with a **required** parameter.
 #[test]
 fn the_builtin_descriptors_declare_what_the_sync_loop_reads() {
     let descriptors = builtin_descriptors();
-    assert_eq!(descriptors.len(), 6);
+    assert_eq!(descriptors.len(), 7);
 
     let resumable: Vec<&str> = descriptors
         .iter()
@@ -590,12 +591,15 @@ fn the_builtin_descriptors_declare_what_the_sync_loop_reads() {
                 .map(move |p| (d.name.as_str(), p.name.as_str()))
         })
         .collect();
-    assert_eq!(required, vec![("openalex", "email")]);
+    assert_eq!(
+        required,
+        vec![("openalex", "email"), ("europepmc", "query")]
+    );
 
     // The settle period is read by day selection, outside every per-day handler,
     // so a built-in that declared an unusable one would cost a whole run its
-    // report. Four declare it: `/pubs` fills a day in weeks late, and `/details`
-    // is given a short margin (#341).
+    // report. Five declare it: `/pubs` fills a day in weeks late, `/details` is
+    // given a short margin (#341), and Europe PMC indexes past dates late.
     let settling: Vec<(&str, u32)> = descriptors
         .iter()
         .filter(|d| d.settle_days > 0)
@@ -608,6 +612,7 @@ fn the_builtin_descriptors_declare_what_the_sync_loop_reads() {
             ("biorxiv-details", DETAILS_SETTLE_DAYS),
             ("medrxiv", BIORXIV_SETTLE_DAYS),
             ("medrxiv-details", DETAILS_SETTLE_DAYS),
+            ("europepmc", EUROPEPMC_SETTLE_DAYS),
         ]
     );
     for descriptor in &descriptors {

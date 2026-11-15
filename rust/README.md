@@ -346,6 +346,8 @@ rust/oracle/biorxiv_cases.json    68 cases, three with corrected expectations
                                   (#365)
 rust/oracle/dump_openalex.py      normalization, abstract rebuild, cursor walk
 rust/oracle/openalex_cases.json   59 cases, three with corrected expectations
+rust/oracle/dump_europepmc_sync.py  Europe PMC day-by-day search walk
+rust/oracle/europepmc_sync_cases.json  15 cases
                                   — #313's correction was retired when Python
                                   adopted it, and #349's two plus #361's one are
                                   the current ones (see below)

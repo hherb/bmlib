@@ -166,3 +166,11 @@ def test_a_non_numeric_hit_count_fails_day(hit_count):
     client = _client([{"hitCount": hit_count, "resultList": {"result": []}}])
     result, _ = _run(client)
     assert result.status == "failed"
+
+
+def test_a_non_object_hit_fails_day():
+    client = _client([_page([_hit(1), "not a hit"], 2, "*")])
+    result, records = _run(client)
+    assert result.status == "failed"
+    assert "could not normalise" in result.error
+    assert len(records) == 1

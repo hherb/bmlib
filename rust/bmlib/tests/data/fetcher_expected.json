@@ -41,6 +41,29 @@
         "settle_days": 7
       },
       {
+        "description": "Europe PMC search (peer-reviewed and preprint records)",
+        "display_name": "Europe PMC",
+        "name": "europepmc",
+        "params": [
+          {
+            "default": null,
+            "description": "Europe PMC search, without a date clause",
+            "name": "query",
+            "required": true,
+            "secret": false
+          },
+          {
+            "default": null,
+            "description": "Contact email sent to Europe PMC",
+            "name": "email",
+            "required": false,
+            "secret": false
+          }
+        ],
+        "resumable": false,
+        "settle_days": 14
+      },
+      {
         "description": "Preprint server for health sciences",
         "display_name": "medRxiv",
         "name": "medrxiv",
@@ -119,6 +142,7 @@
     "value": [
       "biorxiv",
       "biorxiv-details",
+      "europepmc",
       "medrxiv",
       "medrxiv-details",
       "openalex",

@@ -11,6 +11,18 @@ The Python library is documented separately, in the repository's
 
 ### Added
 
+- **A `europepmc` day-by-day sync source** (as in Python).
+  `publications::fetchers::europepmc::{walk, page_params, SearchPages,
+  HttpSearchPages, EuropePmcFetcher}` walk a Europe PMC search for one
+  first-publication day, `(<query>) AND FIRST_PDATE:[<day> TO <day>]`, with
+  1,000-hit pages and `cursorMark` paging, the parameters percent-encoded.
+  The first page's `hitCount` is the promise, judged by `reconcile_delivery`;
+  an error body, a non-numeric count or a hit that is not an object fails the
+  day. `builtin_descriptors` and `builtin_registry` gain `europepmc` (config
+  `query` required, `email` optional, settle period 14 days). Like the other
+  fetchers it does not sleep: `RATE_LIMIT_SECONDS` (1.0) is for the caller's
+  transport. 15 oracle cases (`rust/oracle/europepmc_sync_cases.json`) plus
+  five named tests.
 - **`fulltext::newest_source`, `fulltext::lists_use`, and `contradiction`
   made public** (#784, as in Python): the file `LibraryStore::find_source_in`
   reads, and the check `note_use_in` makes before it writes, for a caller

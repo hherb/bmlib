@@ -1,0 +1,361 @@
+[
+ {
+  "args": {
+   "payloads": [
+    {
+     "hitCount": 2,
+     "nextCursorMark": "*",
+     "resultList": {
+      "result": [
+       {
+        "firstPublicationDate": "2024-06-10",
+        "id": "40000001",
+        "inEPMC": "N",
+        "isOpenAccess": "Y",
+        "pmid": "40000001",
+        "source": "MED",
+        "title": "Trial 1"
+       },
+       {
+        "firstPublicationDate": "2024-06-10",
+        "id": "40000002",
+        "inEPMC": "N",
+        "isOpenAccess": "Y",
+        "pmid": "40000002",
+        "source": "MED",
+        "title": "Trial 2"
+       }
+      ]
+     }
+    }
+   ],
+   "query": "OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")"
+  },
+  "fn": "fetch",
+  "name": "fetch/one-page"
+ },
+ {
+  "args": {
+   "payloads": [
+    {
+     "hitCount": 3,
+     "nextCursorMark": "AoE1",
+     "resultList": {
+      "result": [
+       {
+        "firstPublicationDate": "2024-06-10",
+        "id": "40000001",
+        "inEPMC": "N",
+        "isOpenAccess": "Y",
+        "pmid": "40000001",
+        "source": "MED",
+        "title": "Trial 1"
+       },
+       {
+        "firstPublicationDate": "2024-06-10",
+        "id": "40000002",
+        "inEPMC": "N",
+        "isOpenAccess": "Y",
+        "pmid": "40000002",
+        "source": "MED",
+        "title": "Trial 2"
+       }
+      ]
+     }
+    },
+    {
+     "hitCount": 3,
+     "nextCursorMark": "AoE1",
+     "resultList": {
+      "result": [
+       {
+        "firstPublicationDate": "2024-06-10",
+        "id": "40000003",
+        "inEPMC": "N",
+        "isOpenAccess": "Y",
+        "pmid": "40000003",
+        "source": "MED",
+        "title": "Trial 3"
+       }
+      ]
+     }
+    }
+   ],
+   "query": "OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")"
+  },
+  "fn": "fetch",
+  "name": "fetch/two-pages"
+ },
+ {
+  "args": {
+   "payloads": [
+    {
+     "hitCount": 0,
+     "nextCursorMark": "*",
+     "resultList": {
+      "result": []
+     }
+    }
+   ],
+   "query": "OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")"
+  },
+  "fn": "fetch",
+  "name": "fetch/empty-day"
+ },
+ {
+  "args": {
+   "payloads": [
+    {
+     "hitCount": 1,
+     "nextCursorMark": "AoE1",
+     "resultList": {
+      "result": [
+       {
+        "firstPublicationDate": "2024-06-10",
+        "id": "40000001",
+        "inEPMC": "N",
+        "isOpenAccess": "Y",
+        "pmid": "40000001",
+        "source": "MED",
+        "title": "Trial 1"
+       }
+      ]
+     }
+    },
+    {
+     "hitCount": 1,
+     "nextCursorMark": "AoE2",
+     "resultList": {
+      "result": []
+     }
+    }
+   ],
+   "query": "OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")"
+  },
+  "fn": "fetch",
+  "name": "fetch/last-page-empty"
+ },
+ {
+  "args": {
+   "payloads": [
+    {
+     "hitCount": 5,
+     "nextCursorMark": "AoE1",
+     "resultList": {
+      "result": [
+       {
+        "firstPublicationDate": "2024-06-10",
+        "id": "40000001",
+        "inEPMC": "N",
+        "isOpenAccess": "Y",
+        "pmid": "40000001",
+        "source": "MED",
+        "title": "Trial 1"
+       },
+       {
+        "firstPublicationDate": "2024-06-10",
+        "id": "40000002",
+        "inEPMC": "N",
+        "isOpenAccess": "Y",
+        "pmid": "40000002",
+        "source": "MED",
+        "title": "Trial 2"
+       }
+      ]
+     }
+    },
+    {
+     "hitCount": 5,
+     "nextCursorMark": "AoE2",
+     "resultList": {
+      "result": []
+     }
+    }
+   ],
+   "query": "OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")"
+  },
+  "fn": "fetch",
+  "name": "fetch/short-walk"
+ },
+ {
+  "args": {
+   "payloads": [
+    {
+     "hitCount": 1,
+     "resultList": {
+      "result": [
+       {
+        "firstPublicationDate": "2024-06-10",
+        "id": "40000001",
+        "inEPMC": "N",
+        "isOpenAccess": "Y",
+        "pmid": "40000001",
+        "source": "MED",
+        "title": "Trial 1"
+       }
+      ]
+     }
+    }
+   ],
+   "query": "OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")"
+  },
+  "fn": "fetch",
+  "name": "fetch/no-cursor-field"
+ },
+ {
+  "args": {
+   "payloads": [
+    {
+     "errMsg": "Invalid query"
+    }
+   ],
+   "query": "OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")"
+  },
+  "fn": "fetch",
+  "name": "fetch/error-body"
+ },
+ {
+  "args": {
+   "payloads": [
+    [
+     "a",
+     "list"
+    ]
+   ],
+   "query": "OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")"
+  },
+  "fn": "fetch",
+  "name": "fetch/not-an-object"
+ },
+ {
+  "args": {
+   "payloads": [
+    {
+     "hitCount": null,
+     "resultList": {
+      "result": []
+     }
+    }
+   ],
+   "query": "OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")"
+  },
+  "fn": "fetch",
+  "name": "fetch/null-hit-count"
+ },
+ {
+  "args": {
+   "payloads": [
+    {
+     "hitCount": true,
+     "resultList": {
+      "result": []
+     }
+    }
+   ],
+   "query": "OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")"
+  },
+  "fn": "fetch",
+  "name": "fetch/bool-hit-count"
+ },
+ {
+  "args": {
+   "payloads": [
+    {
+     "hitCount": 2,
+     "nextCursorMark": "*",
+     "resultList": {
+      "result": [
+       {
+        "firstPublicationDate": "2024-06-10",
+        "id": "40000001",
+        "inEPMC": "N",
+        "isOpenAccess": "Y",
+        "pmid": "40000001",
+        "source": "MED",
+        "title": "Trial 1"
+       },
+       "not a hit"
+      ]
+     }
+    }
+   ],
+   "query": "OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")"
+  },
+  "fn": "fetch",
+  "name": "fetch/non-object-hit"
+ },
+ {
+  "args": {
+   "payloads": [
+    {
+     "hitCount": 2,
+     "nextCursorMark": "*",
+     "resultList": {
+      "result": [
+       {
+        "firstPublicationDate": "2024-06-10",
+        "id": "40000001",
+        "inEPMC": "Y",
+        "isOpenAccess": "Y",
+        "pmcid": "PMC123",
+        "pmid": "40000001",
+        "source": "MED",
+        "title": "Trial 1"
+       },
+       {
+        "firstPublicationDate": "2024-06-10",
+        "id": "40000002",
+        "inEPMC": "N",
+        "isOpenAccess": "Y",
+        "pmid": "40000002",
+        "source": "MED",
+        "title": "Trial 2"
+       }
+      ]
+     }
+    }
+   ],
+   "query": "OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")"
+  },
+  "fn": "fetch",
+  "name": "fetch/oa-fulltext-source"
+ },
+ {
+  "args": {
+   "email": "a@b.org",
+   "payloads": [
+    {
+     "hitCount": 0,
+     "nextCursorMark": "*",
+     "resultList": {
+      "result": []
+     }
+    }
+   ],
+   "query": "OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")"
+  },
+  "fn": "fetch",
+  "name": "fetch/email-sent"
+ },
+ {
+  "args": {
+   "payloads": [],
+   "query": "   "
+  },
+  "fn": "fetch",
+  "name": "fetch/blank-query"
+ },
+ {
+  "args": {
+   "payloads": [
+    {
+     "body": null,
+     "http_status": 500
+    }
+   ],
+   "query": "OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")"
+  },
+  "fn": "fetch",
+  "name": "fetch/http-500"
+ }
+]

@@ -8,18 +8,19 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
-- **A `europepmc` day-by-day sync source** (Python; the Rust port follows).
-  `fetch_europepmc(client, day, *, on_record, on_progress=None, query,
-  email=None)` walks a Europe PMC search for one day,
-  `(<query>) AND FIRST_PDATE:[<day> TO <day>]`, with `resultType=core`,
-  1,000-hit pages and `cursorMark` paging (one request a second). Each hit
-  goes through `normalize_europepmc`, so an open-access record carries its
-  `fullTextXML` source. The first page's `hitCount` is the day's promise: a
-  short walk, an error body or a non-numeric count fails the day, which is
-  then fetched again. `query` is required; settle period 14 days
-  (`EUROPEPMC_SETTLE_DAYS`). `"europepmc"` joins `ALL_SOURCES`, so `sync()`
-  with no sources named runs it too, and without a `query` it fails its day,
-  as `openalex` does without an `email`.
+- **A `europepmc` day-by-day sync source** (both languages; 15 shared
+  oracle cases). `fetch_europepmc(client, day, *, on_record,
+  on_progress=None, query, email=None)` walks a Europe PMC search for one
+  day, `(<query>) AND FIRST_PDATE:[<day> TO <day>]`, with
+  `resultType=core`, 1,000-hit pages and `cursorMark` paging (one request a
+  second). Each hit goes through `normalize_europepmc`, so an open-access
+  record carries its `fullTextXML` source. The first page's `hitCount` is
+  the day's promise: a short walk, an error body, a non-numeric count or a
+  hit that is not an object fails the day, which is then fetched again.
+  `query` is required; settle period 14 days (`EUROPEPMC_SETTLE_DAYS`).
+  `"europepmc"` joins `ALL_SOURCES`, so `sync()` with no sources named runs
+  it too, and without a `query` it fails its day, as `openalex` does
+  without an `email`.
 - **The full-text lookup's library rules, alone** (#784; both languages).
   `newest_source(scan, ids, kind)` is the file `LibraryStore.find_source_in`
   reads, not yet read, and `lists_use(scan, who, file)` the check
