@@ -8,6 +8,15 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A library save no longer repeats a JATS's parse warnings** (#780; both
+  languages). `save` and `record_use` read the identifiers of every JATS in
+  the folder they write to, and that read logged the parser's audit each time,
+  so an article's warnings came again on every save beside it. The read now
+  skips the audit (Python `JATSParser._own_identifiers`, Rust
+  `jats_reader::parse_unlogged`, both private), and the warnings are logged
+  once, when the article is parsed to be shown. The identifiers are unchanged.
+  A new test in each language pins that only the folder written to is checked,
+  not every folder of the paper.
 - **The library refuses to file anything beside another paper's JATS** (#766;
   both languages). `Library.save` and `Library.record_use` raise the new
   `ForeignJats` (`folder`, `name`, `field`, `theirs`, `ours`) when the folder

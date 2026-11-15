@@ -9359,7 +9359,7 @@ class JATSParser:
             pmc_id = f"PMC{pmc_id}"
         self._known_pmc_id = pmc_id
 
-    def _run_parser(self) -> _JATSHandler:
+    def _run_parser(self, *, audit: bool = True) -> _JATSHandler:
         handler = _JATSHandler(known_pmc_id=self._known_pmc_id)
         parser = xml.sax.make_parser()
         parser.setContentHandler(handler)
@@ -9367,8 +9367,19 @@ class JATSParser:
         parser.setFeature(xml.sax.handler.feature_external_ges, False)
         parser.setFeature(xml.sax.handler.feature_external_pes, False)
         parser.parse(BytesIO(self._data))
-        _audit_parse(handler)
+        if audit:
+            _audit_parse(handler)
         return handler
+
+    def _own_identifiers(self) -> tuple[str, str, str]:
+        """The article's own ``(pmid, doi, pmc_id)``, as :meth:`parse` reads them, unaudited.
+
+        For the library's check of a JATS's identifiers (#766), which re-reads a folder's JATS
+        on every save beside it: auditing each re-read would repeat the article's warnings,
+        which are reported when it is parsed to be shown (#780).
+        """
+        h = self._run_parser(audit=False)
+        return h.pmid, h.doi, h.pmc_id
 
     def parse(self) -> JATSArticle:
         """Parse XML and return structured article data."""

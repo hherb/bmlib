@@ -347,14 +347,14 @@ def _locate(root: Path, file: FileRef) -> tuple[Path, Path]:
 
 def _jats_ids(at: str, data: bytes) -> PaperIds | None:
     """A JATS's own identifiers as the full-text service reads them (its parser, without
-    rendering, then ``library_ids``), or ``None`` when it does not parse: such a file names no
-    paper, and is warned of as *at*."""
+    rendering or the parse's audit, then ``library_ids``), or ``None`` when it does not parse:
+    such a file names no paper, and is warned of as *at*."""
     # Imported here: bmlib.fulltext imports this package, so it cannot be imported at load.
     from bmlib.fulltext.jats_parser import JATSParser
     from bmlib.fulltext.library_store import library_ids
 
     try:
-        article = JATSParser(data).parse()
+        pmid, doi, pmc_id = JATSParser(data)._own_identifiers()
     except Exception as exc:
         # Broad on purpose, as the service's read is: another app may have written the file.
         logger.warning(
@@ -364,7 +364,7 @@ def _jats_ids(at: str, data: bytes) -> PaperIds | None:
             exc,
         )
         return None
-    return library_ids(article.pmid, article.doi, article.pmc_id)[0]
+    return library_ids(pmid, doi, pmc_id)[0]
 
 
 def _refuse_foreign(folder: str | None, name: str, data: bytes, ids: PaperIds) -> None:
@@ -414,10 +414,10 @@ def save_file(
     """Save *data* of *kind* for *paper* and note it in *who*'s record.
 
     The paper's folder is the folder already holding these bytes, even when the identifiers
-    find another (the bytes are kept once); otherwise the first folder holding a record that
-    shares an identifier with it; otherwise a new folder, named by :func:`folder_name` (with
-    `` (2)``, `` (3)`` … when another paper has the name, compared without regard to case). The
-    file is written first, then the record (by the same merge as :func:`record_file_use`), so a
+    find another (the bytes are kept once); otherwise the first of the paper's folders
+    :func:`find` returns; otherwise a new folder, named by :func:`folder_name` (with `` (2)``,
+    `` (3)`` … when another paper has the name, compared without regard to case). The file is
+    written first, then the record (by the same merge as :func:`record_file_use`), so a
     crash between leaves only an unrecorded file, which saving the same bytes again records.
 
     A JATS whose own identifiers contradict ``paper.ids`` is refused, whether it is *data* or
