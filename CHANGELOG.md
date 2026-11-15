@@ -19,7 +19,7 @@ All notable changes to bmlib are documented here. The format is based on
   library by the service's rules instead of a copy of them.
 - **bmlib-ffi runs the library fixture's `save_scenarios`, `component` and
   `special_entries`** (#765; tests only). `rust/bmlib-ffi/src/library_tests.rs`
-  replays all 30 scenarios of `tests/fixtures/library_cases.json` (save,
+  replays all 31 scenarios of `tests/fixtures/library_cases.json` (save,
   record_use, release, used_by, find_digest, read, remove_file and
   remove_folder, the #766 `ForeignJats` refusals among them) through
   `PaperLibrary` and `LibraryScan`, and checks the files on disk and every
@@ -31,6 +31,14 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **`FileClash.folder` is the paper folder's bare name** (#755; both
+  languages, and bmlib-ffi). It held the folder's full path
+  (`/…/papers/<folder>`), where every other library error holds the bare
+  name, so an app comparing it with `FileRef.folder` never matched. A new
+  `save_scenarios` case in `tests/fixtures/library_cases.json` pins it, with a
+  `plant` step that damages a file in the folder; the Python, Rust and FFI
+  runners all run it. The marker's clash in `open_library` is caught there and
+  never reaches a caller.
 - **Rust logs an author-less article at DEBUG, as Python does** (#782). The
   port warned on every article that parsed to no authors. It now warns only
   where the article's contributor list names people, as Python's

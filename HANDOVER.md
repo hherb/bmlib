@@ -1,53 +1,44 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-15 (**#765, the fixture's `save_scenarios` through
-the FFI, on `test/ffi-save-scenarios-765`**). Merged since the last update:
-#783 (#782) and #785 (#784), below. **0.13.0 is on PyPI** (tag `v0.13.0` on
-`161849c0`, the merge of #736) and **the Rust crate 0.4.0 on crates.io** from
-the same commit; everything since is under Unreleased._
+_Last updated: 2026-11-15 (**#755's `FileClash` item, on
+`fix/fileclash-folder-755`**). Merged since the last update: #786 (#765),
+below. **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge of #736)
+and **the Rust crate 0.4.0 on crates.io** from the same commit; everything
+since is under Unreleased._
 
-## This session: the FFI runs the fixture's `save_scenarios` (#765)
+## This session: `FileClash.folder` is the paper folder's name (#755)
 
-Tests only. `save_scenarios_match_the_fixture` in
-`rust/bmlib-ffi/src/library_tests.rs` replays all 30 scenarios of
-`library_cases.json` through `PaperLibrary` / `LibraryScan` and checks the
-tree on disk and every record's JSON, a port of the crate's runner in
-`rust/bmlib/tests/library_contract.rs`. The review found that `component` and
-`special_entries` need only exported calls, so they run through the FFI too
-(`special_entries` on Unix only). Each new runner is mutation-checked. The two
-sections still not run through the FFI, `folder_names` and `records`, test
-functions it does not export.
+`write_once` built the clash's `folder` from the parent's full path in both
+languages, so `save`'s clash carried `/…/papers/<folder>` where every other
+error carries the bare name. It now takes the parent's name. Only `save`'s
+clash reaches a caller: `open`'s marker clash is caught there. A new
+`save_scenarios` case in `library_cases.json` (31 now) pins it through a new
+`plant` step (write a file under the library root); the Python, crate and FFI
+runners each map `file_clash` beside `foreign_jats`, and both Rust runners
+were seen failing on the old line. **#755 stays open** for items 1-6.
 
-## Merged: the lookup's library rules, for an app's own chain (#784, PR #785)
+## Merged: the FFI runs the fixture's `save_scenarios` (#765, PR #786)
 
-`newest_source(scan, ids, kind)` and `lists_use(scan, who, file)` are split
-out of the service's library store unchanged; bmlib-ffi exposes them with
-`library_ids` and `paper_ids_contradiction`. The consumer is bmlibrarian_lite
-#788 (step 3b), which re-pins its xcframework past this.
+Tests only: `rust/bmlib-ffi/src/library_tests.rs` replays the save scenarios,
+`component` and (Unix) `special_entries` through `PaperLibrary` /
+`LibraryScan`. `folder_names` and `records` test functions the FFI does not
+export.
 
-## Merged: Rust logs an author-less article at DEBUG (#782, PR #783)
+## Merged: the lookup's rules, author-less DEBUG, no foreign JATS (#784, #782, #766)
 
-The line moved to a new public field, `JatsReport::debug` (and bmlib-ffi's
-`JatsParseReport.debug`). **A struct literal or exhaustive destructuring of
-`JatsReport` must name `debug`** (crate CHANGELOG, *Changed — breaking*).
-Python's two zero-author lines now read "JATS parse of X: produced no
-authors…". Before that, #780 (PR #781): a library save repeats no parse
-warnings.
-
-## Merged: no file beside another paper's JATS (#766, PR #779)
-
-`save` and `record_use` refuse with `ForeignJats { folder, name, field, theirs,
-ours }` a JATS whose own identifiers contradict the paper's. That covers the
-bytes being saved (`folder` `None`) and any JATS a record lists in the target
-folder. A placeholder or a changed JATS there fails the call, a missing one is
-passed over, and one that does not parse is warned of. The service serves a
-fetched JATS that names another paper but does not keep it. The reasoning is
-in `docs/DECISIONS.md`, under *FullTextService on a library*. Scenarios 2 and
-6 of the service's library scenarios serve `fulltext_library_other_article.xml`;
-tests that need a poisoned folder plant it by hand (`plant`, `planted: true`).
-**Downstream**: StudyAnalyzer drops its `foreign_jats` once it re-pins. A Rust
-`match` on `LibraryError` needs the new arm. **#761** merged as PR #777, and
-its deferrals are **#778**.
+- **#784 (PR #785)**: `newest_source` and `lists_use` split out of the
+  service's library store, exposed by bmlib-ffi with `library_ids` and
+  `paper_ids_contradiction`, for bmlibrarian_lite #788 (step 3b).
+- **#782 (PR #783)**: Rust's zero-author line moved to a new public
+  `JatsReport::debug` (and the FFI's `JatsParseReport.debug`); **a struct
+  literal or exhaustive destructuring must name `debug`**. #780 (PR #781): a
+  library save repeats no parse warnings.
+- **#766 (PR #779)**: `save` and `record_use` refuse with `ForeignJats` a JATS,
+  being saved (`folder` `None`) or listed in the target folder, whose own
+  identifiers contradict the paper's (reasoning in `docs/DECISIONS.md`,
+  *FullTextService on a library*). StudyAnalyzer drops its `foreign_jats`
+  once it re-pins; a Rust `match` on `LibraryError` needs the arm. #761's
+  deferrals are **#778**.
 
 ## Also merged: MECA over requester-pays S3 (PR #775)
 
@@ -119,8 +110,7 @@ use to share one folder of papers. Built in both languages, in a worktree
   `release` refuse a malformed digest; `used_by` is `None` for an unknown
   folder and says whether its list is `complete`; all unlike bmlib
   (DECISIONS). The review's core finding, `FileClash.folder` holding a full
-  path in both languages, is filed on #755 (the `FileClash` item; the issue
-  has two items numbered 7). Not exposed: `FullTextService`'s library use
+  path, is fixed (this session). Not exposed: `FullTextService`'s library use
   (MedicalFactChecker fetches in Swift; the FFI's service is the #492
   sketch). Swift needs
   `extension LibraryError: CustomStringConvertible {}` (UniFFI 0.32.2 omits
@@ -141,9 +131,10 @@ use to share one folder of papers. Built in both languages, in a worktree
 - **Owed by Android (phase 4)**: the file operations are free functions on
   `&Path` in `files.rs`; Kotlin's storage access needs them behind a trait
   passed into `Library`.
-- **Open library issues**: #778 (PR #777's deferrals), #762 (a non-UTF-8
-  library JATS, Python serves it, Rust refuses; the #766 check inherits the
-  gap), #755 (1a's review follow-ups).
+- **Open library issues**: #778 (PR #777's deferrals; item 1, a save beside
+  an unreadable folder, needs the maintainer's pick of three fixes), #762 (a
+  non-UTF-8 library JATS, Python serves it, Rust refuses; the #766 check
+  inherits the gap), #755 (1a's review follow-ups, items 1-6).
 - **Left open on purpose**: separate processes of one installation writing one
   record (out of scope; an app has one process per installation).
 
@@ -275,9 +266,9 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests on `test/ffi-save-scenarios-765`** (2026-11-15, PostgreSQL 18 DSN
-  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,055 passed + 22
-  skipped (11,077 collected); Rust `cargo test -p bmlib` and `-p bmlib-ffi`
+- **Tests on `fix/fileclash-folder-755`** (2026-11-15, PostgreSQL 18 DSN
+  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,056 passed + 22
+  skipped (11,078 collected); Rust `cargo test -p bmlib` and `-p bmlib-ffi`
   1,873 passed, `cargo clippy --workspace --tests` and `cargo fmt --check`
   clean; the Rust oracle 44 clean. Other recipes: `postgres_live.rs` with `BMLIB_PG_TESTS=1
   BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`; `--features embed` and the
@@ -307,7 +298,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**122 open** (121 after this branch merges, #765 being its issue): the
+**121 open** (#755 stays open after this branch): the
 library's #755, #762 and **#778** (PR #777's review follow-ups, above), **#776** (PR #775's
 MECA follow-ups) and **#759** (measure the `/details` settle period) are the
 newest; #734, #733, #731, #730, #726, #725, #722, #718, #716 and #694 come

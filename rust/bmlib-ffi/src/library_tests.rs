@@ -922,24 +922,24 @@ fn step_refused<T>(name: &str, step: &Value, got: Result<T, LibraryError>) -> Op
         assert!(want.is_null(), "{name}: unknown expect {want}");
         return Some(got.unwrap_or_else(|e| panic!("{name}: {e}")));
     }
-    assert_eq!(want["error"], "foreign_jats", "{name}");
-    match got {
+    let got = match got {
         Err(LibraryError::ForeignJats {
             folder,
             name: file,
             field,
             theirs,
             ours,
-        }) => {
-            let got = json!({
-                "error": "foreign_jats", "folder": folder, "name": file, "field": field,
-                "theirs": theirs, "ours": ours,
-            });
-            assert_eq!(&got, want, "{name}");
+        }) => json!({
+            "error": "foreign_jats", "folder": folder, "name": file, "field": field,
+            "theirs": theirs, "ours": ours,
+        }),
+        Err(LibraryError::FileClash { folder, name: file }) => {
+            json!({"error": "file_clash", "folder": folder, "name": file})
         }
         Err(e) => panic!("{name}: {e}"),
         Ok(_) => panic!("{name}: not refused"),
-    }
+    };
+    assert_eq!(&got, want, "{name}");
     None
 }
 
@@ -974,6 +974,11 @@ fn save_scenarios_match_the_fixture() {
                         ),
                     );
                 }
+                "plant" => std::fs::write(
+                    base.join(step["path"].as_str().unwrap()),
+                    step["text"].as_str().unwrap(),
+                )
+                .unwrap(),
                 "release" => library.release(step_who(step), of(step)).unwrap(),
                 "record_use" => {
                     let got =

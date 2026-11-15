@@ -425,7 +425,9 @@ mod dataless {
 
 /// Publish `bytes` at `path` unless a file is there. `sha256` is the digest of
 /// `bytes`; an existing file with that digest is [`Written::AlreadyThere`], one
-/// with another is [`LibraryError::FileClash`] and is left untouched.
+/// with another is [`LibraryError::FileClash`] and is left untouched. The
+/// clash's `folder` is the parent's bare name, which for a source file is the
+/// paper folder's, as in every other error (#755).
 pub(crate) fn write_once(path: &Path, bytes: &[u8], sha256: &str) -> Result<Written, LibraryError> {
     match read_bytes(path) {
         Ok(existing) => {
@@ -435,10 +437,7 @@ pub(crate) fn write_once(path: &Path, bytes: &[u8], sha256: &str) -> Result<Writ
                 Ok(Written::AlreadyThere)
             } else {
                 Err(LibraryError::FileClash {
-                    folder: path
-                        .parent()
-                        .map(|p| p.display().to_string())
-                        .unwrap_or_default(),
+                    folder: path.parent().map(file_name).unwrap_or_default(),
                     name: file_name(path),
                 })
             };

@@ -574,8 +574,7 @@ pub enum LibraryError {
     },
     /// A different file of that name is already there; nothing was overwritten.
     FileClash {
-        /// The full path of the folder holding it, unlike the bare name the
-        /// other cases carry (bmlib does the same).
+        /// The paper's folder (a full path before #755).
         folder: String,
         /// The file.
         name: String,

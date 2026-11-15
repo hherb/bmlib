@@ -41,6 +41,7 @@ from bmlib.library import (
     BadInstallation,
     BadName,
     DigestMismatch,
+    FileClash,
     FileRef,
     ForeignJats,
     Installation,
@@ -330,18 +331,22 @@ def _paper_info(p: dict[str, Any]) -> PaperInfo:
     )
 
 
+_STEP_ERRORS: dict[str, tuple[type[LibraryError], tuple[str, ...]]] = {
+    "foreign_jats": (ForeignJats, ("folder", "name", "field", "theirs", "ours")),
+    "file_clash": (FileClash, ("folder", "name")),
+}
+
+
 def _refused(step: dict[str, Any], call: Callable[[], object]) -> object:
     """*call*'s result, or, when *step* expects an error, the check that it raises that one."""
     want = step.get("expect")
     if not isinstance(want, dict):
         return call()
-    assert want["error"] == "foreign_jats"
-    with pytest.raises(ForeignJats) as err:
+    kind, fields = _STEP_ERRORS[want["error"]]
+    with pytest.raises(kind) as err:
         call()
-    e = err.value
-    assert (e.folder, e.name, e.field, e.theirs, e.ours) == tuple(
-        want[k] for k in ("folder", "name", "field", "theirs", "ours")
-    )
+    assert {k: getattr(err.value, k) for k in fields} == {k: want[k] for k in fields}
+    assert set(want) == {"error", *fields}
     return None
 
 
@@ -366,6 +371,8 @@ def test_save_scenarios_match_the_fixture(case: dict[str, Any], tmp_path: Path) 
                 ),
             )
             saved[-1] = got if isinstance(got, FileRef) else None
+        elif op == "plant":
+            (lib.root / step["path"]).write_text(step["text"], encoding="utf-8")
         elif op == "release":
             ref = saved[step["of"]]
             assert ref is not None
