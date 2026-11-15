@@ -6656,7 +6656,8 @@ undo.
   fetched whose own identifiers contradict the request's (scenario 13 of
   `fulltext_library_scenarios.json`). Only the folder the call writes to is
   checked, not every folder `find` returns (pinned since #780 by
-  `test_only_the_folder_written_to_is_checked`, in both languages). The
+  `test_only_the_folder_written_to_is_checked`, Rust's
+  `only_the_folder_written_to_is_checked`). The
   identifiers are read by the service's parse without its audit
   (`JATSParser._own_identifiers`, Rust `jats_reader::parse_unlogged`), since a
   folder's JATS is re-read on every save beside it and its warnings are logged

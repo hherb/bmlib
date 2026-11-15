@@ -449,9 +449,10 @@ impl Library {
     /// the identifiers find another (the bytes are kept once); otherwise the
     /// first of the paper's folders [`find`] returns; otherwise a new folder,
     /// named by [`folder_name`] (with ` (2)`, ` (3)` … when another paper has
-    /// the name, compared without regard to case). The file is written first, then the record (by the same
-    /// merge as [`Library::record_use`]), so a crash between leaves only an
-    /// unrecorded file, which saving the same bytes again records.
+    /// the name, compared without regard to case). The file is written first,
+    /// then the record (by the same merge as [`Library::record_use`]), so a
+    /// crash between leaves only an unrecorded file, which saving the same
+    /// bytes again records.
     ///
     /// A JATS whose own identifiers contradict `paper.ids` is refused, whether
     /// it is `bytes` or one a record in the chosen folder lists (#766): a folder

@@ -528,6 +528,7 @@ pub fn parse_audited(xml: &str, known_pmc_id: &str) -> Result<JatsReport, JatsEr
 }
 
 /// [`parse_audited`] without logging the audit: Python's
+/// `_run_parser(audit=False)`, whose one caller is
 /// `JATSParser._own_identifiers`. For the library's check of a JATS's
 /// identifiers (#766), which re-reads a folder's JATS on every save beside it:
 /// logging each re-read would repeat the article's warnings, which are logged

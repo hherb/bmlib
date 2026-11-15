@@ -15,9 +15,10 @@ time. It now reads by the same parse without the audit (Python
 `jats_reader::parse_unlogged`). The article's warnings are logged when it is
 parsed to be shown. Item 2 of the issue, "only the target folder is checked",
 is now pinned by `test_only_the_folder_written_to_is_checked` in
-`test_library_save.py` and `library_save.rs`. The folder is linked to the
-paper's group through a third folder's pmcid. Both new tests were
-mutation-checked in both languages. The renderer digests were re-pinned without
+`test_library_save.py` and `only_the_folder_written_to_is_checked` in
+`library_save.rs`. The foreign JATS's folder joins the paper's group only
+through a second installation's record, in the PDF's folder, that carries the
+JATS's pmcid. Both new tests were mutation-checked in both languages. The renderer digests were re-pinned without
 a version bump, because `to_html()` cannot move. `save`'s docstring now says
 "the first of the paper's folders `find` returns": the old wording, "the first
 folder holding a record that shares an identifier", was wrong for a folder
@@ -31,7 +32,10 @@ bytes being saved (`folder` `None`) and any JATS a record lists in the target
 folder. A placeholder or a changed JATS there fails the call, a missing one is
 passed over, and one that does not parse is warned of. The service serves a
 fetched JATS that names another paper but does not keep it. The reasoning is
-in `docs/DECISIONS.md`, under *FullTextService on a library*. **Downstream**:
+in `docs/DECISIONS.md`, under *FullTextService on a library*. Scenarios 2 and
+6 of the service's library scenarios serve `fulltext_library_other_article.xml`;
+tests that need a poisoned folder plant it by hand (`plant`, `planted: true`).
+**Downstream**:
 StudyAnalyzer drops its `foreign_jats` once it re-pins. A Rust `match` on
 `LibraryError` needs the new arm. **#761** merged as PR #777, and its
 deferrals are **#778**.
@@ -46,10 +50,9 @@ Rust's `InvalidRequest` (Python `ValueError`). Deferred to **#776**.
 
 ## Earlier: dataless files, JSON depth, a file by its kind (#769, #758, #767, #768)
 
-PRs #773, #772 and #771; each CHANGELOG entry names the app's action.
-StudyAnalyzer can drop its `stored_name` shortcut once it re-pins.
-MedicalFactChecker's Swift calls `findDigest(sha256:kind:)`. A dataless
-*folder* has not been measured.
+PRs #773, #772 and #771. StudyAnalyzer can drop its `stored_name` shortcut
+once it re-pins. MedicalFactChecker's Swift calls `findDigest(sha256:kind:)`.
+A dataless *folder* has not been measured.
 
 ## The shared paper library (1a #754, 1b #763, 1c #764, all merged)
 
@@ -129,9 +132,10 @@ use to share one folder of papers. Built in both languages, in a worktree
 - **Owed by Android (phase 4)**: the file operations are free functions on
   `&Path` in `files.rs`; Kotlin's storage access needs them behind a trait
   passed into `Library`.
-- **Open library issues**: #778 (PR #777's deferrals), #762 (a non-UTF-8 library JATS, Python serves it, Rust refuses;
-  the #766 check inherits the gap), #765 (the FFI runs no `save_scenarios`),
-  #755 (1a's review follow-ups); #780 closed by this session's branch.
+- **Open library issues**: #778 (PR #777's deferrals), #762 (a non-UTF-8
+  library JATS, Python serves it, Rust refuses; the #766 check inherits the
+  gap), #765 (the FFI runs no `save_scenarios`), #755 (1a's review
+  follow-ups); #780 closed by this session's branch.
 - **Left open on purpose**: separate processes of one installation writing one
   record (out of scope; an app has one process per installation).
 

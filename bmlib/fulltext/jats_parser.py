@@ -8929,7 +8929,9 @@ def _audit_parse(handler: _JATSHandler) -> None:
     Called from :meth:`JATSParser._run_parser`, which is the one place
     :meth:`~JATSParser.parse`, :meth:`~JATSParser.to_html` and
     :meth:`~JATSParser.parse_with_html` all funnel through — so every entry
-    point is covered without any of them having to remember.
+    point is covered without any of them having to remember. The one
+    deliberate exception is :meth:`JATSParser._own_identifiers`, the library's
+    identifier read, which re-reads a folder's JATS on every save (#780).
 
     ERROR, and not a raised exception: a partial article reported loudly beats
     no article, which is #129's mistake in the other direction. And ERROR
