@@ -137,7 +137,12 @@ fn save_never_overwrites_other_bytes() {
     let err = lib
         .save(&you(), &paper(), BYTES, SourceKind::Pdf, "t")
         .unwrap_err();
-    assert!(matches!(err, LibraryError::FileClash { .. }), "{err}");
+    // #755: the clash names the folder as `FileRef` does.
+    assert!(
+        matches!(&err, LibraryError::FileClash { folder, name }
+            if *folder == first.folder && *name == first.name),
+        "{err}"
+    );
     assert_eq!(fs::read(&target).unwrap(), b"planted");
     assert!(!record_path(&dir, &you(), &first.folder).exists());
     fs::remove_dir_all(dir).unwrap();

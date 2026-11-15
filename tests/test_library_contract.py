@@ -41,6 +41,7 @@ from bmlib.library import (
     BadInstallation,
     BadName,
     DigestMismatch,
+    FileClash,
     FileRef,
     ForeignJats,
     Installation,
@@ -208,6 +209,29 @@ def test_open(case: dict[str, Any], tmp_path: Path) -> None:
         assert err.value.version == case["version"]  # type: ignore[attr-defined]
 
 
+@pytest.mark.parametrize("version", [1, 99])
+def test_a_marker_published_by_another_opener_decides(
+    version: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The marker's FileClash never reaches the caller: the other opener's marker is read.
+    from bmlib.library import library as opening
+
+    real = opening.write_once
+
+    def race(path: Path, data: bytes, sha256: str) -> object:
+        path.write_text(json.dumps({"format": "bmlib-library", "version": version}), "utf-8")
+        return real(path, data, sha256)
+
+    monkeypatch.setattr(opening, "write_once", race)
+    root = tmp_path / "root"
+    root.mkdir()
+    if version == 1:
+        assert open_library(root).root == root
+    else:
+        with pytest.raises(NewerLibrary):
+            open_library(root)
+
+
 _SAMPLE = Path(__file__).parent / "fixtures" / "library" / "sample"
 
 
@@ -330,18 +354,22 @@ def _paper_info(p: dict[str, Any]) -> PaperInfo:
     )
 
 
+_STEP_ERRORS: dict[str, tuple[type[LibraryError], tuple[str, ...]]] = {
+    "foreign_jats": (ForeignJats, ("folder", "name", "field", "theirs", "ours")),
+    "file_clash": (FileClash, ("folder", "name")),
+}
+
+
 def _refused(step: dict[str, Any], call: Callable[[], object]) -> object:
     """*call*'s result, or, when *step* expects an error, the check that it raises that one."""
     want = step.get("expect")
     if not isinstance(want, dict):
         return call()
-    assert want["error"] == "foreign_jats"
-    with pytest.raises(ForeignJats) as err:
+    kind, fields = _STEP_ERRORS[want["error"]]
+    with pytest.raises(kind) as err:
         call()
-    e = err.value
-    assert (e.folder, e.name, e.field, e.theirs, e.ours) == tuple(
-        want[k] for k in ("folder", "name", "field", "theirs", "ours")
-    )
+    assert {k: getattr(err.value, k) for k in fields} == {k: want[k] for k in fields}
+    assert set(want) == {"error", *fields}
     return None
 
 
@@ -366,6 +394,8 @@ def test_save_scenarios_match_the_fixture(case: dict[str, Any], tmp_path: Path) 
                 ),
             )
             saved[-1] = got if isinstance(got, FileRef) else None
+        elif op == "plant":
+            (lib.root / step["path"]).write_text(step["text"], encoding="utf-8")
         elif op == "release":
             ref = saved[step["of"]]
             assert ref is not None

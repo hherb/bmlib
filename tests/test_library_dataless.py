@@ -84,6 +84,20 @@ def test_an_evicted_file_reads_as_not_downloaded(
     assert (e.value.folder, e.value.name) == (ref.folder, ref.name)
 
 
+def test_saving_beside_an_evicted_copy_names_the_paper_folder(
+    lib: Library, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # write_once's comparison meets the dataless file; the error names the folder as FileRef
+    # does, not by its full path (#755).
+    ref = lib.save(_ME, _PAPER, b"%PDF a paper", SourceKind.PDF, "test")
+    _evicted(monkeypatch, files, ref.name)
+    you = Installation.new("medicalfactchecker", "bbbb", "Mac")
+    with pytest.raises(NotDownloaded) as e:
+        lib.save(you, _PAPER, b"%PDF a paper", SourceKind.PDF, "test")
+    assert (e.value.folder, e.value.name) == (ref.folder, ref.name)
+    assert not (lib.root / "papers" / ref.folder / "records" / you.record_file_name()).exists()
+
+
 def test_an_evicted_record_is_a_scan_problem_and_stops_a_save_and_a_release(
     lib: Library, monkeypatch: pytest.MonkeyPatch
 ) -> None:

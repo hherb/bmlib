@@ -536,7 +536,15 @@ impl Library {
             .join(RECORDS_DIR)
             .join(component(&who.record_file_name())?);
         check_not_evicted(&path, &folder)?;
-        write_once(&dir.join(&name), bytes, &digest)?;
+        write_once(&dir.join(&name), bytes, &digest).map_err(|e| match e {
+            // `write_once` knows only the path; the error names the folder as
+            // `FileRef` does (#755).
+            LibraryError::NotDownloaded { name, .. } => LibraryError::NotDownloaded {
+                folder: folder.clone(),
+                name,
+            },
+            e => e,
+        })?;
         note_use(&dir, &folder, who, paper, entry)?;
         Ok(FileRef {
             folder,

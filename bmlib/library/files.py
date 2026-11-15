@@ -372,7 +372,8 @@ def write_once(path: Path, data: bytes, sha256: str) -> Written:
 
     *sha256* is the digest of *data*. An existing file with that digest gives
     :attr:`Written.ALREADY_THERE`; one with another raises :class:`FileClash`
-    and is left untouched.
+    and is left untouched. The clash's ``folder`` is the parent's bare name, which
+    for a source file is the paper folder's, as ``FileRef.folder`` holds it (#755).
     """
     try:
         existing = read_bytes(path)
@@ -384,7 +385,7 @@ def write_once(path: Path, data: bytes, sha256: str) -> Written:
         if sha256_hex(existing) == sha256:
             sync_name(path)  # another writer's, perhaps not yet synced
             return Written.ALREADY_THERE
-        raise FileClash(str(path.parent), path.name)
+        raise FileClash(path.parent.name, path.name)
     _publish(path, data)
     return Written.NEW
 
