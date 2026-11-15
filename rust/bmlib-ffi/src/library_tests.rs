@@ -100,6 +100,9 @@ fn every_core_problem() -> Vec<lib::Problem> {
         P::StrayEntry {
             name: "name-h".into(),
         },
+        P::BadFolderName {
+            folder: "folder-i".into(),
+        },
     ]
 }
 
@@ -303,6 +306,9 @@ fn problem_json(p: &LibraryProblem) -> Value {
             json!({"kind": "unrecorded_file", "folder": folder, "name": name})
         }
         LibraryProblem::StrayEntry { name } => json!({"kind": "stray_entry", "name": name}),
+        LibraryProblem::BadFolderName { folder } => {
+            json!({"kind": "bad_folder_name", "folder": folder})
+        }
     }
 }
 
@@ -410,7 +416,7 @@ fn every_problem_variant_decides_whether_uses_are_complete() {
     let uncounted: Vec<Option<&str>> = problems.iter().map(uncounted_record).collect();
     // In `every_core_problem`'s order; its `LeftoverTemp` is outside `records/`.
     let a = Some("folder-a");
-    assert_eq!(uncounted, [a, a, a, a, None, a, None, None, None]);
+    assert_eq!(uncounted, [a, a, a, a, None, a, None, None, None, None]);
     let temp = |name: &str| P::LeftoverTemp {
         folder: "f".into(),
         name: name.into(),
@@ -936,6 +942,9 @@ fn step_refused<T>(name: &str, step: &Value, got: Result<T, LibraryError>) -> Op
         Err(LibraryError::FileClash { folder, name: file }) => {
             json!({"error": "file_clash", "folder": folder, "name": file})
         }
+        Err(LibraryError::BadName { name: refused }) => {
+            json!({"error": "bad_name", "name": refused})
+        }
         Err(e) => panic!("{name}: {e}"),
         Ok(_) => panic!("{name}: not refused"),
     };
@@ -974,11 +983,19 @@ fn save_scenarios_match_the_fixture() {
                         ),
                     );
                 }
-                "plant" => std::fs::write(
-                    base.join(step["path"].as_str().unwrap()),
-                    step["text"].as_str().unwrap(),
-                )
-                .unwrap(),
+                "plant" => {
+                    let path = base.join(step["path"].as_str().unwrap());
+                    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                    std::fs::write(path, step["text"].as_str().unwrap()).unwrap();
+                }
+                "scan" => {
+                    let scan = library.scan().unwrap();
+                    let folders: Vec<String> =
+                        scan.folders().into_iter().map(|f| f.folder).collect();
+                    assert_eq!(json!(folders), step["expect"]["folders"], "{name}");
+                    let problems: Vec<Value> = scan.problems().iter().map(problem_json).collect();
+                    assert_eq!(Value::Array(problems), step["expect"]["problems"], "{name}");
+                }
                 "release" => library.release(step_who(step), of(step)).unwrap(),
                 "record_use" => {
                     let got =

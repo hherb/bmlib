@@ -54,6 +54,7 @@ from bmlib.library import (
     NotDownloaded,
     PaperIds,
     PaperInfo,
+    Problem,
     RecordProblem,
     SourceKind,
     Unreachable,
@@ -357,6 +358,7 @@ def _paper_info(p: dict[str, Any]) -> PaperInfo:
 _STEP_ERRORS: dict[str, tuple[type[LibraryError], tuple[str, ...]]] = {
     "foreign_jats": (ForeignJats, ("folder", "name", "field", "theirs", "ours")),
     "file_clash": (FileClash, ("folder", "name")),
+    "bad_name": (BadName, ("name",)),
 }
 
 
@@ -371,6 +373,12 @@ def _refused(step: dict[str, Any], call: Callable[[], object]) -> object:
     assert {k: getattr(err.value, k) for k in fields} == {k: want[k] for k in fields}
     assert set(want) == {"error", *fields}
     return None
+
+
+def _problem(p: Problem) -> dict[str, Any]:
+    """A scan problem as the fixture writes it: its kind and the fields it uses."""
+    fields = ("folder", "file", "name", "field", "reason", "version")
+    return {"kind": p.kind, **{k: getattr(p, k) for k in fields if getattr(p, k) is not None}}
 
 
 @pytest.mark.parametrize("case", _cases("save_scenarios"))
@@ -395,7 +403,12 @@ def test_save_scenarios_match_the_fixture(case: dict[str, Any], tmp_path: Path) 
             )
             saved[-1] = got if isinstance(got, FileRef) else None
         elif op == "plant":
+            (lib.root / step["path"]).parent.mkdir(parents=True, exist_ok=True)
             (lib.root / step["path"]).write_text(step["text"], encoding="utf-8")
+        elif op == "scan":
+            scan = lib.scan()
+            assert [f.folder for f in scan.folders] == step["expect"]["folders"]
+            assert [_problem(p) for p in scan.problems] == step["expect"]["problems"]
         elif op == "release":
             ref = saved[step["of"]]
             assert ref is not None

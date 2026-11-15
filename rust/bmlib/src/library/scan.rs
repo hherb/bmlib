@@ -164,6 +164,16 @@ pub enum Problem {
         /// The entry.
         name: String,
     },
+    /// A paper folder named so that bmlib cannot address it (`con`, or
+    /// `Con .x (PMID 1)` made under the device rule before #788), which a
+    /// Windows file system reads as another entry or a device. It is still
+    /// scanned and in [`Scan::folders`], so [`find`] sees the paper, but every
+    /// call naming it fails with [`LibraryError::BadName`] until the user
+    /// renames it (#789).
+    BadFolderName {
+        /// The paper's folder.
+        folder: String,
+    },
 }
 
 /// The result of scanning a library.
@@ -352,7 +362,14 @@ impl Library {
         for name in found.names {
             let dir = papers.join(&name);
             match is_dir(&dir) {
-                Ok(true) => folders.push(scan_folder(&dir, &name, &mut problems)),
+                Ok(true) => {
+                    if component(&name).is_err() {
+                        problems.push(Problem::BadFolderName {
+                            folder: name.clone(),
+                        });
+                    }
+                    folders.push(scan_folder(&dir, &name, &mut problems));
+                }
                 Ok(false) => problems.push(Problem::StrayEntry { name }),
                 Err(e) => problems.push(Problem::UnreadableFolder {
                     folder: name,

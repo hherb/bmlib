@@ -1,65 +1,45 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-15 (**#755 items 3, 5 and 6, on
-`fix/library-parity-755`**). Merged since the last update: #787 (#755's
-`FileClash` item), below. **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`,
-the merge of #736) and **the Rust crate 0.4.0 on crates.io** from the same
-commit; everything since is under Unreleased._
+_Last updated: 2026-11-16 (**#789, on `fix/library-bad-folder-name-789`**).
+Merged since the last update: #788 (#755 items 3, 5 and 6), below. **0.13.0
+is on PyPI** (tag `v0.13.0` on `161849c0`, the merge of #736) and **the Rust
+crate 0.4.0 on crates.io** from the same commit; everything since is under
+Unreleased._
 
-## This session: the library's names agree across languages (#755 items 3, 5, 6)
+## This session: a paper folder bmlib cannot name is reported (#789)
 
-- **Item 3**: `is_reserved` is the device-name clause of CPython 3.13's
-  `ntpath.isreserved` in both languages: the part before the first dot,
-  trailing spaces dropped, against a list adding `COM¹`-`COM³`, `LPT¹`-`LPT³`,
-  `CONIN$` and `CONOUT$`. So `component()` refuses `CON .txt` and
-  `folder_name` prefixes `_Con .x (…)`.
-- **Item 5, whitespace**: **Rust follows Python** (the port's convention; it
-  already had `pyvalue::python_strip` for this gap). The library's id and name
-  trims and the shared `publications` `normalize_doi`/`normalize_pmid` strip
-  U+001C-U+001F. Python's code did not move.
-- **Item 5, non-UTF-8 names**: **Python follows Rust** here (Rust's names are
-  `String`s): `files._entries` decodes lossily, so such a paper folder is a
-  `stray_entry` in both scans. The temp-name check counts Rust's token in
-  bytes in Python too. A Windows lone surrogate still differs (a `shortcut:`
-  in `_entries`).
-- **Item 6, the mechanical half**: a test's `os.geteuid()` no longer runs at
-  collection on Windows; Rust's `keep_aside` builds its path as an `OsString`.
-- **The review's fix (#788)**: a name that is not UTF-8 is kept apart in the
-  listing (`Listing.undecodable`) and reported, never joined to a path. Its
-  lossy spelling can be a real sibling's (`caf\ufffd` beside `caf\xe9`), and
-  the join reached it: the scan listed that folder twice and dropped the other
-  unreported, in both languages on this branch before the fix. Pinned by
-  Linux-only tests on a real file system (both languages) and by faked
-  listings (Python).
-- **Not fixed here, #789**: a folder whose name `component()` refuses (one
-  named under the old device rule, or a user's `papers/con`) is scanned with
-  no `Problem` but every call addressing it raises `BadName`. It needs a pick
-  of remedy; the library is unreleased, so it is free to settle.
-- 44 new `library_cases.json` cases (`canonical_ids`, `folder_names`,
-  `component`): those the new device rule decides (spaces before the dot,
-  superscripts, `CONIN$`, `CONOUT$`) fail on `main`'s Python and Rust; the
-  U+001C-U+001F ones on `main`'s Rust only (Python already stripped them); 13
-  pass on `main` and pin the list entry by entry (12 device names `main`
-  already reserved, and `nul.tar.gz`); the ideographic space, `con x.txt`,
-  `COM0` and the two near-miss spaces are controls. Reasoning in
-  `docs/DECISIONS.md` (*library*).
-- **#755 stays open for the decisions**: item 1 (`record_use` trusting the
-  caller's `paper`: refuse a contradiction, or document it), item 2 (a folder
-  whose only record is evicted is invisible to `find`, so a save forks the
-  paper), item 4 (refuse or sanitise bidi/control characters in `origin`,
-  `title`, `first_author`) and item 6's noise (a `.corrupt` record reported on
-  every scan, a `LeftoverTemp` that may be in flight, `Library(root)`
-  bypassing `open_library`).
+- **The maintainer's pick** of #789's remedies: a scan reports a folder whose
+  name `component()` refuses as `bad_folder_name` (`folder`), and **keeps it
+  in `folders`**. So `find` sees the paper, and a save of it raises `BadName`
+  instead of forking it into a second folder (dropping the folder would cause
+  #778 item 1's failure). bmlib does not rename it; the user does.
+  Reasoning in `docs/DECISIONS.md` (*library*).
+- Both languages and bmlib-ffi (`Problem::BadFolderName`,
+  `LibraryProblem::BadFolderName`). This **breaks Rust and FFI callers**: an
+  exhaustive `match`, Swift `switch` or Kotlin `when` needs the case (in the
+  Rust CHANGELOG's *Changed — breaking*).
+- **The contract**: `save_scenarios` gains a `scan` step (`folders` and
+  `problems`) and a `bad_name` step error, and `plant` creates its folders, in
+  all three runners. The new case fails on `main`'s Python and with Rust's
+  emit mutated off.
 
-## Merged: `FileClash.folder` is the paper folder's name (#755, PR #787)
+## Merged: the library's names agree across languages (#755 items 3, 5, 6, PR #788)
 
-`save`'s clash and its `NotDownloaded` beside an evicted file name the bare
-folder, as every other error does; a `save_scenarios` case with a `plant`
-step pins it in all three runners. The `NotDownloaded` half is pinned in Rust
-only by the opt-in iCloud test, which was not run.
+CPython 3.13's device-name rule in both languages (`CON .txt`, `COM¹`,
+`CONIN$`), Python's `str.strip()` in Rust's library and shared normalisers,
+and non-UTF-8 names read lossily and reported, never joined to a path
+(`Listing.undecodable`). Detail in the CHANGELOG and DECISIONS. **#755 stays
+open for its decisions**: item 1 (`record_use` trusting the caller's
+`paper`), item 2 (a folder whose only record is evicted is invisible to
+`find`, so a save forks the paper), item 4 (bidi/control characters in
+`origin`, `title`, `first_author`) and item 6's noise (a `.corrupt` record
+reported on every scan, a `LeftoverTemp` that may be in flight,
+`Library(root)` bypassing `open_library`).
 
 ## Merged: the FFI's fixture runs, the lookup's rules, no foreign JATS (#765, #784, #782, #766)
 
+- **#755's `FileClash` item (PR #787)**: `FileClash.folder` and `save`'s
+  `NotDownloaded` beside an evicted file name the bare paper folder.
 - **#765 (PR #786)**: `rust/bmlib-ffi/src/library_tests.rs` replays the save
   scenarios, `component` and (Unix) `special_entries`; `folder_names` and
   `records` test functions the FFI does not export.
@@ -289,15 +269,14 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests on `fix/library-parity-755`** (2026-11-15, PostgreSQL 18 DSN
-  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,113 passed + 23
-  skipped (11,136 collected); the library's four test files also on Linux
-  (Docker, `python:3.12-slim`). Rust `cargo test -p bmlib` and `-p bmlib-ffi`
-  1,875 passed on macOS (the two new Linux-only tests run in CI), and
-  `-p bmlib --no-default-features` 1,453; `cargo clippy --all-targets` (also
-  `--features postgres`, `html`, `pdf`, `--no-default-features`, `-p bmlib-ffi`
-  and its `http-sketch,bindgen`), `cargo doc` and `cargo fmt --check` clean;
-  the Rust oracle 44 clean. Other recipes: `postgres_live.rs` with
+- **Tests on `fix/library-bad-folder-name-789`** (2026-11-16, PostgreSQL 18
+  DSN on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,115 passed + 22
+  skipped (11,137 collected). Rust `cargo test -p bmlib -p bmlib-ffi` 1,875
+  passed on macOS, and `-p bmlib --no-default-features` 1,453 (the new case
+  runs inside the existing `save_scenarios` tests, so Rust's counts do not
+  move); `cargo clippy --all-targets` and `-p bmlib-ffi` with
+  `http-sketch,bindgen`, `cargo doc` and `cargo fmt --check` clean; the Rust
+  oracle 44 clean. Other recipes: `postgres_live.rs` with
   `BMLIB_PG_TESTS=1 BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`; `--features embed` and the
   embedder's live tests need `BMLIB_EMBED_MODEL` (the GGUFs are in
   `~/.cache/bmlib/models/`; the Python live tests need `.[all,dev,embed]`).
@@ -325,11 +304,11 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**122 open** (#755 stays open after this branch, for its decisions): the library's **#789** (a folder `component()` refuses, this PR's review), #755, #762 and **#778** (PR #777's review follow-ups, above), **#776** (PR #775's
+**121 open once this PR is merged and #789 shut** (#755 stays open for its decisions): the library's #755, #762 and **#778** (PR #777's review follow-ups, above), **#776** (PR #775's
 MECA follow-ups) and **#759** (measure the `/details` settle period) are the
 newest; #734, #733, #731, #730, #726, #725, #722, #718, #716 and #694 come
 before them; #577 stays open for its point 3, which PR #696 left open
-(`gh issue list --state open --limit 300 --json number`, 2026-11-15). #651
+(`gh issue list --state open --limit 300 --json number`, 2026-11-16). #651
 is #632's residual; #556–#734 are not yet sorted into the lists below. **PR
 #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618
 (a part not reported may now have a blank description; fixed with #577 in PR

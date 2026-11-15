@@ -31,6 +31,16 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A paper folder bmlib cannot name is reported** (#789; both languages and
+  bmlib-ffi). A folder whose name `component()` refuses, such as one made under
+  the device rule before #788 (`Con .x (PMID 1)`) or a user's `papers/con`,
+  was scanned with no problem, while every call addressing it raised
+  `BadName`. A scan now adds a `bad_folder_name` problem (`folder`) for it and
+  keeps it in `folders`, so `find` still sees the paper and a save of that
+  paper is refused with `BadName` instead of forking it into a second folder.
+  The user renames the folder; bmlib does not. A new `save_scenarios` case,
+  with a `scan` step and a `plant` step that now creates its folders, pins it
+  in all three runners.
 - **The library's Windows device names, whitespace and non-UTF-8 names agree
   across the languages** (#755 items 3, 5 and part of 6; both languages). A
   device name followed by spaces before the dot (`CON .txt`, which Windows
@@ -38,8 +48,8 @@ All notable changes to bmlib are documented here. The format is based on
   are now refused by `component()` and get `folder_name`'s `_` prefix: the
   device-name clause of CPython 3.13's `ntpath.isreserved`. **A folder name
   can move**, only for a paper whose name begins with a word this rule now
-  refuses. A folder already made under the old rule is scanned but not usable;
-  that is #789. Rust now trims identifiers and the name's author and title as
+  refuses. A folder already made under the old rule is a `bad_folder_name`
+  problem (#789, above). Rust now trims identifiers and the name's author and title as
   Python's `str.strip()` does, U+001C-U+001F included, so a PMID edged by one
   is the same PMID in both. In Python, a non-UTF-8 name in a library folder is
   read lossily (U+FFFD), as Rust reads it. In both languages such a name is
