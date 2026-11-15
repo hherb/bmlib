@@ -19,7 +19,7 @@ All notable changes to bmlib are documented here. The format is based on
   library by the service's rules instead of a copy of them.
 - **bmlib-ffi runs the library fixture's `save_scenarios`, `component` and
   `special_entries`** (#765; tests only). `rust/bmlib-ffi/src/library_tests.rs`
-  replays all 31 scenarios of `tests/fixtures/library_cases.json` (save,
+  replays all 30 scenarios of `tests/fixtures/library_cases.json` (save,
   record_use, release, used_by, find_digest, read, remove_file and
   remove_folder, the #766 `ForeignJats` refusals among them) through
   `PaperLibrary` and `LibraryScan`, and checks the files on disk and every
@@ -33,12 +33,15 @@ All notable changes to bmlib are documented here. The format is based on
 
 - **`FileClash.folder` is the paper folder's bare name** (#755; both
   languages, and bmlib-ffi). It held the folder's full path
-  (`/…/papers/<folder>`), where every other library error holds the bare
-  name, so an app comparing it with `FileRef.folder` never matched. A new
-  `save_scenarios` case in `tests/fixtures/library_cases.json` pins it, with a
-  `plant` step that damages a file in the folder; the Python, Rust and FFI
-  runners all run it. The marker's clash in `open_library` is caught there and
-  never reaches a caller.
+  (`/…/papers/<folder>`), where `Missing`, `DigestMismatch` and the record
+  errors hold the bare name, so an app comparing it with `FileRef.folder`
+  never matched. A new `save_scenarios` case in
+  `tests/fixtures/library_cases.json` pins it, with a `plant` step that
+  damages a file in the folder; the Python, Rust and FFI runners all run it.
+  The marker's clash in `open_library` is caught there and never reaches a
+  caller. The same `save`'s `NotDownloaded`, when the file already there is
+  evicted (dataless), named the full path too and now names the folder; only
+  the marker's `NotDownloaded` still names the library's full path.
 - **Rust logs an author-less article at DEBUG, as Python does** (#782). The
   port warned on every article that parsed to no authors. It now warns only
   where the article's contributor list names people, as Python's
@@ -171,8 +174,8 @@ All notable changes to bmlib are documented here. The format is based on
   OFF)`, the previous policy restored after) and maps the `EDEADLK` it fails
   with to what a placeholder gives: `NotDownloaded` from `read`, `save` and
   `release`, `record_not_downloaded` (`RecordNotDownloaded`) in a scan. A
-  dataless file met elsewhere (the marker, `write_once`'s comparison) is
-  `NotDownloaded` naming its full folder. On a device (macOS 27.2, iCloud
+  dataless file met elsewhere (the marker) is `NotDownloaded` naming its full
+  folder (`save`'s comparison did too, until #755). On a device (macOS 27.2, iCloud
   Drive, evicted by `brctl evict`) the read fails at once and the file stays
   evicted; the opt-in tests `tests/test_library_dataless.py` and
   `rust/bmlib/tests/library_dataless.rs` repeat that with `BMLIB_ICLOUD_DIR`

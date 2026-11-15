@@ -87,10 +87,12 @@ The Python library is documented separately, in the repository's
 ### Fixed
 
 - **`LibraryError::FileClash`'s `folder` is the paper folder's bare name**
-  (#755, as in Python). It held the folder's full path, unlike every other
-  variant, so it never matched `FileRef::folder`. bmlib-ffi's `FileClash`
-  carries the same value. Pinned by a new `save_scenarios` case in
-  `tests/fixtures/library_cases.json`.
+  (#755, as in Python). It held the folder's full path, unlike `Missing`,
+  `DigestMismatch` and the record errors, so it never matched
+  `FileRef::folder`. bmlib-ffi's `FileClash` carries the same value. Pinned by
+  a new `save_scenarios` case in `tests/fixtures/library_cases.json`. The same
+  `save`'s `NotDownloaded`, when the file already there is evicted, now names
+  the folder too (pinned by the opt-in `tests/library_dataless.rs`).
 - **An author-less article is logged at DEBUG, as in Python** (#782). The
   reader warned on every article that parsed to no authors, since the port.
   It now warns only when the article's contributor list names people and none

@@ -9,9 +9,13 @@ since is under Unreleased._
 ## This session: `FileClash.folder` is the paper folder's name (#755)
 
 `write_once` built the clash's `folder` from the parent's full path in both
-languages, so `save`'s clash carried `/…/papers/<folder>` where every other
-error carries the bare name. It now takes the parent's name. Only `save`'s
-clash reaches a caller: `open`'s marker clash is caught there. A new
+languages, so `save`'s clash carried `/…/papers/<folder>` where `Missing`,
+`DigestMismatch` and the record errors carry the bare name. It now takes the
+parent's name. Only `save`'s clash reaches a caller: `open`'s marker clash is
+caught there. The review found the same `save`'s `NotDownloaded` (the file
+already there evicted) naming the full path too; `save` now names the folder
+(Python `tests/test_library_dataless.py`; Rust only in the opt-in iCloud
+test, not run). Only the marker's `NotDownloaded` names a full path now. A new
 `save_scenarios` case in `library_cases.json` (31 now) pins it through a new
 `plant` step (write a file under the library root); the Python, crate and FFI
 runners each map `file_clash` beside `foreign_jats`, and both Rust runners
@@ -267,8 +271,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache. The two questions are independent, and a downstream reading only the
   number must still read this list.
 - **Tests on `fix/fileclash-folder-755`** (2026-11-15, PostgreSQL 18 DSN
-  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,056 passed + 22
-  skipped (11,078 collected); Rust `cargo test -p bmlib` and `-p bmlib-ffi`
+  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,059 passed + 22
+  skipped (11,081 collected); Rust `cargo test -p bmlib` and `-p bmlib-ffi`
   1,873 passed, `cargo clippy --workspace --tests` and `cargo fmt --check`
   clean; the Rust oracle 44 clean. Other recipes: `postgres_live.rs` with `BMLIB_PG_TESTS=1
   BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`; `--features embed` and the
@@ -298,8 +302,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**121 open** (#755 stays open after this branch): the
-library's #755, #762 and **#778** (PR #777's review follow-ups, above), **#776** (PR #775's
+**121 open** (#755 stays open after this branch): the library's #755, #762 and **#778** (PR #777's review follow-ups, above), **#776** (PR #775's
 MECA follow-ups) and **#759** (measure the `/details` settle period) are the
 newest; #734, #733, #731, #730, #726, #725, #722, #718, #716 and #694 come
 before them; #577 stays open for its point 3, which PR #696 left open

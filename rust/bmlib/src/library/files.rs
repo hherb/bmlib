@@ -80,8 +80,9 @@ pub(crate) fn component(name: &str) -> Result<&str, LibraryError> {
     }
 }
 
-/// Turn an I/O failure at `path` into the library's error: a refused or
-/// read-only write is [`LibraryError::ReadOnly`], anything else
+/// Turn an I/O failure at `path` into the library's error: a dataless file is
+/// [`LibraryError::NotDownloaded`] (its folder the full parent path), a
+/// refused or read-only write [`LibraryError::ReadOnly`], anything else
 /// [`LibraryError::Io`].
 pub(crate) fn io_error(path: &Path, err: &io::Error, write: bool) -> LibraryError {
     if is_not_downloaded(err) {
@@ -427,7 +428,7 @@ mod dataless {
 /// `bytes`; an existing file with that digest is [`Written::AlreadyThere`], one
 /// with another is [`LibraryError::FileClash`] and is left untouched. The
 /// clash's `folder` is the parent's bare name, which for a source file is the
-/// paper folder's, as in every other error (#755).
+/// paper folder's, as `FileRef::folder` holds it (#755).
 pub(crate) fn write_once(path: &Path, bytes: &[u8], sha256: &str) -> Result<Written, LibraryError> {
     match read_bytes(path) {
         Ok(existing) => {

@@ -3695,7 +3695,7 @@
     },
     {
      "op": "plant",
-     "path": "papers/2024 Smith \u2013 Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+     "path": "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
      "text": "planted"
     },
     {
@@ -3714,7 +3714,7 @@
      "origin": "unit test",
      "expect": {
       "error": "file_clash",
-      "folder": "2024 Smith \u2013 Metformin (PMID 111)",
+      "folder": "2024 Smith – Metformin (PMID 111)",
       "name": "pdf-1361ac06c419.pdf"
      }
     }
@@ -3723,13 +3723,13 @@
     "paths": [
      "bmlib-library.json",
      "papers/",
-     "papers/2024 Smith \u2013 Metformin (PMID 111)/",
-     "papers/2024 Smith \u2013 Metformin (PMID 111)/pdf-1361ac06c419.pdf",
-     "papers/2024 Smith \u2013 Metformin (PMID 111)/records/",
-     "papers/2024 Smith \u2013 Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/pdf-1361ac06c419.pdf",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
     ],
     "records": {
-     "papers/2024 Smith \u2013 Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json": {
       "format": "bmlib-library-record",
       "version": 1,
       "installation": {

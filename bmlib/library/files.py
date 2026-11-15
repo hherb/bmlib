@@ -372,8 +372,8 @@ def write_once(path: Path, data: bytes, sha256: str) -> Written:
 
     *sha256* is the digest of *data*. An existing file with that digest gives
     :attr:`Written.ALREADY_THERE`; one with another raises :class:`FileClash`
-    and is left untouched. The clash's ``folder`` is the parent's bare name, which for a
-    source file is the paper folder's, as in every other error (#755).
+    and is left untouched. The clash's ``folder`` is the parent's bare name, which
+    for a source file is the paper folder's, as ``FileRef.folder`` holds it (#755).
     """
     try:
         existing = read_bytes(path)

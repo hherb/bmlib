@@ -556,7 +556,8 @@ pub enum LibraryError {
     /// Only an iCloud placeholder is here, or the file is evicted (dataless):
     /// it is not downloaded yet.
     NotDownloaded {
-        /// The paper's folder.
+        /// The paper's folder; the library's own folder, as a full path, for
+        /// its marker.
         folder: String,
         /// The file.
         name: String,

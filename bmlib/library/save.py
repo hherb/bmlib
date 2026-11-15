@@ -473,7 +473,11 @@ def save_file(
     records_dir = directory / RECORDS_DIR
     path = records_dir / component(who.record_file_name())
     _check_not_evicted(path, folder)
-    write_once(directory / name, data, digest)
+    try:
+        write_once(directory / name, data, digest)
+    except NotDownloaded as e:
+        # write_once knows only the path; the error names the folder as FileRef does (#755).
+        raise NotDownloaded(folder, name) from e
     _note_use(directory, folder, who, paper, entry)
     return FileRef(folder, name, digest, kind)
 

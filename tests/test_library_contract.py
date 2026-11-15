@@ -209,6 +209,29 @@ def test_open(case: dict[str, Any], tmp_path: Path) -> None:
         assert err.value.version == case["version"]  # type: ignore[attr-defined]
 
 
+@pytest.mark.parametrize("version", [1, 99])
+def test_a_marker_published_by_another_opener_decides(
+    version: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The marker's FileClash never reaches the caller: the other opener's marker is read.
+    from bmlib.library import library as opening
+
+    real = opening.write_once
+
+    def race(path: Path, data: bytes, sha256: str) -> object:
+        path.write_text(json.dumps({"format": "bmlib-library", "version": version}), "utf-8")
+        return real(path, data, sha256)
+
+    monkeypatch.setattr(opening, "write_once", race)
+    root = tmp_path / "root"
+    root.mkdir()
+    if version == 1:
+        assert open_library(root).root == root
+    else:
+        with pytest.raises(NewerLibrary):
+            open_library(root)
+
+
 _SAMPLE = Path(__file__).parent / "fixtures" / "library" / "sample"
 
 

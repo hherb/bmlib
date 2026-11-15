@@ -75,7 +75,8 @@ pub enum LibraryError {
     /// A file exists only as an online placeholder or evicted (dataless), not
     /// yet downloaded.
     NotDownloaded {
-        /// The paper's folder.
+        /// The paper's folder; the library's own folder, as a full path, for
+        /// its marker.
         folder: String,
         /// The file.
         name: String,

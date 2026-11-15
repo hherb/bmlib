@@ -109,8 +109,9 @@ def test_save_never_overwrites_other_bytes(lib: Library) -> None:
     first = lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "t")
     target = lib.root / "papers" / first.folder / first.name
     target.write_bytes(b"planted")
-    with pytest.raises(FileClash):
+    with pytest.raises(FileClash) as err:
         lib.save(_YOU, _PAPER, _BYTES, SourceKind.PDF, "t")
+    assert (err.value.folder, err.value.name) == (first.folder, first.name)  # #755
     assert target.read_bytes() == b"planted"
     assert not _record_path(lib, _YOU, first.folder).exists()
 

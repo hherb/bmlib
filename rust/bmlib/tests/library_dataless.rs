@@ -90,6 +90,23 @@ fn an_evicted_file_and_record_read_as_not_downloaded() {
         "{err:?}"
     );
     assert!(dataless(&source), "the read downloaded it");
+    // Saving the same bytes beside it names the folder as `FileRef` does (#755).
+    let you = Installation::new("medicalfactchecker", "bbbb", "Mac").unwrap();
+    let err = lib
+        .save(
+            &you,
+            &paper,
+            b"%PDF an evicted paper",
+            SourceKind::Pdf,
+            "test",
+        )
+        .unwrap_err();
+    assert!(
+        matches!(err, LibraryError::NotDownloaded { ref folder, ref name }
+            if *folder == file.folder && *name == file.name),
+        "{err:?}"
+    );
+    assert!(dataless(&source), "the save downloaded it");
 
     let record = folder.join(RECORDS_DIR).join(who.record_file_name());
     evict(&record);
