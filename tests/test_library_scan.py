@@ -18,7 +18,10 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+import pytest
 
 from bmlib.library import (
     Installation,
@@ -114,3 +117,24 @@ def test_a_records_that_is_a_file_is_an_unreadable_folder(tmp_path: Path) -> Non
     (lib.root / "papers" / "p" / "records").write_text("x", encoding="utf-8")
     problems = lib.scan().problems
     assert [(p.kind, p.folder) for p in problems] == [("unreadable_folder", "p")]
+
+
+def test_a_non_utf8_folder_is_a_stray_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #755: Rust reads the name lossily and so finds no folder by it; Python now does the
+    # same rather than scan it. Faked, since APFS refuses such names.
+    from bmlib.library import files
+
+    (tmp_path / "lib").mkdir()
+    lib = open_library(tmp_path / "lib")
+    real = files.os.listdir
+    papers = lib.root / "papers"
+    (papers / "caf\xe9").mkdir()  # the same name, valid: the lossy name must not reach it
+    monkeypatch.setattr(
+        files.os,
+        "listdir",
+        lambda d: [os.fsdecode(b"caf\xe9")] if Path(d) == papers else real(d),
+    )
+    problems = lib.scan().problems
+    assert [(p.kind, p.name) for p in problems] == [("stray_entry", "caf�")]

@@ -168,6 +168,22 @@ def test_temp_names_of_both_languages_are_recognised() -> None:
         assert not is_temp_name(name), name
 
 
+def test_a_rust_temp_name_is_measured_in_bytes() -> None:
+    # #755: Rust cuts the 42-byte token off by bytes; 21 two-byte characters are 42 bytes.
+    assert is_temp_name("a.pdf.bmlib-tmp-uuid4hex" + "é" * 21)
+    assert not is_temp_name("a.pdf.bmlib-tmp-uuid4hex" + "é" * 42)
+
+
+def test_a_non_utf8_name_is_listed_as_rust_shows_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #755: Rust lists the lossy name (U+FFFD); a surrogate escape would make Python scan a
+    # folder Rust reports as a stray entry. Faked, since APFS refuses such names.
+    names = [os.fsdecode(b"caf\xe9"), "b"]
+    monkeypatch.setattr(files_module.os, "listdir", lambda _: names)
+    assert list_names(tmp_path) == ["b", "caf�"]
+
+
 @pytest.mark.skipif(os.name == "nt", reason="a directory cannot be opened to sync on Windows")
 @pytest.mark.parametrize("platform", ["darwin", "linux"])
 def test_sync_dir_flushes_the_directory_itself(

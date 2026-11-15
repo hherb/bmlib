@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use super::error::LibraryError;
 use super::MAX_LABEL_CHARS;
 use crate::publications::storage::normalize_doi;
+use crate::pyvalue::python_strip;
 
 /// What a stored source file is. The names are the hand-off format's, and
 /// serde writes them the same ([`SourceKind::as_str`]).
@@ -110,7 +111,7 @@ fn bad(field: &'static str, value: &str) -> LibraryError {
 /// A PMID in canonical form: ASCII digits without leading zeros, or a preprint's
 /// `PPR` (any case in, upper case out) and digits. Surrounding space is trimmed.
 fn canonical_pmid(raw: &str) -> Result<String, LibraryError> {
-    let s = raw.trim();
+    let s = python_strip(raw);
     if let Some(rest) = s
         .get(..3)
         .filter(|p| p.eq_ignore_ascii_case("ppr"))
@@ -129,7 +130,7 @@ fn canonical_pmid(raw: &str) -> Result<String, LibraryError> {
 /// A PMCID in canonical form, `PMC` and digits without leading zeros; the `PMC`
 /// prefix may be missing or in any case. Surrounding space is trimmed.
 fn canonical_pmcid(raw: &str) -> Result<String, LibraryError> {
-    let s = raw.trim();
+    let s = python_strip(raw);
     let digits = match s.get(..3) {
         Some(p) if p.eq_ignore_ascii_case("pmc") => &s[3..],
         _ => s,
@@ -161,7 +162,7 @@ impl PaperIds {
     ) -> Result<Self, LibraryError> {
         /// `v` unless it is absent or only whitespace.
         fn present(v: Option<&str>) -> Option<&str> {
-            v.filter(|s| !s.trim().is_empty())
+            v.filter(|s| !python_strip(s).is_empty())
         }
         Ok(Self {
             pmid: present(pmid).map(canonical_pmid).transpose()?,

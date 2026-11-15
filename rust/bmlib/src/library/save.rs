@@ -148,7 +148,9 @@ fn keep_aside(path: &Path) -> Result<PathBuf, LibraryError> {
         } else {
             format!("{CORRUPT_SUFFIX}-{n}")
         };
-        let aside = PathBuf::from(format!("{}{suffix}", path.display()));
+        let mut aside = path.as_os_str().to_owned();
+        aside.push(&suffix);
+        let aside = PathBuf::from(aside);
         if !exists(&aside).map_err(|e| io_error(&aside, &e, false))? {
             rename(path, &aside).map_err(|e| io_error(path, &e, true))?;
             return Ok(aside);

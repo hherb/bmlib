@@ -158,7 +158,7 @@ pub enum Problem {
         name: String,
     },
     /// An entry of `papers/` that is not a folder, a symbolic link to one
-    /// included.
+    /// included, or whose name is not UTF-8 (shown lossily).
     StrayEntry {
         /// The entry.
         name: String,

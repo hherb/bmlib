@@ -44,6 +44,7 @@ use std::collections::BTreeMap;
 use crate::db::operations::{execute, executemany, fetch_all, fetch_one};
 use crate::db::{Db, DbError, Value as DbValue};
 use crate::publications::models::{now_utc, AuthorAffiliation, FullTextSource, Grant, Publication};
+use crate::pyvalue::python_strip;
 
 /// Prefixes sources sometimes prepend to a DOI.
 ///
@@ -69,7 +70,8 @@ pub const DOI_PREFIXES: [&str; 5] = [
 #[must_use]
 pub fn normalize_doi(doi: Option<&str>) -> Option<String> {
     let doi = doi.filter(|d| !d.is_empty())?;
-    let mut d = doi.trim();
+    // Python's `str.strip()`, U+001C-U+001F included (#755).
+    let mut d = python_strip(doi);
     let lowered = d.to_lowercase();
     for prefix in DOI_PREFIXES {
         if lowered.starts_with(prefix) {
@@ -77,7 +79,7 @@ pub fn normalize_doi(doi: Option<&str>) -> Option<String> {
             break;
         }
     }
-    let d = d.trim().to_lowercase();
+    let d = python_strip(d).to_lowercase();
     if d.is_empty() {
         None
     } else {
@@ -89,7 +91,7 @@ pub fn normalize_doi(doi: Option<&str>) -> Option<String> {
 #[must_use]
 pub fn normalize_pmid(pmid: Option<&str>) -> Option<String> {
     let pmid = pmid.filter(|p| !p.is_empty())?;
-    let trimmed = pmid.trim();
+    let trimmed = python_strip(pmid);
     if trimmed.is_empty() {
         None
     } else {

@@ -27,10 +27,11 @@ from bmlib.library.constants import (
 )
 from bmlib.library.ids import PaperInfo, _is_control, is_bidi_control
 
+# CPython 3.13's ``ntpath.isreserved`` list: the superscript digits and the console names count.
 _RESERVED = frozenset(
-    ["CON", "PRN", "AUX", "NUL"]
-    + [f"COM{i}" for i in range(1, 10)]
-    + [f"LPT{i}" for i in range(1, 10)]
+    ["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"]
+    + [f"COM{c}" for c in "123456789\u00b9\u00b2\u00b3"]
+    + [f"LPT{c}" for c in "123456789\u00b9\u00b2\u00b3"]
 )
 _FORBIDDEN = frozenset('<>:"/\\|?*')
 
@@ -110,8 +111,9 @@ def _named(info: PaperInfo, n: int) -> str:
 
 
 def is_reserved(name: str) -> bool:
-    """True when the part before the first dot is a Windows device name."""
-    return name.split(".")[0].upper() in _RESERVED
+    """True when the part before the first dot, trailing spaces dropped, is a Windows device
+    name (``nul .txt`` opens the device too)."""
+    return name.split(".")[0].rstrip(" ").upper() in _RESERVED
 
 
 def _fit(body: str, suffix: str, limit: int) -> str:

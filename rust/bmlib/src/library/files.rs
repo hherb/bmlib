@@ -885,6 +885,19 @@ mod tests {
     }
 
     #[test]
+    fn a_temp_token_is_measured_in_bytes() {
+        // #755: Python's twin counts the same way; 21 two-byte characters are 42 bytes.
+        assert!(is_temp_name(&format!(
+            "a.pdf{TEMP_SUFFIX}{}",
+            "é".repeat(21)
+        )));
+        assert!(!is_temp_name(&format!(
+            "a.pdf{TEMP_SUFFIX}{}",
+            "é".repeat(42)
+        )));
+    }
+
+    #[test]
     fn sha256_hex_is_lowercase_hex() {
         assert_eq!(
             sha256_hex(b"abc"),

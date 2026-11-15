@@ -153,6 +153,51 @@
     "doi": null,
     "pmcid": null
    }
+  },
+  {
+   "name": "pmid edged by U+001C is trimmed (Python's str.strip, #755)",
+   "pmid": "\u001c123",
+   "expect": {
+    "pmid": "123",
+    "doi": null,
+    "pmcid": null
+   }
+  },
+  {
+   "name": "pmid of only U+001F is blank",
+   "pmid": "\u001f",
+   "expect": {
+    "pmid": null,
+    "doi": null,
+    "pmcid": null
+   }
+  },
+  {
+   "name": "doi edged by U+001E is trimmed",
+   "doi": "10.1/x\u001e",
+   "expect": {
+    "pmid": null,
+    "doi": "10.1/x",
+    "pmcid": null
+   }
+  },
+  {
+   "name": "pmcid edged by U+001D is trimmed",
+   "pmcid": "\u001dPMC12",
+   "expect": {
+    "pmid": null,
+    "doi": null,
+    "pmcid": "PMC12"
+   }
+  },
+  {
+   "name": "pmid trims an ideographic space",
+   "pmid": " 123　",
+   "expect": {
+    "pmid": "123",
+    "doi": null,
+    "pmcid": null
+   }
   }
  ],
  "installations": [
@@ -574,6 +619,46 @@
    "doi": null,
    "pmcid": null,
    "expect": "Études cliniques de la créatinine chez les âgés, une revue é (PMID 1)"
+  },
+  {
+   "name": "a device name with a space before the dot is prefixed",
+   "year": null,
+   "first_author": null,
+   "title": "Con .x",
+   "pmid": "1",
+   "doi": null,
+   "pmcid": null,
+   "expect": "_Con .x (PMID 1)"
+  },
+  {
+   "name": "a superscript COM device name is prefixed",
+   "year": null,
+   "first_author": null,
+   "title": "COM¹.x",
+   "pmid": "1",
+   "doi": null,
+   "pmcid": null,
+   "expect": "_COM¹.x (PMID 1)"
+  },
+  {
+   "name": "a console device name is prefixed",
+   "year": null,
+   "first_author": null,
+   "title": "conin$.log",
+   "pmid": "1",
+   "doi": null,
+   "pmcid": null,
+   "expect": "_conin$.log (PMID 1)"
+  },
+  {
+   "name": "an author edged by U+001C loses it before the 40-character cut",
+   "year": 2024,
+   "first_author": "\u001cAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+   "title": "T",
+   "pmid": "1",
+   "doi": null,
+   "pmcid": null,
+   "expect": "2024 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA – T (PMID 1)"
   }
  ],
  "records": [
@@ -3868,6 +3953,41 @@
     {
       "name": "a leading dot",
       "value": ".hidden",
+      "expect": "ok"
+    },
+    {
+      "name": "a device name with a space before the dot",
+      "value": "CON .txt",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a lower-case device name with spaces before the dot",
+      "value": "nul  .x",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a superscript COM device name",
+      "value": "COM¹",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a superscript LPT device name before a dot",
+      "value": "lpt³.log",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a console device name",
+      "value": "CONOUT$",
+      "expect": "bad_name"
+    },
+    {
+      "name": "a device name followed by a space and a word",
+      "value": "con x.txt",
+      "expect": "ok"
+    },
+    {
+      "name": "COM0 is not on the list",
+      "value": "COM0",
       "expect": "ok"
     }
   ],

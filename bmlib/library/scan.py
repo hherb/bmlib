@@ -100,7 +100,8 @@ class Problem:
     - ``conflicting_ids`` (``folder``, ``field``): two records hold different values for it;
       both count for :func:`find` and :func:`group`;
     - ``unrecorded_file`` (``folder``, ``name``);
-    - ``stray_entry`` (``name``): not a folder, a symbolic link to one included.
+    - ``stray_entry`` (``name``): not a folder, a symbolic link to one included, or a name
+      that is not UTF-8 (shown lossily).
 
     Fields a kind does not use are ``None``.
     """

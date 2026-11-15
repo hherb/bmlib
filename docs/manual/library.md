@@ -139,9 +139,10 @@ A `FileRef` is `(folder, name, sha256, kind)`.
   reused. A folder whose records are all from a newer layout is not reused and
   not skipped: `save` fails with `NewerRecord` rather than make a second,
   silent copy.
-- **Names are checked.** A Windows device name (`con`, `nul`, `com1` …) as a
-  folder name gets a `_` in front, after the length is fitted. A folder or file
-  name that is not one plain path component is `BadName`.
+- **Names are checked.** A Windows device name (`con`, `nul`, `com1`, `com¹`,
+  `conin$` …, also with spaces before the dot, `nul .txt`) as a folder name
+  gets a `_` in front, after the length is fitted. A folder or file name that is
+  not one plain path component is `BadName`. *(unreleased)*
 - **iCloud placeholders.** A file shown as `.name.icloud` is online-only.
   `read` reports it as `NotDownloaded` rather than `Missing`, and `open` counts
   it as a user's file, so a library is never started in a folder of someone's
@@ -198,7 +199,7 @@ versions, so some will be real).
 | `"conflicting_ids"` | Two records of one folder hold different values for one identifier (`field`); both count for `find` and `group` |
 | `"unrecorded_file"` | A source file no record lists (a crash, or a record lost) |
 | `"leftover_temp"` | A temporary of an atomic write, in flight or left by a crash; never deleted, and never a user's file |
-| `"stray_entry"` | Something in `papers/` that is not a folder, a symbolic link to one included |
+| `"stray_entry"` | Something in `papers/` that is not a folder, a symbolic link to one included, or whose name is not UTF-8 *(unreleased)* |
 
 ## Errors and what to tell the user
 

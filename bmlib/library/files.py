@@ -123,10 +123,14 @@ def io_error(path: Path, err: OSError, *, write: bool) -> LibraryError:
 def _entries(directory: Path) -> list[str]:
     """Every name in *directory*, sorted by its raw bytes.
 
-    A name that is not UTF-8 comes back surrogate-escaped (``os.listdir``'s way); it is only
-    ever shown or compared, never turned into a path again except through ``os.fsencode``.
+    A name that is not UTF-8 comes back lossily, U+FFFD for each bad sequence, as Rust's
+    ``entries`` shows it: it is only ever shown or compared, and joined to a path it names
+    nothing, so a scan reports such a folder as a stray entry in both languages (#755).
     """
-    return sorted(os.listdir(directory), key=os.fsencode)
+    # shortcut: on Windows a lone surrogate gives three U+FFFD here and one in Rust; settle it
+    # with the Windows build (HANDOVER's owed list).
+    raw = sorted(os.fsencode(n) for n in os.listdir(directory))
+    return [b.decode("utf-8", errors="replace") for b in raw]
 
 
 _HEX = frozenset("0123456789abcdef")
@@ -139,10 +143,10 @@ def is_temp_name(name: str) -> bool:
     ``.{name}.{32 hex}.tmp``. One is there while a write is in flight, and stays after a
     crash; it is never a user's file and never a paper's.
     """
-    head = name[: len(name) - RUST_TEMP_TOKEN_LEN]
-    rust = len(name) > len(RUST_TEMP_SUFFIX) + RUST_TEMP_TOKEN_LEN and head.endswith(
-        RUST_TEMP_SUFFIX
-    )
+    # In bytes, as Rust counts it: the token's 42 are bytes, not characters (#755).
+    b = name.encode("utf-8", errors="surrogatepass")
+    suffix = RUST_TEMP_SUFFIX.encode("ascii")
+    rust = len(b) > len(suffix) + RUST_TEMP_TOKEN_LEN and b[:-RUST_TEMP_TOKEN_LEN].endswith(suffix)
     stem = name[: -len(PY_TEMP_EXT)]
     tail = stem[-PY_TEMP_HEX - 1 :]
     python = (

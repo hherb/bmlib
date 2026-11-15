@@ -31,6 +31,21 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **The library's Windows device names, whitespace and non-UTF-8 names agree
+  across the languages** (#755 items 3, 5 and 6; both languages). A device
+  name followed by spaces before the dot (`CON .txt`, which Windows opens as
+  the device), `COM¹`-`COM³`, `LPT¹`-`LPT³`, `CONIN$` and `CONOUT$` are now
+  refused by `component()` and get `folder_name`'s `_` prefix: CPython 3.13's
+  `ntpath.isreserved` list and rule. **A folder name can move**, only for a
+  paper whose name starts with such a word followed by a dot. Rust now trims
+  identifiers and the name's author and title as Python's `str.strip()` does,
+  U+001C-U+001F included, so a PMID edged by one is the same PMID in both. In
+  Python, a non-UTF-8 name in a library folder is read lossily (U+FFFD), as
+  Rust reads it, so such a paper folder is a `stray_entry` in both scans where
+  Python used to scan it. The temporary-name check counts Rust's 42-character
+  token in bytes, as Rust does. Pinned by 16 new cases in
+  `tests/fixtures/library_cases.json`. A test's `os.geteuid()` no longer runs
+  at collection on Windows.
 - **`FileClash.folder` is the paper folder's bare name** (#755; both
   languages, and bmlib-ffi). It held the folder's full path
   (`/…/papers/<folder>`), where `Missing`, `DigestMismatch` and the record
