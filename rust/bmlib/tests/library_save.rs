@@ -837,6 +837,29 @@ fn reading_a_jats_for_its_identifiers_repeats_no_audit() {
 }
 
 #[test]
+fn reading_a_jats_for_its_identifiers_logs_no_debug_line_either() {
+    // Python's `warn=False` returns before `_report_zero_authors`, so its
+    // DEBUG line for an author-less article is skipped as well (#782).
+    const JATS_LOG: &str = "bmlib.fulltext.jats_parser";
+    const AUTHOR_LESS: &[u8] = b"<article><front><article-meta>\
+<article-id pub-id-type=\"doi\">10.1/a</article-id></article-meta></front>\
+<body><p>t</p></body></article>";
+    common::log_capture::start();
+    bmlib::fulltext::parse(std::str::from_utf8(AUTHOR_LESS).unwrap()).unwrap();
+    let control = common::log_capture::take(JATS_LOG);
+    let levels: Vec<log::Level> = control.iter().map(|r| r.level).collect();
+    assert_eq!(levels, [log::Level::Debug], "{control:?}");
+    let (dir, lib) = scratch("foreign-quiet-debug");
+    lib.save(&me(), &paper(), AUTHOR_LESS, SourceKind::Jats, "test")
+        .unwrap();
+    lib.save(&me(), &paper(), BYTES, SourceKind::Pdf, "test")
+        .unwrap();
+    let logged = common::log_capture::take(JATS_LOG);
+    assert!(logged.is_empty(), "{logged:?}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn foreign_jats_names_the_file() {
     let e = LibraryError::ForeignJats {
         folder: Some("F".into()),

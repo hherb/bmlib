@@ -215,6 +215,7 @@ fn the_audit_reaches_the_ffi_report_unchanged() {
         article_label: "PMC123".into(),
         diagnostics: vec!["a diagnostic".into()],
         warnings: vec!["a warning".into(), "another warning".into()],
+        debug: vec!["a debug line".into()],
     };
     let ffi = JatsParseReport::from(core.clone());
     assert_eq!(ffi.article_label, "PMC123");
@@ -223,6 +224,7 @@ fn the_audit_reaches_the_ffi_report_unchanged() {
         ffi.warnings,
         vec!["a warning".to_string(), "another warning".to_string()]
     );
+    assert_eq!(ffi.debug, vec!["a debug line".to_string()]);
 }
 
 /// The corpus bmlib's own reader is held to Python on.
@@ -284,6 +286,8 @@ fn the_audited_parse_returns_the_lines_bmlib_counted() {
     );
     assert!(report.diagnostics.is_empty());
     assert_eq!(report.warnings, core.warnings);
+    assert!(!report.debug.is_empty(), "the fixture names no contributor");
+    assert_eq!(report.debug, core.debug);
     assert_eq!(report.article_label, core.article_label);
     let plain = parse_jats(REFUSED_COLSPAN.into()).expect("parses");
     assert_eq!(json(&report.article), json(&plain));

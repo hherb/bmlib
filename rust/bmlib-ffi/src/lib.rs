@@ -276,8 +276,9 @@ pub struct JatsArticle {
     pub funding_awards: Vec<JatsFundingAward>,
 }
 
-/// A parse with its audit: the counted publisher losses (`warnings`) and the
-/// reader-defect diagnostics (`diagnostics`, empty on a correct reader).
+/// A parse with its audit: the counted publisher losses (`warnings`), the
+/// lines bmlib logs at DEBUG (`debug`) and the reader-defect diagnostics
+/// (`diagnostics`, empty on a correct reader).
 #[derive(Debug, Clone, uniffi::Record)]
 #[cfg_attr(test, derive(serde::Serialize))]
 pub struct JatsParseReport {
@@ -290,6 +291,9 @@ pub struct JatsParseReport {
     pub diagnostics: Vec<String>,
     /// Counted losses that are the publisher's deposit.
     pub warnings: Vec<String>,
+    /// The lines bmlib logs at DEBUG (#782): evidence, not a loss, such as an
+    /// article whose contributor list names nobody.
+    pub debug: Vec<String>,
 }
 
 /// Why a parse failed.
@@ -546,12 +550,14 @@ impl From<bmlib::fulltext::JatsReport> for JatsParseReport {
             article_label,
             diagnostics,
             warnings,
+            debug,
         } = r;
         JatsParseReport {
             article: article.into(),
             article_label,
             diagnostics,
             warnings,
+            debug,
         }
     }
 }
@@ -743,9 +749,9 @@ where
 ///
 /// bmlib counts what a parse loses (refused table spans, dropped formulas,
 /// unfiled terms…) and checks itself for reader defects. This function returns
-/// the article alone: those lines go only to the process's stderr, which an
-/// iOS app does not see outside an attached debugger and Android discards. Use
-/// [`parse_jats_audited`] to receive them.
+/// the article alone: those lines go only to the `log` facade, which records
+/// nothing unless the host process installs a logger (bmlib-ffi installs none).
+/// Use [`parse_jats_audited`] to receive them.
 ///
 /// # Errors
 ///
@@ -761,7 +767,7 @@ pub fn parse_jats(xml: String) -> Result<JatsArticle, JatsError> {
 ///
 /// `known_pmc_id` is the id the caller already holds, or `""` for none; a bare
 /// number is `PMC`-prefixed, and it wins over an id the document deposits. The
-/// audit's lines are also written to stderr, as for [`parse_jats`].
+/// audit's lines are also sent to the `log` facade, as for [`parse_jats`].
 ///
 /// # Errors
 ///
