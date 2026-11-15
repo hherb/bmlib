@@ -28,6 +28,8 @@
 //! `JATSReferenceInfo::formatted_citation` — rather than copies, so a
 //! divergence between the library and the oracle shows up as a diff.
 
+mod common;
+
 use bmlib::fulltext::jats_reader::{author_full_name, author_is_named, parse, parse_audited};
 use bmlib::fulltext::models::{
     join_citation_parts, JATSArticle, JATSAuthorInfo, JATSBodySection, JATSReferenceInfo,
@@ -1200,6 +1202,53 @@ fn the_zero_author_detector_counts_only_the_articles_contributors() {
             .any(|line| line.contains("contributor list named 1 contributor(s)")),
         "the article's own list names one: {:?}",
         report.warnings
+    );
+}
+
+/// **An article whose contributor list names nobody is logged at DEBUG** (#782),
+/// as Python's `_report_zero_authors` logs it: a correction or a notice is
+/// ordinarily author-less, so it is evidence, not a "look at this". One whose
+/// list names people and still yields no authors stays a warning.
+#[test]
+fn an_author_less_article_is_logged_at_debug() {
+    let quiet = "<article><front><article-meta><article-id pub-id-type=\"doi\">10.1/a\
+        </article-id></article-meta></front></article>";
+    common::log_capture::start();
+    let report = parse_audited(quiet, "").expect("the fixture parses");
+    assert!(report.article.authors.is_empty());
+    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    assert_eq!(
+        report.debug,
+        [
+            "produced no authors, and its contributor list named no contributor via <name>, \
+          <string-name>, <collab> or <on-behalf-of>"
+        ]
+    );
+    let logged = common::log_capture::take("bmlib.fulltext.jats_parser");
+    assert_eq!(logged.len(), 1, "{logged:?}");
+    assert_eq!(logged[0].level, log::Level::Debug);
+    assert!(
+        logged[0].message.ends_with(&report.debug[0]),
+        "{:?}",
+        logged[0].message
+    );
+
+    let loud = "<article><front><article-meta><contrib-group>\
+        <contrib contrib-type=\"editor\"><name><surname>Editor</surname></name></contrib>\
+        </contrib-group></article-meta></front></article>";
+    common::log_capture::start();
+    let report = parse_audited(loud, "").expect("the fixture parses");
+    assert!(report.article.authors.is_empty());
+    assert!(report.debug.is_empty(), "{:?}", report.debug);
+    let logged = common::log_capture::take("bmlib.fulltext.jats_parser");
+    assert_eq!(logged.len(), 1, "{logged:?}");
+    assert_eq!(logged[0].level, log::Level::Warn);
+    assert!(
+        logged[0].message.ends_with(
+            "contributor list named 1 contributor(s): they were most likely routed elsewhere"
+        ),
+        "{:?}",
+        logged[0].message
     );
 }
 

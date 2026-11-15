@@ -215,6 +215,7 @@ fn the_audit_reaches_the_ffi_report_unchanged() {
         article_label: "PMC123".into(),
         diagnostics: vec!["a diagnostic".into()],
         warnings: vec!["a warning".into(), "another warning".into()],
+        debug: vec!["a debug line".into()],
     };
     let ffi = JatsParseReport::from(core.clone());
     assert_eq!(ffi.article_label, "PMC123");

@@ -1,33 +1,29 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-15 (**#780, PR #779's review follow-ups, on
-`fix/library-quiet-id-parse-780`**). Merged since the last update: #779
-(#766, below). **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge
-of #736) and **the Rust crate 0.4.0 on crates.io** from the same commit;
-everything since is under Unreleased._
+_Last updated: 2026-11-15 (**#782, on `fix/rust-zero-author-debug-782`**).
+Merged since the last update: #781 (#780: a library save repeats no parse
+warnings; see its CHANGELOG entry). **0.13.0 is on PyPI** (tag `v0.13.0` on
+`161849c0`, the merge of #736) and **the Rust crate 0.4.0 on crates.io** from
+the same commit; everything since is under Unreleased._
 
-## This session: a library save repeats no parse warnings (#780)
+## This session: Rust logs an author-less article at DEBUG (#782)
 
-Both languages. `save` and `record_use` read the identifiers of every JATS in
-the folder they write to (#766), and that read logged the parser's audit each
-time. It now reads by the same parse without the audit's warnings (Python
-`JATSParser._own_identifiers`, Rust's crate-private
-`jats_reader::parse_unwarned`); its ERROR lines, which say bmlib misread the
-document, are still logged. The article's warnings are logged when it is
-parsed to be shown. Item 2 of the issue, "only the target folder is checked",
-is now pinned by `test_only_the_folder_written_to_is_checked` in
-`test_library_save.py` and `only_the_folder_written_to_is_checked` in
-`library_save.rs`, for `save` and `record_use`. The foreign JATS's folder
-("Zebra", named to sort last) joins the paper's group only through a second
-installation's record, in the PDF's folder, that carries the pmcid of the
-Zebra folder's record. The new tests were mutation-checked in both languages.
-The renderer digests were re-pinned without a version bump, because neither
-`to_html()` nor the canonical JATS text can move. `save`'s docstring and both
-manuals now say "the first of the paper's folders `find` returns": the old
-wording, "the first folder holding a record that shares an identifier", was
-wrong for a folder linked only through another. The review found Rust warning
-on every author-less article where Python logs at DEBUG, since the port:
-filed as **#782**.
+Rust's reader warned on every article that parsed to no authors, where
+Python's `_report_zero_authors` logs one whose contributor list names nobody
+at DEBUG. That line moved from `JatsReport::warnings` to a new public field,
+`JatsReport::debug`, which `parse_audited` logs at DEBUG. The "most likely
+routed elsewhere" line stays a warning. **A struct literal or exhaustive
+destructuring of `JatsReport` must name `debug`** (crate CHANGELOG, *Changed —
+breaking*). bmlib-ffi drops it (`debug: _`): an app sees the warnings, and the
+FFI forwards no log records (#694). The manual's `parse_audited` example now
+asserts the line is in `debug`. The new test,
+`an_author_less_article_is_logged_at_debug`, was mutation-checked: logging the
+line at WARN again fails it. Python's two zero-author lines gain the colon of
+every other parser line ("JATS parse of X: produced no authors…"), so both
+languages write the same text, pinned in
+`test_the_quiet_branch_reports_its_evidence_not_a_conclusion`
+(mutation-checked); the renderer digests were re-pinned without a version
+bump, since only log text moved.
 
 ## Merged: no file beside another paper's JATS (#766, PR #779)
 
@@ -139,7 +135,7 @@ use to share one folder of papers. Built in both languages, in a worktree
 - **Open library issues**: #778 (PR #777's deferrals), #762 (a non-UTF-8
   library JATS, Python serves it, Rust refuses; the #766 check inherits the
   gap), #765 (the FFI runs no `save_scenarios`), #755 (1a's review
-  follow-ups); #780 closed by this session's branch.
+  follow-ups).
 - **Left open on purpose**: separate processes of one installation writing one
   record (out of scope; an app has one process per installation).
 
@@ -272,10 +268,10 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests on `fix/library-quiet-id-parse-780`** (2026-11-15, PostgreSQL 18 DSN
-  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,046 passed + 22
-  skipped (11,068 collected); Rust `cargo test -p bmlib` and `-p bmlib-ffi`
-  1,862 passed, `cargo clippy --workspace --tests` and `cargo fmt --check`
+- **Tests on `fix/rust-zero-author-debug-782`** (2026-11-15, PostgreSQL 18 DSN
+  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,052 passed + 22
+  skipped (11,074 collected); Rust `cargo test -p bmlib` and `-p bmlib-ffi`
+  1,863 passed, `cargo clippy --workspace --tests` and `cargo fmt --check`
   clean; the Rust oracle 44 clean. Other recipes: `postgres_live.rs` with `BMLIB_PG_TESTS=1
   BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`; `--features embed` and the
   embedder's live tests need `BMLIB_EMBED_MODEL` (the GGUFs are in
@@ -304,8 +300,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**124 open** (123 after this branch merges, #780 being its issue): **#782**
-(Rust's author-less WARN, above), the library's #755, #762, #765 and **#778**
+**123 open** (122 after this branch merges, #782 being its issue): the library's #755, #762, #765 and **#778**
 (PR #777's review follow-ups, above), **#776** (PR #775's MECA follow-ups) and
 **#759** (measure the `/details` settle period) are the newest; #734, #733,
 #731, #730, #726, #725, #722, #718, #716 and #694 come before them; #577 stays

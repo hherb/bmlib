@@ -9333,7 +9333,7 @@ def _report_zero_authors(handler: _JATSHandler, article: str) -> None:
     """
     if handler.front_contributor_name_count:
         logger.warning(
-            "JATS parse of %s produced no authors, but its contributor list named "
+            "JATS parse of %s: produced no authors, but its contributor list named "
             "%d contributor(s): they were most likely routed elsewhere",
             article,
             handler.front_contributor_name_count,
@@ -9344,7 +9344,7 @@ def _report_zero_authors(handler: _JATSHandler, article: str) -> None:
         # was checked; "genuinely author-less" is an inference, and it was
         # wrong for every spelling this counter did not yet cover.
         logger.debug(
-            "JATS parse of %s produced no authors, and its contributor list named no "
+            "JATS parse of %s: produced no authors, and its contributor list named no "
             "contributor via <name>, <string-name>, <collab> or <on-behalf-of>",
             article,
         )

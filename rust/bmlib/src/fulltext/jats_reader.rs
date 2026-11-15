@@ -443,6 +443,10 @@ pub struct JatsReport {
     /// in the reader: refused colspans, contributors naming nobody, formulas
     /// that reached nowhere, and the rest. Empty on a clean parse.
     pub warnings: Vec<String>,
+    /// The lines Python logs at DEBUG rather than WARNING: today only "produced
+    /// no authors" for an article whose contributor list names nobody, which a
+    /// correction or a notice ordinarily is (#782). Logged at DEBUG.
+    pub debug: Vec<String>,
 }
 
 /// The full name Python's `JATSAuthorInfo.full_name` property derives.
@@ -499,10 +503,10 @@ pub fn parse_with_pmc_id(xml: &str, known_pmc_id: &str) -> Result<JATSArticle, J
 /// Parse a JATS document and return the article **and** the audit.
 ///
 /// The two `parse` functions are this one with the audit logged and dropped.
-/// Every diagnostic is logged at ERROR and every counted loss at WARNING, under
-/// Python's logger name `bmlib.fulltext.jats_parser`; a caller wanting the
-/// lines rather than the side effect reads them from the returned
-/// [`JatsReport`].
+/// Every diagnostic is logged at ERROR, every counted loss at WARNING and every
+/// [`JatsReport::debug`] line at DEBUG, under Python's logger name
+/// `bmlib.fulltext.jats_parser`; a caller wanting the lines rather than the
+/// side effect reads them from the returned [`JatsReport`].
 ///
 /// # Errors
 ///
@@ -511,6 +515,13 @@ pub fn parse_audited(xml: &str, known_pmc_id: &str) -> Result<JatsReport, JatsEr
     let report = parse_unwarned(xml, known_pmc_id)?;
     for message in &report.warnings {
         log::warn!(
+            target: "bmlib.fulltext.jats_parser",
+            "JATS parse of {}: {}",
+            report.article_label, message
+        );
+    }
+    for message in &report.debug {
+        log::debug!(
             target: "bmlib.fulltext.jats_parser",
             "JATS parse of {}: {}",
             report.article_label, message
@@ -4525,22 +4536,28 @@ impl Handler {
                 self.non_publication_years_refused
             ));
         }
-        if self.build_authors().is_empty() {
-            if self.front_contributor_name_count != 0 {
-                lines.push(format!(
-                    "produced no authors, but its contributor list named {} contributor(s): they \
-                     were most likely routed elsewhere",
-                    self.front_contributor_name_count
-                ));
-            } else {
-                lines.push(
-                    "produced no authors, and its contributor list named no contributor via \
-                     <name>, <string-name>, <collab> or <on-behalf-of>"
-                        .to_string(),
-                );
-            }
+        if self.front_contributor_name_count != 0 && self.build_authors().is_empty() {
+            lines.push(format!(
+                "produced no authors, but its contributor list named {} contributor(s): they \
+                 were most likely routed elsewhere",
+                self.front_contributor_name_count
+            ));
         }
         lines
+    }
+
+    /// The lines Python's `_report_zero_authors` logs at DEBUG: its evidence,
+    /// not a conclusion, for an article whose contributor list names nobody.
+    fn debug_lines(&self) -> Vec<String> {
+        if self.front_contributor_name_count == 0 && self.build_authors().is_empty() {
+            vec![
+                "produced no authors, and its contributor list named no contributor via \
+                  <name>, <string-name>, <collab> or <on-behalf-of>"
+                    .to_string(),
+            ]
+        } else {
+            Vec::new()
+        }
     }
 
     /// Build the article, snapshot the routing state, and report.
@@ -4574,6 +4591,7 @@ impl Handler {
             article_label: self.describe_article(),
             unwind,
             warnings: self.warning_lines(),
+            debug: self.debug_lines(),
         }
     }
 }

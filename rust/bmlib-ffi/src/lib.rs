@@ -546,6 +546,10 @@ impl From<bmlib::fulltext::JatsReport> for JatsParseReport {
             article_label,
             diagnostics,
             warnings,
+            // The DEBUG lines (#782): an app is shown the warnings, and the
+            // FFI forwards no log records (#694), so a DEBUG line has nowhere
+            // to go.
+            debug: _,
         } = r;
         JatsParseReport {
             article: article.into(),

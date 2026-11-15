@@ -8,6 +8,13 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **Rust logs an author-less article at DEBUG, as Python does** (#782). The
+  port warned on every article that parsed to no authors. It now warns only
+  where the article's contributor list names people, as Python's
+  `_report_zero_authors` does; the quiet line is in the new
+  `JatsReport::debug`. Python's two zero-author lines now read "JATS parse of
+  X: produced no authors…", with the colon every other line of the parser's,
+  and Rust's, carries; their levels are unchanged.
 - **A library save no longer repeats a JATS's parse warnings** (#780; both
   languages). `save` and `record_use` read the identifiers of the JATS being
   saved and of every JATS in the folder they write to, and that read logged
