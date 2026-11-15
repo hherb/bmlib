@@ -73,8 +73,8 @@ The Python library is documented separately, in the repository's
   Python). `Library::save` and `Library::record_use` read the identifiers of
   the JATS being saved and of each folder JATS through `jats_reader::parse`,
   which logs the audit, so an article's warnings came again on every save
-  beside it. They now read through the crate-private `parse_unlogged`; the
-  identifiers are unchanged.
+  beside it. They now read through the crate-private `parse_unwarned`, which
+  still logs the audit's diagnostics at ERROR; the identifiers are unchanged.
 
 ## [0.4.0] - 2026-11-10
 

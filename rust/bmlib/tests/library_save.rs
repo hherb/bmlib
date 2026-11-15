@@ -763,7 +763,8 @@ fn saving_an_evicted_jats_again_restores_it() {
 fn only_the_folder_written_to_is_checked() {
     // The paper's folders are a linked group; a foreign JATS in one the save
     // does not choose must not stop it, or one bad folder would block every
-    // folder of the paper (#780).
+    // folder of the paper (#780). "Zebra" sorts after "2024 Smith", so
+    // the save's first folder is the PDF's.
     let (dir, lib) = scratch("foreign-target-only");
     let pdf = lib
         .save(&me(), &paper(), BYTES, SourceKind::Pdf, "test")
@@ -796,13 +797,17 @@ fn only_the_folder_written_to_is_checked() {
         )
         .unwrap();
     assert_eq!(saved.folder, pdf.folder);
+    // Nor does recording a use there.
+    lib.record_use(&you(), &other_doi(), &pdf).unwrap();
     let _ = fs::remove_dir_all(&dir);
 }
 
 // A JATS whose parse warns (a colspan past the bound), so a repeated audit
-// would show.
+// would show. It names an author, so the colspan is its one warning.
 const JATS_WARNS: &[u8] = b"<article><front><article-meta>\
-<article-id pub-id-type=\"doi\">10.1/a</article-id></article-meta></front>\
+<article-id pub-id-type=\"doi\">10.1/a</article-id><contrib-group>\
+<contrib contrib-type=\"author\"><name><surname>Smith</surname></name></contrib>\
+</contrib-group></article-meta></front>\
 <body><table-wrap><table><tr><td colspan=\"100000\">x</td></tr></table>\
 </table-wrap></body></article>";
 
@@ -815,7 +820,7 @@ fn reading_a_jats_for_its_identifiers_repeats_no_audit() {
     bmlib::fulltext::parse(std::str::from_utf8(JATS_WARNS).unwrap()).unwrap();
     let control = common::log_capture::take(JATS_LOG);
     let levels: Vec<log::Level> = control.iter().map(|r| r.level).collect();
-    assert!(levels.contains(&log::Level::Warn), "{control:?}");
+    assert_eq!(levels, [log::Level::Warn], "{control:?}");
     let (dir, lib) = scratch("foreign-quiet");
     let jats = lib
         .save(&me(), &paper(), JATS_WARNS, SourceKind::Jats, "test")

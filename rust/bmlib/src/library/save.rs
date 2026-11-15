@@ -360,13 +360,13 @@ fn locate(root: &Path, file: &FileRef) -> Result<(PathBuf, PathBuf), LibraryErro
 }
 
 /// A JATS's own identifiers as the full-text service reads them (its reader,
-/// without logging the parse's audit, then `library_ids`), or `None` when it is
-/// not UTF-8 or does not parse: such a file names no paper, and is warned of as
-/// `at`.
+/// without logging the parse's warnings, then `library_ids`), or `None` when it
+/// is not UTF-8 or does not parse: such a file names no paper, and is warned of
+/// as `at`.
 fn jats_ids(at: &str, bytes: &[u8]) -> Option<PaperIds> {
     let parsed = std::str::from_utf8(bytes)
         .map_err(|error| error.to_string())
-        .and_then(|xml| jats_reader::parse_unlogged(xml, "").map_err(|error| error.to_string()));
+        .and_then(|xml| jats_reader::parse_unwarned(xml, "").map_err(|error| error.to_string()));
     match parsed {
         Ok(jats_reader::JatsReport { article, .. }) => {
             Some(library_ids(&article.pmid, Some(&article.doi), Some(&article.pmc_id)).0)

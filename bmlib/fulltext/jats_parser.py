@@ -8917,7 +8917,7 @@ class _JATSHandler(xml.sax.handler.ContentHandler):
 # ---------------------------------------------------------------------------
 
 
-def _audit_parse(handler: _JATSHandler) -> None:
+def _audit_parse(handler: _JATSHandler, *, warn: bool = True) -> None:
     """Report what this parse left behind: an imbalance, or no authors at all.
 
     An unbalanced stack or counter is issue #134 and logs at ERROR here; the
@@ -8931,7 +8931,10 @@ def _audit_parse(handler: _JATSHandler) -> None:
     :meth:`~JATSParser.parse_with_html` all funnel through — so every entry
     point is covered without any of them having to remember. The one
     deliberate exception is :meth:`JATSParser._own_identifiers`, the library's
-    identifier read, which re-reads a folder's JATS on every save (#780).
+    identifier read, which re-reads a folder's JATS on every ``save`` or
+    ``record_use`` beside it and so passes ``warn=False`` (#780): its ERROR
+    lines are kept, since each claims that the read the library's check rests
+    on is itself wrong, and none repeats a publisher's deposit.
 
     ERROR, and not a raised exception: a partial article reported loudly beats
     no article, which is #129's mistake in the other direction. And ERROR
@@ -8943,10 +8946,13 @@ def _audit_parse(handler: _JATSHandler) -> None:
 
     Args:
         handler: The handler the parse just finished with.
+        warn: Whether to report the WARNING lines as well as the ERROR ones.
     """
     article = handler.describe_article()
     for message in unwind_diagnostics(handler.unwind_state()):
         logger.error("JATS parse of %s: %s", article, message)
+    if not warn:
+        return
 
     if handler.rejected_spans:
         # WARNING, not ERROR: unlike the audit above, a publisher's deposit
@@ -9361,7 +9367,7 @@ class JATSParser:
             pmc_id = f"PMC{pmc_id}"
         self._known_pmc_id = pmc_id
 
-    def _run_parser(self, *, audit: bool = True) -> _JATSHandler:
+    def _run_parser(self, *, warn: bool = True) -> _JATSHandler:
         handler = _JATSHandler(known_pmc_id=self._known_pmc_id)
         parser = xml.sax.make_parser()
         parser.setContentHandler(handler)
@@ -9369,18 +9375,18 @@ class JATSParser:
         parser.setFeature(xml.sax.handler.feature_external_ges, False)
         parser.setFeature(xml.sax.handler.feature_external_pes, False)
         parser.parse(BytesIO(self._data))
-        if audit:
-            _audit_parse(handler)
+        _audit_parse(handler, warn=warn)
         return handler
 
     def _own_identifiers(self) -> tuple[str, str, str]:
-        """The article's own ``(pmid, doi, pmc_id)``, as :meth:`parse` reads them, unaudited.
+        """The article's own ``(pmid, doi, pmc_id)``, as :meth:`parse` reads them, unwarned.
 
         For the library's check of a JATS's identifiers (#766), which re-reads a folder's JATS
-        on every save beside it: auditing each re-read would repeat the article's warnings,
-        which are reported when it is parsed to be shown (#780).
+        on every save beside it: warning on each re-read would repeat the article's warnings,
+        which are reported when it is parsed to be shown (#780). The audit's ERROR lines are
+        still logged: they say this very read is wrong.
         """
-        h = self._run_parser(audit=False)
+        h = self._run_parser(warn=False)
         return h.pmid, h.doi, h.pmc_id
 
     def parse(self) -> JATSArticle:

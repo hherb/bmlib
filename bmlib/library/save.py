@@ -347,7 +347,7 @@ def _locate(root: Path, file: FileRef) -> tuple[Path, Path]:
 
 def _jats_ids(at: str, data: bytes) -> PaperIds | None:
     """A JATS's own identifiers as the full-text service reads them (its parser, without
-    rendering or the parse's audit, then ``library_ids``), or ``None`` when it does not parse:
+    rendering or the parse's warnings, then ``library_ids``), or ``None`` when it does not parse:
     such a file names no paper, and is warned of as *at*."""
     # Imported here: bmlib.fulltext imports this package, so it cannot be imported at load.
     from bmlib.fulltext.jats_parser import JATSParser

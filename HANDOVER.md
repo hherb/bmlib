@@ -10,19 +10,24 @@ everything since is under Unreleased._
 
 Both languages. `save` and `record_use` read the identifiers of every JATS in
 the folder they write to (#766), and that read logged the parser's audit each
-time. It now reads by the same parse without the audit (Python
+time. It now reads by the same parse without the audit's warnings (Python
 `JATSParser._own_identifiers`, Rust's crate-private
-`jats_reader::parse_unlogged`). The article's warnings are logged when it is
+`jats_reader::parse_unwarned`); its ERROR lines, which say bmlib misread the
+document, are still logged. The article's warnings are logged when it is
 parsed to be shown. Item 2 of the issue, "only the target folder is checked",
 is now pinned by `test_only_the_folder_written_to_is_checked` in
 `test_library_save.py` and `only_the_folder_written_to_is_checked` in
-`library_save.rs`. The foreign JATS's folder joins the paper's group only
-through a second installation's record, in the PDF's folder, that carries the
-JATS's pmcid. Both new tests were mutation-checked in both languages. The renderer digests were re-pinned without
-a version bump, because `to_html()` cannot move. `save`'s docstring now says
-"the first of the paper's folders `find` returns": the old wording, "the first
-folder holding a record that shares an identifier", was wrong for a folder
-linked only through another.
+`library_save.rs`, for `save` and `record_use`. The foreign JATS's folder
+("Zebra", named to sort last) joins the paper's group only through a second
+installation's record, in the PDF's folder, that carries the pmcid of the
+Zebra folder's record. The new tests were mutation-checked in both languages.
+The renderer digests were re-pinned without a version bump, because neither
+`to_html()` nor the canonical JATS text can move. `save`'s docstring and both
+manuals now say "the first of the paper's folders `find` returns": the old
+wording, "the first folder holding a record that shares an identifier", was
+wrong for a folder linked only through another. The review found Rust warning
+on every author-less article where Python logs at DEBUG, since the port:
+filed as **#782**.
 
 ## Merged: no file beside another paper's JATS (#766, PR #779)
 
@@ -35,10 +40,9 @@ fetched JATS that names another paper but does not keep it. The reasoning is
 in `docs/DECISIONS.md`, under *FullTextService on a library*. Scenarios 2 and
 6 of the service's library scenarios serve `fulltext_library_other_article.xml`;
 tests that need a poisoned folder plant it by hand (`plant`, `planted: true`).
-**Downstream**:
-StudyAnalyzer drops its `foreign_jats` once it re-pins. A Rust `match` on
-`LibraryError` needs the new arm. **#761** merged as PR #777, and its
-deferrals are **#778**.
+**Downstream**: StudyAnalyzer drops its `foreign_jats` once it re-pins. A Rust
+`match` on `LibraryError` needs the new arm. **#761** merged as PR #777, and
+its deferrals are **#778**.
 
 ## Also merged: MECA over requester-pays S3 (PR #775)
 
@@ -300,9 +304,9 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**123 open** (122 once this branch's PR closes #780): the library's #755,
-#762, #765 and **#778** (PR #777's review follow-ups, above), **#776** (PR
-#775's MECA follow-ups) and
+**124 open** (123 after this branch merges, #780 being its issue): **#782**
+(Rust's author-less WARN, above), the library's #755, #762, #765 and **#778**
+(PR #777's review follow-ups, above), **#776** (PR #775's MECA follow-ups) and
 **#759** (measure the `/details` settle period) are the newest; #734, #733,
 #731, #730, #726, #725, #722, #718, #716 and #694 come before them; #577 stays
 open for its point 3, which PR #696 left open
