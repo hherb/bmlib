@@ -12,10 +12,11 @@ Tests only. `save_scenarios_match_the_fixture` in
 `rust/bmlib-ffi/src/library_tests.rs` replays all 30 scenarios of
 `library_cases.json` through `PaperLibrary` / `LibraryScan` and checks the
 tree on disk and every record's JSON, a port of the crate's runner in
-`rust/bmlib/tests/library_contract.rs`. Mutation-checked (a changed
-installation label fails it). The fixture sections still not run through the
-FFI (`folder_names`, `records`, `component`, `special_entries`) test functions
-it does not export.
+`rust/bmlib/tests/library_contract.rs`. The review found that `component` and
+`special_entries` need only exported calls, so they run through the FFI too
+(`special_entries` on Unix only). Each new runner is mutation-checked. The two
+sections still not run through the FFI, `folder_names` and `records`, test
+functions it does not export.
 
 ## Merged: the lookup's library rules, for an app's own chain (#784, PR #785)
 
@@ -162,7 +163,8 @@ MECA bulk is the expected next request.
 
 A new full-text test must script `content`, not `json()` (responses decode
 through `strict_json_loads`); the record fixtures' md5s are those of
-`sample_article.xml` and `textless.pdf`.
+`sample_article.xml` and `textless.pdf`. Not covered: a JATS cached with the
+PDF-beside option off (the `shortcut:` in `_check_cache`).
 
 ## Release 0.13.0 / Rust crate 0.4.0 (released 2026-11-10)
 
@@ -276,7 +278,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 - **Tests on `test/ffi-save-scenarios-765`** (2026-11-15, PostgreSQL 18 DSN
   on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,055 passed + 22
   skipped (11,077 collected); Rust `cargo test -p bmlib` and `-p bmlib-ffi`
-  1,871 passed, `cargo clippy --workspace --tests` and `cargo fmt --check`
+  1,873 passed, `cargo clippy --workspace --tests` and `cargo fmt --check`
   clean; the Rust oracle 44 clean. Other recipes: `postgres_live.rs` with `BMLIB_PG_TESTS=1
   BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`; `--features embed` and the
   embedder's live tests need `BMLIB_EMBED_MODEL` (the GGUFs are in

@@ -45,10 +45,10 @@ the type the default, and the Android build breaks. CI's `ffi` job runs
 The contract is bmlib's `tests/fixtures/library_cases.json` and the sample
 library `tests/fixtures/library/sample/`. This crate's tests
 (`src/library_tests.rs`) run the fixture's identifier, installation, open,
-scan, find, find_digest, group, read and `save_scenarios` cases through the
-FFI (the last covers save, record_use, release, remove_file and
-remove_folder). The fixture's other sections test functions the FFI does not
-export. The rules are bmlib's manual (`docs/manual/library.md`).
+scan, find, find_digest, group, read, `save_scenarios`, `component` and
+(Unix only) `special_entries` cases through the FFI. The two other sections,
+`folder_names` and `records`, test functions the FFI does not export. The
+rules are bmlib's manual (`docs/manual/library.md`).
 
 - **Every `PaperLibrary` call but `root` does disk I/O on the calling thread.**
   Call them off the main thread.
