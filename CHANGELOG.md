@@ -49,20 +49,19 @@ All notable changes to bmlib are documented here. The format is based on
   device-name clause of CPython 3.13's `ntpath.isreserved`. **A folder name
   can move**, only for a paper whose name begins with a word this rule now
   refuses. A folder already made under the old rule is a `bad_folder_name`
-  problem (#789, above). Rust now trims identifiers and the name's author and title as
-  Python's `str.strip()` does, U+001C-U+001F included, so a PMID edged by one
-  is the same PMID in both. In Python, a non-UTF-8 name in a library folder is
-  read lossily (U+FFFD), as Rust reads it. In both languages such a name is
-  reported and never joined to a path, because a real sibling may hold its
-  lossy spelling (#788's review): in `papers/` it is a `stray_entry`, in
+  problem (#789, above). Rust now trims identifiers and the name's author and
+  title as Python's `str.strip()` does, U+001C-U+001F included, so a PMID edged
+  by one is the same PMID in both. In Python, a non-UTF-8 name in a library
+  folder is read lossily (U+FFFD), as Rust reads it. In both languages such a
+  name is reported and never joined to a path, because a real sibling may hold
+  its lossy spelling (#788's review): in `papers/` it is a `stray_entry`, in
   `records/` an `unreadable_record`, and beside the records an
   `unrecorded_file`; joined to a path, a `caf\xe9` folder's lossy name reached
   a real `caf\ufffd` beside it, scanned twice while the other was dropped
-  unreported. Python used to scan such a paper folder under a
-  surrogate-escaped name. The temporary-name check counts Rust's 42-byte token
-  in bytes, as Rust does. Pinned by 44 new cases in
-  `tests/fixtures/library_cases.json`. A test's `os.geteuid()` no longer runs
-  at collection on Windows.
+  unreported. Python used to scan such a paper folder under a surrogate-escaped
+  name. The temporary-name check counts Rust's 42-byte token in bytes, as Rust
+  does. Pinned by 44 new cases in `tests/fixtures/library_cases.json`. A test's
+  `os.geteuid()` no longer runs at collection on Windows.
 - **`FileClash.folder` is the paper folder's bare name** (#755; both
   languages, and bmlib-ffi). It held the folder's full path
   (`/…/papers/<folder>`), where `Missing`, `DigestMismatch` and the record

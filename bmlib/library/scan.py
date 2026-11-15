@@ -103,9 +103,9 @@ class Problem:
     - ``unrecorded_file`` (``folder``, ``name``);
     - ``stray_entry`` (``name``): not a folder, a symbolic link to one included, or a name
       that is not UTF-8 (shown lossily);
-    - ``bad_folder_name`` (``folder``): a paper folder named so that bmlib cannot address it
-      (``con``, or ``Con .x (PMID 1)`` made under the device rule before #788), which a
-      Windows file system reads as another entry or a device. It is still scanned and in
+    - ``bad_folder_name`` (``folder``): a paper folder whose name bmlib refuses as a path
+      component, such as ``con`` or ``Con .x (PMID 1)`` (made under the device rule before
+      #788), both of which a Windows file system reads as a device. It is still scanned and in
       ``folders``, so :func:`find` sees the paper, but every call naming it raises
       :class:`BadName` until the user renames it (#789).
 

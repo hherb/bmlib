@@ -21,7 +21,10 @@ Unreleased._
 - **The contract**: `save_scenarios` gains a `scan` step (`folders` and
   `problems`) and a `bad_name` step error, and `plant` creates its folders, in
   all three runners. The new case fails on `main`'s Python and with Rust's
-  emit mutated off.
+  emit mutated off. After the review it also scans a user's `papers/con`, a
+  folder under the current name (`_Con .x (PMID 2)`, no problem) and a stray
+  file, which pins `bad_folder_name` before the folder's own problems (Python
+  with the push moved after them fails it).
 
 ## Merged: the library's names agree across languages (#755 items 3, 5, 6, PR #788)
 
@@ -132,7 +135,12 @@ use to share one folder of papers. Built in both languages, in a worktree
   name can pass 260 characters; (3) a lone surrogate in a Windows name reads
   as three U+FFFD in Python, one in Rust (`files._entries`' `shortcut:`);
   (4) a directory sync: `sync_dir` is a no-op there (#768), so a save
-  is not yet durable on Windows; use `MoveFileEx`'s write-through.
+  is not yet durable on Windows; use `MoveFileEx`'s write-through; (5) a scan
+  joins each name in `papers/` to a path before `component()` judges it, so
+  on Windows a `con` folder may read as the device (a `stray_entry`, out of
+  `folders`, which re-opens #789's fork) and an `x.` folder as its sibling
+  `x`; judge the name before the path there, and plant #789's
+  `save_scenarios` case under another refused name (PR #791's review).
 - **Owed by Android (phase 4)**: the file operations are free functions on
   `&Path` in `files.rs`; Kotlin's storage access needs them behind a trait
   passed into `Library`.

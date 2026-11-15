@@ -22,6 +22,7 @@ Asserts against ``tests/fixtures/library_cases.json``, the file Rust's
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import re
@@ -376,9 +377,9 @@ def _refused(step: dict[str, Any], call: Callable[[], object]) -> object:
 
 
 def _problem(p: Problem) -> dict[str, Any]:
-    """A scan problem as the fixture writes it: its kind and the fields it uses."""
-    fields = ("folder", "file", "name", "field", "reason", "version")
-    return {"kind": p.kind, **{k: getattr(p, k) for k in fields if getattr(p, k) is not None}}
+    """A scan problem as the fixture writes it: every field it uses, read from the dataclass."""
+    got = {f.name: getattr(p, f.name) for f in dataclasses.fields(p)}
+    return {k: v for k, v in got.items() if v is not None}
 
 
 @pytest.mark.parametrize("case", _cases("save_scenarios"))

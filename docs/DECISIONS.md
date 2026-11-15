@@ -6549,8 +6549,8 @@ undo.
 - **A folder whose name `component()` refuses is reported and kept, not
   addressed** (#789). One named under the old device rule (`Con .x (PMID 1)`),
   or a user's `papers/con`, is a `bad_folder_name` problem and stays in
-  `folders`, so `find` sees its paper and `save`, `read`, `release` and
-  `remove_*` raise `BadName` until the user renames it. Dropping it from
+  `folders`, so `find` sees its paper and `save`, `read`, `record_use`,
+  `release` and `remove_*` raise `BadName` until the user renames it. Dropping it from
   `folders` would let `save` fork the paper into a second folder (#778 item 1's
   failure). Addressing it by its listed name would skip the device check that
   protects Windows, where `Con .x` opens the console. bmlib does not rename it
