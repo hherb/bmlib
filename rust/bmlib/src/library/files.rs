@@ -111,8 +111,9 @@ pub(crate) fn io_error(path: &Path, err: &io::Error, write: bool) -> LibraryErro
 /// Every entry of `dir` as (raw bytes, display name), sorted by the raw bytes.
 ///
 /// The display name is a lossy UTF-8 conversion (a name that is not UTF-8 shows
-/// U+FFFD); it is only ever shown or compared for prefixes, never used as a
-/// path.
+/// U+FFFD). Such a name is only ever shown, never joined to a path: a real
+/// sibling may hold that very spelling, and the join would reach it instead
+/// (#788).
 fn entries(dir: &Path) -> io::Result<Vec<(Vec<u8>, String)>> {
     let mut all = Vec::new();
     for entry in fs::read_dir(dir)? {
@@ -133,7 +134,7 @@ const PY_TEMP_HEX: usize = 32;
 const PY_TEMP_EXT: &str = ".tmp";
 
 /// Whether `name` is a temporary of either language's `atomic_write`: Rust's
-/// `{name}{TEMP_SUFFIX}{42-character token}` or Python's
+/// `{name}{TEMP_SUFFIX}{42-byte token}` or Python's
 /// `.{name}.{32 hex}.tmp`. One is there while a write is in flight, and stays
 /// after a crash; it is never a user's file and never a paper's.
 pub(crate) fn is_temp_name(name: &str) -> bool {
@@ -168,27 +169,33 @@ pub(crate) struct Listing {
     /// Temporaries of `atomic_write` ([`is_temp_name`]), in flight or left by a
     /// crash.
     pub(crate) temps: Vec<String>,
+    /// The names a scan would look at that are not UTF-8, shown lossily: to
+    /// report, never to join to a path.
+    pub(crate) undecodable: Vec<String>,
 }
 
-/// The entries of `dir`, sorted into a [`Listing`]. A name that is not UTF-8
-/// is kept, shown lossily.
+/// The entries of `dir`, sorted into a [`Listing`].
 pub(crate) fn listing(dir: &Path) -> io::Result<Listing> {
     let mut out = Listing::default();
-    for (_, name) in entries(dir)? {
+    for (bytes, name) in entries(dir)? {
         if is_temp_name(&name) {
             out.temps.push(name);
         } else if let Some(own) = placeholder_for(&name) {
             out.placeholders.push(own.to_owned());
         } else if !name.starts_with('.') && !IGNORED_NAMES.contains(&name.as_str()) {
-            out.names.push(name);
+            if std::str::from_utf8(&bytes).is_ok() {
+                out.names.push(name);
+            } else {
+                out.undecodable.push(name);
+            }
         }
     }
     Ok(out)
 }
 
 /// The names in `dir`, sorted by bytes, leaving out [`IGNORED_NAMES`], any
-/// name starting with `.` and `atomic_write` temporaries. A name that is not
-/// UTF-8 is kept, shown lossily.
+/// name starting with `.`, `atomic_write` temporaries and names that are not
+/// UTF-8.
 pub(crate) fn list_names(dir: &Path) -> io::Result<Vec<String>> {
     Ok(listing(dir)?.names)
 }
@@ -790,7 +797,8 @@ mod tests {
         let name = std::ffi::OsStr::from_bytes(b"caf\xe9.pdf");
         if fs::write(dir.join(name), b"").is_ok() {
             assert!(first_user_entry(&dir).unwrap().is_some());
-            assert_eq!(list_names(&dir).unwrap().len(), 1);
+            assert!(list_names(&dir).unwrap().is_empty());
+            assert_eq!(listing(&dir).unwrap().undecodable, ["caf\u{fffd}.pdf"]);
         }
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -882,6 +890,19 @@ mod tests {
         ] {
             assert!(!is_temp_name(not), "{not}");
         }
+    }
+
+    #[test]
+    fn a_temp_token_is_measured_in_bytes() {
+        // #755: Python's twin counts the same way; 21 two-byte characters are 42 bytes.
+        assert!(is_temp_name(&format!(
+            "a.pdf{TEMP_SUFFIX}{}",
+            "é".repeat(21)
+        )));
+        assert!(!is_temp_name(&format!(
+            "a.pdf{TEMP_SUFFIX}{}",
+            "é".repeat(42)
+        )));
     }
 
     #[test]

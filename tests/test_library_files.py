@@ -151,7 +151,8 @@ def test_non_utf8_name_is_a_user_entry(tmp_path: Path) -> None:
     except OSError:
         pytest.skip("this file system refuses non-UTF-8 names")
     assert first_user_entry(tmp_path) is not None
-    assert len(list_names(tmp_path)) == 1
+    assert list_names(tmp_path) == []  # #788: kept apart, never joined to a path
+    assert files_module.listing(tmp_path).undecodable == ["caf\ufffd.pdf"]
 
 
 def test_temp_names_of_both_languages_are_recognised() -> None:
@@ -166,6 +167,30 @@ def test_temp_names_of_both_languages_are_recognised() -> None:
         ".0123456789abcdef0123456789abcdef.tmp",
     ]:
         assert not is_temp_name(name), name
+
+
+def test_a_rust_temp_name_is_measured_in_bytes() -> None:
+    # #755: Rust cuts the 42-byte token off by bytes; 21 two-byte characters are 42 bytes.
+    assert is_temp_name("a.pdf.bmlib-tmp-uuid4hex" + "é" * 21)
+    assert not is_temp_name("a.pdf.bmlib-tmp-uuid4hex" + "é" * 42)
+
+
+@pytest.mark.skipif(
+    os.name == "nt", reason="Windows names are UTF-16: bytes that are not UTF-8 cannot be faked"
+)
+def test_a_non_utf8_name_is_listed_apart_as_rust_shows_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #755: Rust shows the lossy name (U+FFFD); #788: it is kept apart from the names, which
+    # are joined to paths. Faked, since APFS refuses such names.
+    names = [os.fsdecode(b"caf\xe9"), "b"]
+    monkeypatch.setattr(files_module.os, "listdir", lambda _: names)
+    found = files_module.listing(tmp_path)
+    assert (found.names, found.undecodable) == (["b"], ["caf\ufffd"])
+    assert list_names(tmp_path) == ["b"]
+    assert files_module.first_user_entry(tmp_path) == "b"
+    names.remove("b")
+    assert files_module.first_user_entry(tmp_path) == "caf\ufffd"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="a directory cannot be opened to sync on Windows")

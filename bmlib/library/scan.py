@@ -87,7 +87,8 @@ class Problem:
 
     ``kind`` is one of (with the fields it uses):
 
-    - ``unreadable_record`` (``folder``, ``file``, ``reason``);
+    - ``unreadable_record`` (``folder``, ``file``, ``reason``), a name that is not UTF-8
+      included (shown lossily);
     - ``unreadable_folder`` (``folder``, ``reason``): it or its ``records/`` cannot be listed
       or examined, or ``records/`` is not a folder itself (a symbolic link included);
     - ``newer_record`` (``folder``, ``file``, ``version``);
@@ -100,7 +101,8 @@ class Problem:
     - ``conflicting_ids`` (``folder``, ``field``): two records hold different values for it;
       both count for :func:`find` and :func:`group`;
     - ``unrecorded_file`` (``folder``, ``name``);
-    - ``stray_entry`` (``name``): not a folder, a symbolic link to one included.
+    - ``stray_entry`` (``name``): not a folder, a symbolic link to one included, or a name
+      that is not UTF-8 (shown lossily).
 
     Fields a kind does not use are ``None``.
     """
@@ -189,6 +191,10 @@ def _scan_folder(directory: Path, folder: str, problems: list[Problem]) -> Paper
             else:
                 records.append(got)
         problems.extend(
+            Problem("unreadable_record", folder=folder, file=f, reason="the name is not UTF-8")
+            for f in found.undecodable
+        )
+        problems.extend(
             Problem("record_not_downloaded", folder=folder, file=f)
             for f in found.placeholders
             if f not in found.names
@@ -208,6 +214,7 @@ def _scan_folder(directory: Path, folder: str, problems: list[Problem]) -> Paper
         here = listing(directory)
         problems.extend(Problem("leftover_temp", folder=folder, name=t) for t in here.temps)
         on_disk = [n for n in here.names if n != RECORDS_DIR and not _listed_dir(directory / n)]
+        on_disk += here.undecodable
     except OSError as e:
         on_disk = []
         problems.append(Problem("unreadable_folder", folder=folder, reason=str(e)))
@@ -242,6 +249,7 @@ def scan_library(root: Path) -> Scan:
             folders.append(_scan_folder(papers / name, name, problems))
         else:
             problems.append(Problem("stray_entry", name=name))
+    problems.extend(Problem("stray_entry", name=n) for n in found.undecodable)
     # Nothing writes a file into papers/ itself; a temporary there is stray.
     problems.extend(Problem("stray_entry", name=t) for t in found.temps)
     return Scan(tuple(folders), tuple(problems))

@@ -283,7 +283,10 @@ def test_the_saved_ref_carries_the_full_digest(lib: Library) -> None:
     assert got.name == f"pdf-{got.sha256[:12]}.pdf"
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
+@pytest.mark.skipif(
+    os.name == "nt" or os.geteuid() == 0,
+    reason="root ignores directory permissions; Windows has no geteuid or POSIX modes",
+)
 def test_read_only_library_says_so(lib: Library) -> None:
     papers = lib.root / "papers"
     papers.chmod(0o555)
@@ -455,7 +458,8 @@ def test_a_failed_sync_names_the_file_and_the_sync(
 
 
 _NO_PERMISSIONS = pytest.mark.skipif(
-    os.name == "nt" or os.geteuid() == 0, reason="root ignores directory permissions"
+    os.name == "nt" or os.geteuid() == 0,
+    reason="root ignores directory permissions; Windows has no geteuid or POSIX modes",
 )
 
 

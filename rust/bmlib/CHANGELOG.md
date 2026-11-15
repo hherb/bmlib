@@ -86,6 +86,25 @@ The Python library is documented separately, in the repository's
 
 ### Fixed
 
+- **Whitespace is Python's `str.strip()` in the library and in
+  `normalize_doi` / `normalize_pmid`** (#755, as in Python). `str::trim` kept
+  U+001C-U+001F, so a PMID, PMCID or DOI edged by one was refused or stored
+  differently from Python, and a folder name's 40-character author cut could
+  fall one character short. They now go through `pyvalue::python_strip`.
+  `publications` stores such a DOI or PMID stripped, as Python does.
+- **More Windows device names are reserved** (#755, as in Python): `CON .txt`
+  (spaces before the dot), `COM¹`-`COM³`, `LPT¹`-`LPT³`, `CONIN$` and
+  `CONOUT$`, refused by `component` and prefixed by `folder_name` (the
+  device-name clause of CPython 3.13's `ntpath.isreserved`). A corrupt record
+  set aside keeps a non-UTF-8 path intact (`keep_aside` built it through
+  `Path::display`).
+- **A name that is not UTF-8 is reported, never joined to a path** (#788's
+  review, as in Python). Its lossy spelling can be a real sibling's: joined to
+  a path, a `caf\xe9` folder's name reached a real `caf\ufffd` beside it,
+  which the scan listed twice while the other was dropped unreported. Such a
+  name is a `StrayEntry` in `papers/`, an `UnreadableRecord` in `records/` and
+  an `UnrecordedFile` beside them, and `save` no longer counts it as a name
+  clash.
 - **`LibraryError::FileClash`'s `folder` is the paper folder's bare name**
   (#755, as in Python). It held the folder's full path, unlike `Missing`,
   `DigestMismatch` and the record errors, so it never matched
