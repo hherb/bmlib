@@ -1306,11 +1306,11 @@ pub struct SourceDescriptor {
     /// How many days after a day has ended the source may still add to it.
     ///
     /// `0` for a source that declares no settle period, which is every built-in
-    /// except bioRxiv and medRxiv — not a claim that their days are complete once
-    /// over (PubMed indexes late on a smaller scale). The `/pubs` endpoint those
-    /// two read files a record under the date its *publication* appeared and
-    /// learns of the publication weeks later, so a day fetched as soon as it ends
-    /// is nearly empty.
+    /// except bioRxiv, medRxiv and Europe PMC — not a claim that their days are
+    /// complete once over (PubMed indexes late on a smaller scale). The `/pubs`
+    /// endpoint bioRxiv and medRxiv read files a record under the date its
+    /// *publication* appeared and learns of the publication weeks later, so a
+    /// day fetched as soon as it ends is nearly empty.
     ///
     /// For a source declaring it, [`crate::publications::days_needing_fetch`]
     /// counts a completed day as durable only once it was fetched at least that
@@ -1323,6 +1323,13 @@ pub struct SourceDescriptor {
     /// registration and where day selection reads it, because the field is
     /// public and mutable.
     pub settle_days: u32,
+    /// Whether the source runs only when named (Python's `opt_in`).
+    ///
+    /// Python's `sync()` with no sources named leaves an opt-in source out; a
+    /// Rust caller choosing the sources to offer by default should too.
+    /// `europepmc` is one: it needs a search the caller chooses, and run without
+    /// one it would fail every day, re-offered for ever by its settle period.
+    pub opt_in: bool,
 }
 
 impl SourceDescriptor {
@@ -1340,6 +1347,7 @@ impl SourceDescriptor {
             params: Vec::new(),
             resumable: false,
             settle_days: 0,
+            opt_in: false,
         }
     }
 

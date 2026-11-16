@@ -502,7 +502,7 @@ class TestSync:
         assert report.records_merged == 1
 
     def test_sync_defaults(self):
-        """sync with no sources/dates should use ALL_SOURCES and yesterday-today range."""
+        """sync with no sources/dates uses every non-opt-in source and yesterday-today."""
         conn = _fresh_conn()
 
         # Create a fake fetcher for all sources
@@ -522,9 +522,11 @@ class TestSync:
             _fetcher_override=overrides,
         )
 
-        # Yesterday and today for every built-in source, the `*-details` ones included (#341)
-        assert report.days_processed == len(ALL_SOURCES) * 2
-        assert set(report.sources_synced) == set(ALL_SOURCES)
+        # Yesterday and today for every built-in source, the `*-details` ones included
+        # (#341), but not the opt-in `europepmc`, which needs a query (#790)
+        default = [s for s in ALL_SOURCES if s != "europepmc"]
+        assert report.days_processed == len(default) * 2
+        assert set(report.sources_synced) == set(default)
 
     def test_sync_unknown_source_reports_error(self):
         """sync with an unknown source should report an error."""

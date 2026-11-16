@@ -24,6 +24,7 @@ def descriptor_to_dict(d):
         "description": d.description,
         "resumable": bool(d.resumable),
         "settle_days": d.settle_days,
+        "opt_in": bool(d.opt_in),
         "params": [
             {
                 "name": p.name,

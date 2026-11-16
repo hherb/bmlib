@@ -1,0 +1,1029 @@
+[
+  {
+    "name": "fetch/one-page",
+    "ok": true,
+    "value": {
+      "error": null,
+      "fulltext_urls": [
+        [],
+        []
+      ],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [
+        [
+          2,
+          2,
+          "in_progress"
+        ]
+      ],
+      "record_count": 2,
+      "records": [
+        "Trial 1",
+        "Trial 2"
+      ],
+      "status": "completed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/two-pages",
+    "ok": true,
+    "value": {
+      "error": null,
+      "fulltext_urls": [
+        [],
+        [],
+        []
+      ],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        },
+        {
+          "cursorMark": "AoE1",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [
+        [
+          2,
+          3,
+          "in_progress"
+        ],
+        [
+          3,
+          3,
+          "in_progress"
+        ]
+      ],
+      "record_count": 3,
+      "records": [
+        "Trial 1",
+        "Trial 2",
+        "Trial 3"
+      ],
+      "status": "completed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/empty-day",
+    "ok": true,
+    "value": {
+      "error": null,
+      "fulltext_urls": [],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        },
+        {
+          "format": "json",
+          "pageSize": 1,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\"))",
+          "resultType": "lite"
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "completed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/last-page-empty",
+    "ok": true,
+    "value": {
+      "error": null,
+      "fulltext_urls": [
+        []
+      ],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        },
+        {
+          "cursorMark": "AoE1",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [
+        [
+          1,
+          1,
+          "in_progress"
+        ]
+      ],
+      "record_count": 1,
+      "records": [
+        "Trial 1"
+      ],
+      "status": "completed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/short-walk",
+    "ok": true,
+    "value": {
+      "error": "europepmc delivered 2 of 5 records for 2024-06-10 and then returned an empty page, so the walk stopped short (an expired history session, or an index that moved under the walk)",
+      "fulltext_urls": [
+        [],
+        []
+      ],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        },
+        {
+          "cursorMark": "AoE1",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [
+        [
+          2,
+          5,
+          "in_progress"
+        ]
+      ],
+      "record_count": 2,
+      "records": [
+        "Trial 1",
+        "Trial 2"
+      ],
+      "status": "failed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/no-cursor-field",
+    "ok": true,
+    "value": {
+      "error": null,
+      "fulltext_urls": [
+        []
+      ],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [
+        [
+          1,
+          1,
+          "in_progress"
+        ]
+      ],
+      "record_count": 1,
+      "records": [
+        "Trial 1"
+      ],
+      "status": "completed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/error-body",
+    "ok": true,
+    "value": {
+      "error": "Europe PMC returned a page carrying no result list for 2024-06-10",
+      "fulltext_urls": [],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/not-an-object",
+    "ok": true,
+    "value": {
+      "error": "Europe PMC returned a list payload, not an object, for 2024-06-10",
+      "fulltext_urls": [],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/null-hit-count",
+    "ok": true,
+    "value": {
+      "error": "Europe PMC returned a page with no hitCount that is a count for 2024-06-10",
+      "fulltext_urls": [],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/bool-hit-count",
+    "ok": true,
+    "value": {
+      "error": "Europe PMC returned a page with no hitCount that is a count for 2024-06-10",
+      "fulltext_urls": [],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/non-object-hit",
+    "ok": true,
+    "value": {
+      "error": "Europe PMC returned a page bmlib could not normalise for 2024-06-10: TypeError: a result that is a str, not an object",
+      "fulltext_urls": [
+        []
+      ],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [],
+      "record_count": 1,
+      "records": [
+        "Trial 1"
+      ],
+      "status": "failed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/oa-fulltext-source",
+    "ok": true,
+    "value": {
+      "error": null,
+      "fulltext_urls": [
+        [
+          "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC123/fullTextXML"
+        ],
+        []
+      ],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [
+        [
+          2,
+          2,
+          "in_progress"
+        ]
+      ],
+      "record_count": 2,
+      "records": [
+        "Trial 1",
+        "Trial 2"
+      ],
+      "status": "completed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/email-sent",
+    "ok": true,
+    "value": {
+      "error": null,
+      "fulltext_urls": [],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "email": "a@b.org",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        },
+        {
+          "email": "a@b.org",
+          "format": "json",
+          "pageSize": 1,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\"))",
+          "resultType": "lite"
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "completed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/blank-query",
+    "ok": true,
+    "value": {
+      "error": "Europe PMC needs a search: the query parameter is empty",
+      "fulltext_urls": [],
+      "note": null,
+      "params": [],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
+      "urls": []
+    }
+  },
+  {
+    "name": "fetch/http-500",
+    "ok": true,
+    "value": {
+      "error": "HTTPStatusError: HTTP 500",
+      "fulltext_urls": [],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/short-walk-no-cursor",
+    "ok": true,
+    "value": {
+      "error": "europepmc delivered 3 of 5 records for 2024-06-10 and then sent no new cursor, so the walk stopped short",
+      "fulltext_urls": [
+        [],
+        [],
+        []
+      ],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [
+        [
+          3,
+          5,
+          "in_progress"
+        ]
+      ],
+      "record_count": 3,
+      "records": [
+        "Trial 1",
+        "Trial 2",
+        "Trial 3"
+      ],
+      "status": "failed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/short-walk-repeated-cursor",
+    "ok": true,
+    "value": {
+      "error": "europepmc delivered 3 of 5 records for 2024-06-10 and then sent no new cursor, so the walk stopped short",
+      "fulltext_urls": [
+        [],
+        [],
+        []
+      ],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        },
+        {
+          "cursorMark": "AoE1",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [
+        [
+          2,
+          5,
+          "in_progress"
+        ],
+        [
+          3,
+          5,
+          "in_progress"
+        ]
+      ],
+      "record_count": 3,
+      "records": [
+        "Trial 1",
+        "Trial 2",
+        "Trial 3"
+      ],
+      "status": "failed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/short-walk-empty-cursor",
+    "ok": true,
+    "value": {
+      "error": "europepmc delivered 2 of 3 records for 2024-06-10 and then sent no new cursor, so the walk stopped short",
+      "fulltext_urls": [
+        [],
+        []
+      ],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [
+        [
+          2,
+          3,
+          "in_progress"
+        ]
+      ],
+      "record_count": 2,
+      "records": [
+        "Trial 1",
+        "Trial 2"
+      ],
+      "status": "failed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/empty-cursor-ends-a-met-walk",
+    "ok": true,
+    "value": {
+      "error": null,
+      "fulltext_urls": [
+        [],
+        []
+      ],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [
+        [
+          2,
+          2,
+          "in_progress"
+        ]
+      ],
+      "record_count": 2,
+      "records": [
+        "Trial 1",
+        "Trial 2"
+      ],
+      "status": "completed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/null-cursor-ends-a-met-walk",
+    "ok": true,
+    "value": {
+      "error": null,
+      "fulltext_urls": [
+        [],
+        []
+      ],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [
+        [
+          2,
+          2,
+          "in_progress"
+        ]
+      ],
+      "record_count": 2,
+      "records": [
+        "Trial 1",
+        "Trial 2"
+      ],
+      "status": "completed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/non-string-cursor",
+    "ok": true,
+    "value": {
+      "error": "Europe PMC returned a nextCursorMark that is not a string for 2024-06-10",
+      "fulltext_urls": [
+        [],
+        []
+      ],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [
+        [
+          2,
+          3,
+          "in_progress"
+        ]
+      ],
+      "record_count": 2,
+      "records": [
+        "Trial 1",
+        "Trial 2"
+      ],
+      "status": "failed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/record-from-another-day",
+    "ok": true,
+    "value": {
+      "error": "Europe PMC returned a record not first indexed on 2024-06-10, so the search did not keep to the day (an unbalanced bracket in the query drops its date clause)",
+      "fulltext_urls": [
+        []
+      ],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [],
+      "record_count": 1,
+      "records": [
+        "Trial 1"
+      ],
+      "status": "failed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/record-with-no-index-date",
+    "ok": true,
+    "value": {
+      "error": "Europe PMC returned a record not first indexed on 2024-06-10, so the search did not keep to the day (an unbalanced bracket in the query drops its date clause)",
+      "fulltext_urls": [],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/record-with-a-numeric-index-date",
+    "ok": true,
+    "value": {
+      "error": "Europe PMC returned a record not first indexed on 2024-06-10, so the search did not keep to the day (an unbalanced bracket in the query drops its date clause)",
+      "fulltext_urls": [],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/broken-query-matches-nothing",
+    "ok": true,
+    "value": {
+      "error": "Europe PMC finds nothing for the query on any day, so 2024-06-10 is not taken as empty: the query is broken (a misspelt field matches nothing, with no error)",
+      "fulltext_urls": [],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        },
+        {
+          "format": "json",
+          "pageSize": 1,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\"))",
+          "resultType": "lite"
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/empty-day-check-fails",
+    "ok": true,
+    "value": {
+      "error": "HTTPStatusError: HTTP 500",
+      "fulltext_urls": [],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        },
+        {
+          "format": "json",
+          "pageSize": 1,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\"))",
+          "resultType": "lite"
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/empty-day-check-has-no-count",
+    "ok": true,
+    "value": {
+      "error": "Europe PMC returned a page with no hitCount that is a count for 2024-06-10",
+      "fulltext_urls": [],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        },
+        {
+          "format": "json",
+          "pageSize": 1,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\"))",
+          "resultType": "lite"
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/negative-hit-count",
+    "ok": true,
+    "value": {
+      "error": "Europe PMC returned a page with no hitCount that is a count for 2024-06-10",
+      "fulltext_urls": [],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/zero-count-with-records",
+    "ok": true,
+    "value": {
+      "error": "Europe PMC promised no records for 2024-06-10 but its first page carried 2",
+      "fulltext_urls": [],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/failure-after-the-first-page",
+    "ok": true,
+    "value": {
+      "error": "HTTPStatusError: HTTP 500",
+      "fulltext_urls": [
+        [],
+        []
+      ],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        },
+        {
+          "cursorMark": "AoE1",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "(OPEN_ACCESS:Y AND (TITLE:\"depression\" OR ABSTRACT:\"anxiety disorder\")) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        }
+      ],
+      "progress": [
+        [
+          2,
+          3,
+          "in_progress"
+        ]
+      ],
+      "record_count": 2,
+      "records": [
+        "Trial 1",
+        "Trial 2"
+      ],
+      "status": "failed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  },
+  {
+    "name": "fetch/no-break-space-query-is-sent",
+    "ok": true,
+    "value": {
+      "error": "Europe PMC finds nothing for the query on any day, so 2024-06-10 is not taken as empty: the query is broken (a misspelt field matches nothing, with no error)",
+      "fulltext_urls": [],
+      "note": null,
+      "params": [
+        {
+          "cursorMark": "*",
+          "format": "json",
+          "pageSize": 1000,
+          "query": "( ) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]",
+          "resultType": "core"
+        },
+        {
+          "format": "json",
+          "pageSize": 1,
+          "query": "( )",
+          "resultType": "lite"
+        }
+      ],
+      "progress": [],
+      "record_count": 0,
+      "records": [],
+      "status": "failed",
+      "urls": [
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
+      ]
+    }
+  }
+]

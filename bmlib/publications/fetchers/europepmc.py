@@ -14,26 +14,49 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""One Europe PMC search record as a :class:`FetchedRecord`.
+"""Europe PMC search records as :class:`FetchedRecord`, and the ``europepmc`` sync source.
 
-Not a sync fetcher: :func:`bmlib.publications.lookup.lookup_record` asks Europe
-PMC for a preprint accession (``PPR`` + digits), which neither PubMed nor
-OpenAlex knows, and this reads the ``resultType=core`` hit it gets back. Every
-field is read type-checked, so a value of the wrong type costs that field and
-not the record (the OpenAlex normaliser's rule; Rust's port reads alike).
+:func:`normalize_europepmc` reads one ``resultType=core`` hit. Every field is
+read type-checked, so a value of the wrong type costs that field and not the
+record (the OpenAlex normaliser's rule; Rust's port reads alike). Two callers
+use it: :func:`bmlib.publications.lookup.lookup_record`, which asks Europe PMC
+for a preprint accession (``PPR`` + digits) neither PubMed nor OpenAlex knows,
+and :func:`fetch_europepmc`, the opt-in sync source that walks a caller's
+search one first-index day at a time.
 """
 
 from __future__ import annotations
 
+import logging
 import re
+import time
+from collections.abc import Callable
+from datetime import date
 from typing import Any
 
 from bmlib.fulltext.models import FullTextSourceEntry
+from bmlib.publications.fetchers._reconcile import reconcile_delivery
 from bmlib.publications.fetchers.pubmed import _escape_markdown
-from bmlib.publications.models import FetchedRecord
+from bmlib.publications.models import FetchedRecord, FetchResult, SyncProgress
+
+logger = logging.getLogger(__name__)
 
 #: Restated, as ``transparency`` and ``fulltext`` each keep their own literal.
 EUROPEPMC_REST_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"
+
+# The day-by-day sync source (`fetch_europepmc`).
+_SOURCE = "europepmc"
+_SEARCH_URL = f"{EUROPEPMC_REST_BASE}/search"
+# The API's largest page.
+_PAGE_SIZE = 1000
+# Europe PMC publishes no hard limit; one request a second is polite.
+_RATE_LIMIT_SECONDS = 1.0
+#: Fixed before measurement, not measured: the walk is by first index date, and one probe
+#: (2026-11-16) saw index days loaded in batches (none yet for that day, 6,093 for the day
+#: before), so a day is re-fetched for three days past its end. Whether a past index day
+#: still grows later is unmeasured.
+EUROPEPMC_SETTLE_DAYS = 3
+_FIRST_CURSOR = "*"
 
 # `fullTextXML` addresses a PMC or PPR accession, never a PMID (#188).
 _PPR_ID = re.compile(r"PPR[0-9]+")
@@ -182,3 +205,280 @@ def normalize_europepmc(raw: dict[str, Any]) -> FetchedRecord:
         fulltext_sources=fulltext_sources,
         extras={"ppr_id": ppr_id} if ppr_id else {},
     )
+
+
+# ---------------------------------------------------------------------------
+# Day-by-day sync source
+# ---------------------------------------------------------------------------
+
+
+def _failed(date_str: str, records_processed: int, message: str) -> FetchResult:
+    """A failed :class:`FetchResult` that keeps what the walk delivered.
+
+    The records already handed to ``on_record`` are stored, and the day is
+    fetched again regardless.
+    """
+    return FetchResult(
+        source=_SOURCE,
+        date=date_str,
+        record_count=records_processed,
+        status="failed",
+        error=message,
+    )
+
+
+def _get_page(
+    client: Any, params: dict[str, Any], date_str: str, records_processed: int
+) -> tuple[dict[str, Any], list[Any]] | FetchResult:
+    """One search page and its result list, or the failed day when either is unusable."""
+    try:
+        response = client.get(_SEARCH_URL, params=params)
+        response.raise_for_status()
+        # Decoded inside the guard: a malformed body is this call failing
+        # (the OpenAlex fetcher's #91).
+        data = response.json()
+    except Exception as exc:
+        logger.error("Europe PMC fetch failed for %s: %s: %s", date_str, type(exc).__name__, exc)
+        return _failed(date_str, records_processed, f"{type(exc).__name__}: {exc}")
+    # An error answer still arrives as an object, so the envelope is checked,
+    # never defaulted (OpenAlex's #88).
+    if not isinstance(data, dict):
+        return _failed(
+            date_str,
+            records_processed,
+            f"Europe PMC returned a {type(data).__name__} payload, not an object, for {date_str}",
+        )
+    result_list = data.get("resultList")
+    results = result_list.get("result") if isinstance(result_list, dict) else None
+    if not isinstance(results, list):
+        return _failed(
+            date_str,
+            records_processed,
+            f"Europe PMC returned a page carrying no result list for {date_str}",
+        )
+    return data, results
+
+
+def _hit_count(data: dict[str, Any]) -> int | None:
+    """The page's ``hitCount`` if it is a count: an int, not a ``bool`` (#313), not negative."""
+    count = data.get("hitCount")
+    if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+        return None
+    return count
+
+
+def fetch_europepmc(
+    client: Any,
+    target_date: date,
+    *,
+    on_record: Callable[[FetchedRecord], None],
+    on_progress: Callable[[SyncProgress], None] | None = None,
+    query: str,
+    email: str | None = None,
+) -> FetchResult:
+    """Fetch every Europe PMC record matching *query* first indexed on *target_date*.
+
+    The day is added to the caller's search as
+    ``(<query>) AND FIRST_IDATE:[<day> TO <day>]``: the day a record entered
+    Europe PMC, which a record that is published earlier but indexed later
+    still has (a walk by first publication date missed about a fifth of each
+    day that way). The walk follows ``cursorMark`` until a page is empty or the
+    cursor stops moving. The first page's ``hitCount`` is the promise, and
+    Europe PMC computes it from the same search, so **any** walk that ends
+    short of it fails the day, which is fetched again.
+
+    A search Europe PMC cannot apply is answered with HTTP 200, so it is
+    caught here: a record not first indexed on the day means the date clause
+    was dropped (an unbalanced bracket does that), and an empty day is checked
+    against the query without the date clause, where no hit at all means a
+    broken query (a misspelt field matches nothing), not a quiet day.
+
+    The day ledger is keyed by source and day, not by query: a day completed
+    under one query is not fetched again under another.
+
+    Parameters
+    ----------
+    client:
+        An httpx-compatible client with a ``.get()`` method.
+    target_date:
+        The first-index date to query.
+    on_record:
+        Called once per normalised :class:`FetchedRecord`.
+    on_progress:
+        Optional callback receiving :class:`SyncProgress` updates.
+    query:
+        The Europe PMC search, without a date clause.
+    email:
+        Optional contact address, sent as Europe PMC asks polite clients to.
+
+    Returns
+    -------
+    FetchResult
+        Summary of the fetch operation.
+    """
+    date_str = target_date.isoformat()
+    if not query.strip(_ASCII_SPACE):
+        return _failed(date_str, 0, "Europe PMC needs a search: the query parameter is empty")
+
+    cursor = _FIRST_CURSOR
+    records_processed = 0
+    records_total = 0
+    is_first_page = True
+    stalled = False
+
+    while True:
+        params: dict[str, Any] = {
+            "query": f"({query}) AND FIRST_IDATE:[{date_str} TO {date_str}]",
+            "resultType": "core",
+            "format": "json",
+            "pageSize": _PAGE_SIZE,
+            "cursorMark": cursor,
+        }
+        if email:
+            params["email"] = email
+        page = _get_page(client, params, date_str, records_processed)
+        if isinstance(page, FetchResult):
+            return page
+        data, results = page
+
+        if is_first_page:
+            count = _hit_count(data)
+            if count is None:
+                return _failed(
+                    date_str,
+                    records_processed,
+                    f"Europe PMC returned a page with no hitCount that is a count for {date_str}",
+                )
+            if count == 0 and results:
+                return _failed(
+                    date_str,
+                    records_processed,
+                    f"Europe PMC promised no records for {date_str} but its first page"
+                    f" carried {len(results)}",
+                )
+            records_total = count
+            is_first_page = False
+
+        for raw in results:
+            # `normalize_europepmc` reads a non-object as an empty record; a
+            # walk refuses it, as Rust's `normalize` returns `None`.
+            if not isinstance(raw, dict):
+                return _failed(
+                    date_str,
+                    records_processed,
+                    f"Europe PMC returned a page bmlib could not normalise for {date_str}:"
+                    f" TypeError: a result that is a {type(raw).__name__}, not an object",
+                )
+            if raw.get("firstIndexDate") != date_str:
+                return _failed(
+                    date_str,
+                    records_processed,
+                    f"Europe PMC returned a record not first indexed on {date_str}, so the"
+                    " search did not keep to the day (an unbalanced bracket in the query"
+                    " drops its date clause)",
+                )
+            record = normalize_europepmc(raw)
+            try:
+                on_record(record)
+            except Exception as exc:
+                return _failed(
+                    date_str,
+                    records_processed,
+                    f"Handing on a Europe PMC record for {date_str} failed:"
+                    f" {type(exc).__name__}: {exc}",
+                )
+            records_processed += 1
+
+        if not results:
+            # An empty page also bounds the loop; it is a stall while the
+            # promise is unmet.
+            stalled = records_processed < records_total
+            break
+
+        if on_progress is not None:
+            on_progress(
+                SyncProgress(
+                    source=_SOURCE,
+                    date=date_str,
+                    records_processed=records_processed,
+                    records_total=records_total,
+                    status="in_progress",
+                )
+            )
+
+        next_cursor = data.get("nextCursorMark")
+        if next_cursor is not None and not isinstance(next_cursor, str):
+            return _failed(
+                date_str,
+                records_processed,
+                f"Europe PMC returned a nextCursorMark that is not a string for {date_str}",
+            )
+        # Europe PMC sends no cursor with the last page; a repeated or empty
+        # one ends the walk too, and what it left unmet is judged below.
+        if not next_cursor or next_cursor == cursor:
+            break
+        cursor = next_cursor
+        time.sleep(_RATE_LIMIT_SECONDS)
+
+    if records_total == 0:
+        return _check_empty_day(client, date_str, query, email)
+
+    if not stalled and records_processed < records_total:
+        # The count is the search's own, so no shortfall is benign here, unlike
+        # the shared floor `reconcile_delivery` applies.
+        message = (
+            f"{_SOURCE} delivered {records_processed} of {records_total} records for"
+            f" {date_str} and then sent no new cursor, so the walk stopped short"
+        )
+        logger.error("%s", message)
+        return _failed(date_str, records_processed, message)
+
+    # Every member of a page is normalised (none are skipped), so what arrived
+    # is `records_processed`.
+    verdict = reconcile_delivery(
+        _SOURCE,
+        date_str,
+        delivered=records_processed,
+        promised=records_total,
+        stalled=stalled,
+    )
+    if verdict.failure is not None:
+        return _failed(date_str, records_processed, verdict.failure)
+    return FetchResult(
+        source=_SOURCE,
+        date=date_str,
+        record_count=records_processed,
+        status="completed",
+        note=verdict.note,
+    )
+
+
+def _check_empty_day(client: Any, date_str: str, query: str, email: str | None) -> FetchResult:
+    """Complete an empty day only if the query, without its date clause, finds anything."""
+    params: dict[str, Any] = {
+        "query": f"({query})",
+        "resultType": "lite",
+        "format": "json",
+        "pageSize": 1,
+    }
+    if email:
+        params["email"] = email
+    time.sleep(_RATE_LIMIT_SECONDS)
+    page = _get_page(client, params, date_str, 0)
+    if isinstance(page, FetchResult):
+        return page
+    count = _hit_count(page[0])
+    if count is None:
+        return _failed(
+            date_str,
+            0,
+            f"Europe PMC returned a page with no hitCount that is a count for {date_str}",
+        )
+    if count == 0:
+        return _failed(
+            date_str,
+            0,
+            f"Europe PMC finds nothing for the query on any day, so {date_str} is not taken as"
+            " empty: the query is broken (a misspelt field matches nothing, with no error)",
+        )
+    return FetchResult(source=_SOURCE, date=date_str, record_count=0, status="completed")
