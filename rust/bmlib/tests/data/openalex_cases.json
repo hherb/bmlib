@@ -577,6 +577,46 @@
    "payloads": [
     {
      "meta": {
+      "count": 0,
+      "next_cursor": null
+     },
+     "results": [
+      {
+       "doi": "https://doi.org/10.1/A",
+       "title": "A"
+      }
+     ]
+    }
+   ]
+  },
+  "fn": "fetch",
+  "name": "fetch/zero-count-with-works"
+ },
+ {
+  "args": {
+   "payloads": [
+    {
+     "meta": {
+      "count": -1,
+      "next_cursor": null
+     },
+     "results": [
+      {
+       "doi": "https://doi.org/10.1/A",
+       "title": "A"
+      }
+     ]
+    }
+   ]
+  },
+  "fn": "fetch",
+  "name": "fetch/negative-count"
+ },
+ {
+  "args": {
+   "payloads": [
+    {
+     "meta": {
       "count": 5,
       "next_cursor": "c1"
      },

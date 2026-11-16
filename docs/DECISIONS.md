@@ -4225,13 +4225,15 @@ a named test and was verified by mutation. Only what it omits:
   which asserts *both* possible quiet-day shapes so the guard cannot come to
   depend on the unmeasured answer.
 - **An absent count is `None`, never `0`.** `promised=0` is a source saying
-  the day is empty, which any delivery satisfies; `promised=None` is a source
-  saying nothing. bioRxiv's `records_total or 0` collapsed the two, which
-  silently disabled *both* the shortfall and the stalled rules — the stalled
-  flag is conditioned on knowing the total — so a first page carrying records
-  and no `total` followed by an empty page completed as a whole day. Records
-  delivered against `None` now fail; nothing delivered against `None` is the
-  quiet day and passes. Pinned by
+  the day is empty; `promised=None` is a source saying nothing. Since #795
+  only an empty delivery satisfies either (records against a count of 0 fail,
+  and so does any negative count), so the verdicts agree, but the failure
+  still names which one the source sent. bioRxiv's `records_total or 0`
+  collapsed the two, which silently disabled *both* the shortfall and the
+  stalled rules — the stalled flag is conditioned on knowing the total — so a
+  first page carrying records and no `total` followed by an empty page
+  completed as a whole day. Records delivered against `None` now fail; nothing
+  delivered against `None` is the quiet day and passes. Pinned by
   `test_records_delivered_without_a_total_cannot_complete` and its negative
   control `test_nothing_delivered_against_no_count_is_a_quiet_day`.
 - **Every fetcher must compute `stalled` itself.** It defaults to `False`,

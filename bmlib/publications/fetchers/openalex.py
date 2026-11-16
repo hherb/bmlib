@@ -365,9 +365,9 @@ def fetch_openalex(
             #
             # Breaking unconditionally also bounds the loop: a page carrying
             # no results and a non-null ``next_cursor`` otherwise repeats for
-            # ever. A walk that has already met its promise breaks here too
-            # and completes, because ``reconcile_delivery`` returns early once
-            # ``delivered >= promised`` and never consults *stalled*.
+            # ever. A walk that has already met a positive promise breaks here
+            # too and completes, because ``reconcile_delivery`` returns early
+            # once ``delivered >= promised`` and never consults *stalled*.
             stalled = records_processed < records_total
             break
 

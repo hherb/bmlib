@@ -359,11 +359,10 @@ def fetch_biorxiv(
             if not isinstance(collection, list):
                 raise ValueError(f"{server} returned a collection that is not a list")
 
-            # Absent ``total`` leaves this None rather than 0 (#88): flattening
-            # the two makes "the source said this day is empty" and "the source
-            # said nothing" identical, and the second silently switches off
-            # both reconciliation rules — a page walk that then stops early
-            # completes with no shortfall and no stall detected.
+            # Absent ``total`` leaves this None rather than 0 (#88). Records
+            # delivered against either fail the day (#795), so collapsing the
+            # two no longer changes the verdict, but the failure would name a
+            # count of 0 the source never sent.
             if records_total is None and messages:
                 first = messages[0]
                 if isinstance(first, dict) and first.get("total") is not None:
@@ -456,7 +455,7 @@ def fetch_biorxiv(
         )
 
     # Not `records_total or 0` — see reconcile_delivery's `promised` docstring:
-    # None and 0 are different claims and collapsing them disables the rules.
+    # the verdict is the same, but the failure would name a count never sent.
     verdict = reconcile_delivery(
         name,
         date_str,

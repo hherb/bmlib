@@ -1374,6 +1374,36 @@ class TestBiorxivWalkIsReconciledAgainstTheTotal:
         assert result.status == "completed"
         assert result.error is None
 
+    def test_a_total_of_zero_with_records_fails(self):
+        """A stated ``total`` of 0 beside records cannot be verified (#795)."""
+        mock_resp = _make_api_response([_sample_record()], total=0)
+        client = MagicMock()
+        client.get.return_value = mock_resp
+
+        result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+        assert result.status == "failed"
+        assert result.record_count == 1
+        assert result.error == (
+            "biorxiv delivered 1 records for 2024-06-15 but reported a count of 0, which"
+            " the delivery contradicts, so the walk cannot be shown to have finished"
+        )
+
+    def test_a_negative_total_fails(self):
+        """``int("-1")`` parses, so only reconciliation stands in its way (#795)."""
+        mock_resp = _make_api_response([_sample_record()], total=-1)
+        client = MagicMock()
+        client.get.return_value = mock_resp
+
+        result = fetch_biorxiv(client, date(2024, 6, 15), on_record=MagicMock())
+
+        assert result.status == "failed"
+        assert result.record_count == 1
+        assert result.error == (
+            "biorxiv reported -1 records for 2024-06-15, which is not a count,"
+            " so the walk cannot be verified"
+        )
+
     def test_an_empty_page_with_records_outstanding_fails(self):
         mock_resp = _make_api_response([], total=250)
         client = MagicMock()

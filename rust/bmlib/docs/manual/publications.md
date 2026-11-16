@@ -172,8 +172,9 @@ returns a `FetchOutcome`: the `record_count` the sink received, `status`
 and, for a source whose descriptor is `resumable`, the `resume` state.
 `CountingSink` keeps the count and the delivery from disagreeing, and
 `reconcile_delivery` with `SHORTFALL_FAILURE_RATIO` (0.5) judges a walk against
-its promise the way the built-ins do. Records delivered against **no** promise
-cannot be shown complete, so the day fails: report `promised`.
+its promise the way the built-ins do. Records delivered against **no** promise,
+or against a promise of zero, cannot be shown complete, so the day fails, and so
+does a negative promise (#795): report `promised`.
 
 Python's module-level registry is a `Registry` value the caller owns:
 `register(descriptor, Box<dyn Fetcher>)` (replacing an entry of the same name,
@@ -201,7 +202,7 @@ page's `hitCount` with no shortfall floor: any walk ending short of it fails the
 day, and an empty day completes only if the query without its date clause finds
 something. The Python page's [`fetch_europepmc`
 section](../../../../docs/manual/publications.md#fetch_europepmc-unreleased) has
-the rules and the known limits (#792-#795); the Rust walk keeps them, except
+the rules and the known limits (#792-#794); the Rust walk keeps them, except
 that its `FetchSink` cannot fail a record. PubMed titles and abstracts are read
 as Markdown (`text_with_formatting`, `escape_markdown`), as in Python.
 

@@ -16,7 +16,7 @@
 
 //! bioRxiv/medRxiv walker — the oracle and the named tests.
 //!
-//! The corpus (65 cases) diffs normalisation and the whole page walk against
+//! The corpus (86 cases) diffs normalisation and the whole page walk against
 //! Python, including the shapes that must be **refused** rather than read as a
 //! quiet day. The named tests state why each refusal exists, which is what a
 //! corpus of messages cannot say.
@@ -95,9 +95,11 @@ fn run_scripted(pages: Vec<Scripted>, server: &str, day: &str, endpoint: Endpoin
         .pages()
         .into_iter()
         // `or` the running delivered count, which is what Python's
-        // `records_total or total_fetched` falls back to.
+        // `records_total or total_fetched` falls back to: on `None` and, being
+        // Python's `or`, on a stated 0 too (`fetch/zero-total-with-records`).
         .map(|(delivered, promised)| {
-            json!([delivered, promised.unwrap_or(delivered), "in_progress"])
+            let total = promised.filter(|total| *total != 0).unwrap_or(delivered);
+            json!([delivered, total, "in_progress"])
         })
         .collect();
 
@@ -409,9 +411,9 @@ fn a_non_numeric_total_is_named() {
     );
 }
 
-/// An **absent `total`** stays `None` rather than becoming zero. Flattening the
-/// two makes "the source said this day is empty" and "the source said nothing"
-/// identical, and the second silently switches off both reconciliation rules.
+/// An **absent `total`** stays `None` rather than becoming zero. Collapsing the
+/// two no longer changes the verdict (#795), but the failure would name a count
+/// of 0 the source never sent.
 #[test]
 fn an_absent_total_stays_none() {
     for messages in [json!([]), json!([{}]), json!([{"total": null}])] {

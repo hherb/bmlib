@@ -1321,17 +1321,17 @@ The comparison now happens in one shared place and applies three rules that diff
 | Rule | Fires when | Threshold |
 |------|-----------|-----------|
 | **Stalled** | A page delivers no records while the source's own count says records remain. | None — broken outright, whatever the size of the gap. |
-| **Unreconcilable** | Records arrived, but the source reported no count to judge them against. | None — the walk cannot be shown to have finished. |
+| **Unreconcilable** | Records arrived, but the source reported no count to judge them against, or *(unreleased)* a count of 0, which the records contradict; or *(unreleased)* the source reported a negative count, which is not a count (#795). | None — the walk cannot be shown to have finished. |
 | **Shortfall** | The walk ended naturally but delivered less than half the promised count. | `SHORTFALL_FAILURE_RATIO = 0.5`, exclusive. |
 
-Delivering nothing against no count is the ordinary quiet day and passes silently. A shortfall too small to fail on completes, is logged at WARNING, and is returned as `FetchResult.note` — which `sync()` collects into `SyncReport.notes`, separately from `errors`, because that day will *not* be retried and is the one case where an operator has to be able to find it afterwards.
+Delivering nothing against no count, or against a count of 0, is the ordinary quiet day and passes silently. A shortfall too small to fail on completes, is logged at WARNING, and is returned as `FetchResult.note` — which `sync()` collects into `SyncReport.notes`, separately from `errors`, because that day will *not* be retried and is the one case where an operator has to be able to find it afterwards.
 
 Three things worth knowing before relying on this:
 
 - **The floor is a rule fixed before measurement**, unlike bmlib's other calibrated thresholds. It asserts only that no benign cause plausibly removes half a day's records. Issue #92 is the follow-up that measures the real distribution per source and tightens it — do not read `0.5` as a measured value.
 - **Partitioning a PubMed day raised what that unmeasured floor exposes, by about 24×** *(0.11.0, #105)*. Before it, no PubMed day above 9,999 records was walked at all, so a `completed` day could be missing at most 4,999 records. Now every part of a partitioned day may come up to half short without failing, and the day's own total is judged against the same floor — so a 242,216-record day can be recorded `completed` while missing some 121,000 records, behind notes. Nothing about the rule changed; the population it applies to did. That is what makes #92 more urgent than when it was filed.
 - **The floor exists because a failed day is retried forever.** `_days_needing_fetch()` re-offers a `failed` day on every later run, so treating a benign, permanent gap as a failure would re-fetch and re-merge that whole day for the rest of an installation's life. Sources are not exact: a record can be withdrawn between search and fetch, and an index can move under a long walk.
-- **A count of `None` is not a count of `0`.** If you write a fetcher, pass `promised=None` when your source reported no count, never `0`: zero is a source saying the day is empty, which any delivery satisfies, so collapsing the two switches the stalled and shortfall rules off without saying so.
+- **A count of `None` is not a count of `0`.** If you write a fetcher, pass `promised=None` when your source reported no count, never `0`. *(unreleased)* Both now reach one verdict (only an empty delivery satisfies either, #795), but the failure names which one the source sent, and a `0` your source never sent misleads whoever reads it.
 
 Each fetcher also refuses a malformed envelope rather than reading it through defaults, since an HTTP-200 error body is otherwise indistinguishable from a day with no publications: PubMed rejects an efetch response that is not a `PubmedArticleSet` (NCBI answers an evicted history session with `<eFetchResult><ERROR>…</ERROR>` at HTTP 200), and OpenAlex requires `results` to be a list and `meta` an object carrying a numeric `count`.
 
@@ -1646,7 +1646,6 @@ Known limits, each filed:
 - A record that starts matching your query after its index day has settled — one that becomes open access, for a query asking for open access — is never fetched (#792).
 - `download_days` is keyed by source and day, not by query: change the query and the days already completed under the old one are not fetched again (#793). To re-walk them, delete the source's `download_days` rows and sync a window that covers those days.
 - A record with neither a DOI nor a PMID has nothing to deduplicate on, so it is stored again on every re-fetch of its day (#794).
-- The shared `reconcile_delivery` passes a zero or negative count delivered with records (#795). `fetch_europepmc` refuses both itself; `fetch_openalex` does not.
 
 **Example:**
 

@@ -806,6 +806,68 @@
     }
   },
   {
+    "name": "fetch/zero-count-with-works",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*"
+      ],
+      "error": "openalex delivered 1 records for 2024-06-10 but reported a count of 0, which the delivery contradicts, so the walk cannot be shown to have finished",
+      "note": null,
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [
+        [
+          1,
+          0,
+          "in_progress"
+        ]
+      ],
+      "record_count": 1,
+      "records": [
+        "A"
+      ],
+      "status": "failed"
+    }
+  },
+  {
+    "name": "fetch/negative-count",
+    "ok": true,
+    "value": {
+      "cursors": [
+        "*"
+      ],
+      "error": "openalex reported -1 records for 2024-06-10, which is not a count, so the walk cannot be verified",
+      "note": null,
+      "params": [
+        {
+          "cursor": "*",
+          "filter": "from_publication_date:2024-06-10,to_publication_date:2024-06-10",
+          "mailto": "a@b.c",
+          "per_page": 200
+        }
+      ],
+      "progress": [
+        [
+          1,
+          -1,
+          "in_progress"
+        ]
+      ],
+      "record_count": 1,
+      "records": [
+        "A"
+      ],
+      "status": "failed"
+    }
+  },
+  {
     "name": "fetch/empty-first-page-with-count",
     "ok": true,
     "value": {

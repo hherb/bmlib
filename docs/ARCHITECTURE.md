@@ -210,13 +210,15 @@ delivering nothing while the count says records remain) is broken outright
 and carries no threshold — it is also the only rule that catches a session
 expiring on the last page, so every fetcher must compute and pass it, and
 OpenAlex silently not doing so was a live hole after #88's first round;
-**unreconcilable** delivery (records arrived against no count at all) cannot
-be shown to have finished and so cannot complete, while nothing delivered
-against no count is the ordinary quiet day; and a walk that ended naturally
-but came up short is judged against `SHORTFALL_FAILURE_RATIO`. The
-`promised=None` that drives the second rule must never be flattened to `0` —
-"this day is empty" and "I am not telling you" are different claims, and
-collapsing them switches the other two rules off silently.
+**unreconcilable** delivery (records arrived against no count at all, or
+against a count of 0, or any negative count, #795) cannot be shown to have
+finished and so cannot complete, while nothing delivered against no count or
+a count of 0 is the ordinary quiet day; and a walk that ended naturally but
+came up short is judged against `SHORTFALL_FAILURE_RATIO`. The
+`promised=None` that drives the second rule is still never flattened to `0`:
+since #795 the two reach one verdict, but "this day is empty" and "I am not
+telling you" are different claims, and the failure names which one the source
+sent.
 
 A shortfall too small to fail on returns a **note** as well as logging one.
 `FetchResult.note` carries it to `SyncReport.notes`, kept apart from

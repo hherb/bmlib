@@ -90,18 +90,62 @@ class TestAnUnknownPromise:
         assert verdict.failure is None
         assert verdict.note is None
 
-    def test_an_unknown_promise_is_not_read_as_zero(self, caplog):
-        """``None`` and ``0`` must reach different branches.
+    def test_an_unknown_promise_and_a_zero_one_say_which_they_were(self):
+        """Both fail with records delivered (#795), each naming what was sent.
 
-        Pinned separately because the bug was precisely a caller collapsing
-        the two with ``records_total or 0``, which no assertion about the
-        ``0`` case can catch.
+        A caller collapsing the two with ``records_total or 0`` (#88's bug) no
+        longer changes the verdict, but it would put a count of 0 the source
+        never sent into the operator's error line.
         """
+        zero = reconcile_delivery("biorxiv", "2024-01-15", delivered=7, promised=0)
+        unknown = reconcile_delivery("biorxiv", "2024-01-15", delivered=7, promised=None)
+        assert zero.failure == (
+            "biorxiv delivered 7 records for 2024-01-15 but reported a count of 0, which"
+            " the delivery contradicts, so the walk cannot be shown to have finished"
+        )
+        assert unknown.failure == (
+            "biorxiv delivered 7 records for 2024-01-15 but reported no count to reconcile"
+            " them against, so the walk cannot be shown to have finished"
+        )
+
+
+class TestACountTheDeliveryContradicts:
+    """A count of zero with records, or a negative count, fails the day (#795).
+
+    ``reconcile_delivery`` returned clean for any ``promised <= 0``, so an
+    OpenAlex ``meta.count`` of 0 with a full page completed its day unverified.
+    """
+
+    def test_records_against_a_count_of_zero_fail(self, caplog):
         with caplog.at_level(logging.ERROR, logger="bmlib.publications.fetchers._reconcile"):
-            zero = reconcile_delivery("biorxiv", "2024-01-15", delivered=7, promised=0)
-            unknown = reconcile_delivery("biorxiv", "2024-01-15", delivered=7, promised=None)
-        assert zero.failure is None
-        assert unknown.failure is not None
+            verdict = reconcile_delivery("openalex", "2024-01-15", delivered=1, promised=0)
+        assert verdict.failure is not None
+        assert verdict.note is None
+        assert [r.getMessage() for r in caplog.records] == [verdict.failure]
+
+    def test_a_negative_count_fails_whatever_was_delivered(self, caplog):
+        with caplog.at_level(logging.ERROR, logger="bmlib.publications.fetchers._reconcile"):
+            empty = reconcile_delivery("openalex", "2024-01-15", delivered=0, promised=-1)
+            full = reconcile_delivery("openalex", "2024-01-15", delivered=5, promised=-1)
+        message = (
+            "openalex reported -1 records for 2024-01-15, which is not a count,"
+            " so the walk cannot be verified"
+        )
+        assert empty == full == (message, None)
+        assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+            (logging.ERROR, message),
+            (logging.ERROR, message),
+        ]
+
+    def test_a_negative_count_is_judged_before_a_stall(self):
+        """No caller can stall against a negative count, but the order is pinned."""
+        verdict = reconcile_delivery(
+            "openalex", "2024-01-15", delivered=0, promised=-1, stalled=True
+        )
+        assert verdict.failure == (
+            "openalex reported -1 records for 2024-01-15, which is not a count,"
+            " so the walk cannot be verified"
+        )
 
 
 class TestAStalledWalk:

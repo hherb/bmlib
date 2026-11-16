@@ -45,11 +45,10 @@
 //!   day on every run for the life of the installation — the runaway-retry cost
 //!   the reconciliation rules exist to avoid. #94 is the live sampler that
 //!   would let this be tightened.
-//! - An **absent `total`** stays `None` rather than becoming `0`. Flattening
-//!   the two makes "the source said this day is empty" and "the source said
-//!   nothing" identical, and the second silently switches off both
-//!   reconciliation rules — a walk that then stops early completes with no
-//!   shortfall and no stall detected.
+//! - An **absent `total`** stays `None` rather than becoming `0`. Records
+//!   delivered against either fail the day (#795), so collapsing the two no
+//!   longer changes the verdict, but the failure would name a count of 0 the
+//!   source never sent.
 
 use chrono::NaiveDate;
 

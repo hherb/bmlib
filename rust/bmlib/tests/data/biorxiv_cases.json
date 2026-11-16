@@ -313,6 +313,50 @@
     }
   },
   {
+    "name": "fetch/zero-total-with-records",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "collection": [
+            {
+              "doi": "10.1/a",
+              "title": "R1"
+            }
+          ],
+          "messages": [
+            {
+              "total": 0
+            }
+          ]
+        }
+      ],
+      "server": "biorxiv"
+    }
+  },
+  {
+    "name": "fetch/negative-total",
+    "fn": "fetch",
+    "args": {
+      "payloads": [
+        {
+          "collection": [
+            {
+              "doi": "10.1/a",
+              "title": "R1"
+            }
+          ],
+          "messages": [
+            {
+              "total": -1
+            }
+          ]
+        }
+      ],
+      "server": "biorxiv"
+    }
+  },
+  {
     "name": "fetch/quiet-day-omits-total-and-collection",
     "fn": "fetch",
     "args": {

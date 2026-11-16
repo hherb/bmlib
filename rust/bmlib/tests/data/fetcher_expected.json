@@ -192,7 +192,7 @@
     "name": "recon/promise-zero-with-delivery",
     "ok": true,
     "value": {
-      "failure": null,
+      "failure": "pubmed delivered 3 records for 2024-06-10 but reported a count of 0, which the delivery contradicts, so the walk cannot be shown to have finished",
       "note": null
     }
   },
@@ -200,7 +200,15 @@
     "name": "recon/promise-negative",
     "ok": true,
     "value": {
-      "failure": null,
+      "failure": "pubmed reported -1 records for 2024-06-10, which is not a count, so the walk cannot be verified",
+      "note": null
+    }
+  },
+  {
+    "name": "recon/promise-negative-with-delivery",
+    "ok": true,
+    "value": {
+      "failure": "pubmed reported -1 records for 2024-06-10, which is not a count, so the walk cannot be verified",
       "note": null
     }
   },
