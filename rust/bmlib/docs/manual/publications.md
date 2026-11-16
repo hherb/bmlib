@@ -172,8 +172,9 @@ returns a `FetchOutcome`: the `record_count` the sink received, `status`
 and, for a source whose descriptor is `resumable`, the `resume` state.
 `CountingSink` keeps the count and the delivery from disagreeing, and
 `reconcile_delivery` with `SHORTFALL_FAILURE_RATIO` (0.5) judges a walk against
-its promise the way the built-ins do. Records delivered against **no** promise
-cannot be shown complete, so the day fails: report `promised`.
+its promise the way the built-ins do. Records delivered against **no** promise,
+or against a promise of zero, cannot be shown complete, so the day fails, and so
+does a negative promise (#795): report `promised`.
 
 Python's module-level registry is a `Registry` value the caller owns:
 `register(descriptor, Box<dyn Fetcher>)` (replacing an entry of the same name,

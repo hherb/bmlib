@@ -1,30 +1,59 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-16 (**#789, on `fix/library-bad-folder-name-789`**).
-Merged since the last update: #788 (#755 items 3, 5 and 6), below. **0.13.0
-is on PyPI** (tag `v0.13.0` on `161849c0`, the merge of #736) and **the Rust
-crate 0.4.0 on crates.io** from the same commit; everything since is under
-Unreleased._
+_Last updated: 2026-11-16 (**#795, on `fix/reconcile-nonpositive-count-795`**).
+Merged since the last update: PR #790 (the `europepmc` sync source) and PR
+#791 (#789), below. **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the
+merge of #736) and **the Rust crate 0.4.0 on crates.io** from the same commit;
+everything since is under Unreleased._
 
-## This session: a paper folder bmlib cannot name is reported (#789)
+## This session: a count the delivery contradicts fails the day (#795)
 
-- **The maintainer's pick** of #789's remedies: a scan reports a folder whose
-  name `component()` refuses as `bad_folder_name` (`folder`), and **keeps it
-  in `folders`**. So `find` sees the paper, and a save of it raises `BadName`
-  instead of forking it into a second folder (dropping the folder would cause
-  #778 item 1's failure). bmlib does not rename it; the user does.
-  Reasoning in `docs/DECISIONS.md` (*library*).
-- Both languages and bmlib-ffi (`Problem::BadFolderName`,
-  `LibraryProblem::BadFolderName`). This **breaks Rust and FFI callers**: an
-  exhaustive `match`, Swift `switch` or Kotlin `when` needs the case (in the
-  Rust CHANGELOG's *Changed — breaking*).
-- **The contract**: `save_scenarios` gains a `scan` step (`folders` and
-  `problems`) and a `bad_name` step error, and `plant` creates its folders, in
-  all three runners. The new case fails on `main`'s Python and with Rust's
-  emit mutated off. After the review it also scans a user's `papers/con`, a
-  folder under the current name (`_Con .x (PMID 2)`, no problem) and a stray
-  file, which pins `bad_folder_name` before the folder's own problems (Python
-  with the push moved after them fails it).
+- `reconcile_delivery` (Python `_reconcile.py`, Rust `reconcile.rs`) returned
+  clean for any `promised <= 0`. Now records against a count of 0 fail the day
+  as records against no count do, and a negative count fails it whatever was
+  delivered. The quiet day (nothing against 0 or `None`) still completes.
+- **Who it reaches**: OpenAlex (`meta.count` 0 beside works; pinned end to end
+  by `test_a_count_of_zero_with_works_fails_the_day` and the oracle case
+  `fetch/zero-count-with-works`). bioRxiv sends `None` for a missing total, so
+  its quiet day is untouched. PubMed never reaches the rule with a count
+  below 1 (a zero day returns earlier; parts promise at least 1; the
+  partitioned path needs a day over the cap). `europepmc` refused both itself.
+- `None` and `0` now reach one verdict and differ only in the message, so
+  DECISIONS' *An absent count is `None`, never `0`* and both manuals say so.
+  The Rust test that recorded the `promised <= 0` guard as "subsumed" pinned
+  the defect; it is replaced by one holding the new rule over the same grid.
+- Oracle: `recon/promise-negative-with-delivery` is new;
+  `recon/promise-zero-with-delivery` and `recon/promise-negative` now fail.
+  The new tests fail against `main`'s rule (checked by swapping the file).
+
+## Merged: a paper folder bmlib cannot name is reported (#789, PR #791)
+
+A scan reports a folder whose name `component()` refuses as
+`bad_folder_name` and **keeps it in `folders`**, so `find` sees the paper and
+a save raises `BadName` rather than forking it; the user renames it. **Breaks
+Rust and FFI callers** (`Problem::BadFolderName`,
+`LibraryProblem::BadFolderName`: an exhaustive `match`, Swift `switch` or
+Kotlin `when` needs the case). `save_scenarios` gained `scan` and `bad_name`
+steps in all three runners. Reasoning in `docs/DECISIONS.md` (*library*).
+
+## Merged: an opt-in Europe PMC sync source (PR #790)
+
+- `europepmc` walks a caller's search one **first-index day** at a time,
+  `(<query>) AND FIRST_IDATE:[<day> TO <day>]`, `query` required, `email`
+  optional; records go through `normalize_europepmc`. **Opt-in**
+  (`SourceDescriptor.opt_in`): `sync(sources=None)` leaves it out.
+  `ALL_SOURCES` still lists all seven built-ins. **The Rust field breaks a
+  `SourceDescriptor` struct literal.**
+- Any walk short of the first page's `hitCount` fails the day (no floor); a
+  hit not first indexed on the day fails it; an empty day completes only once
+  the query without the date clause is seen to match something.
+  **`EUROPEPMC_SETTLE_DAYS` = 3 is fixed before measurement**; do not cite it,
+  or `hitCount`'s exactness, as measured.
+- **Filed from its review, open**: **#792** (a record that starts matching
+  after its index day settled is never fetched; and measure the settle
+  period), **#793** (the day ledger ignores the query), **#794** (a record
+  with neither DOI nor PMID is stored again on every re-fetch). #795 is this
+  session's.
 
 ## Merged: the library's names agree across languages (#755 items 3, 5, 6, PR #788)
 
@@ -38,205 +67,48 @@ open for its decisions**: item 1 (`record_use` trusting the caller's
 `origin`, `title`, `first_author`) and item 6's noise (a `.corrupt` record
 reported on every scan, a `LeftoverTemp` that may be in flight,
 `Library(root)` bypassing `open_library`).
-_Last updated: 2026-11-16 (**PR #790, the `europepmc` sync source, on
-`feat/europepmc-sync`**). Merged since the last update: #788 (#755 items 3, 5
-and 6), below. **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge
-of #736) and **the Rust crate 0.4.0 on crates.io** from the same commit;
-everything since is under Unreleased._
 
-## This session: an opt-in Europe PMC sync source (PR #790)
+## Earlier library and FFI merges (PRs #771-#787)
 
-- **What it does**: `fetch_europepmc` (Rust `fetchers::europepmc::walk`,
-  `EuropePmcFetcher`) walks a caller's Europe PMC search one day at a time,
-  `(<query>) AND FIRST_IDATE:[<day> TO <day>]`, registered in both registries
-  as `europepmc` with `query` required and `email` optional. Records go
-  through `normalize_europepmc`, which `lookup_record` already used.
-- **Opt-in**: `SourceDescriptor.opt_in` is new (Python `bool = False`, Rust
-  `pub opt_in: bool`). `sync(sources=None)` runs every registered source that
-  is not opt-in, so a default sync does not run `europepmc`, which without a
-  query would fail every day, re-offered for ever by its settle period.
-  `ALL_SOURCES` still lists all seven built-ins. **The Rust field breaks a
-  `SourceDescriptor` struct literal** (Rust CHANGELOG, Changed — breaking).
-- **The review's changes**: the walk moved from `FIRST_PDATE` to `FIRST_IDATE`
-  (first indexed, not first published); any walk short of the first page's
-  `hitCount` now fails the day, with no 50% shortfall floor, because the count
-  is the search's own; a hit not first indexed on the day fails it (Europe PMC
-  drops the date clause on an unbalanced bracket and answers 200); an empty
-  day is completed only after the query without the date clause is seen to
-  match something (a misspelt field matches nothing, also with 200); a
-  `nextCursorMark` that is not a string, a zero count with records, a negative
-  count, and a blank query (ASCII whitespace only, #557) fail the day; a
-  failing `on_record` is no longer blamed on Europe PMC; the settle period
-  went from 14 days to 3; the source became opt-in. The shared oracle corpus
-  grew from 15 cases to 31.
-- **The live probe (2026-11-16)**: by first-publication day about a fifth of
-  each day's records arrive more than 15 days later (2026-06-10: 1,530 of
-  6,243), with a tail past 180 days, which is why the walk is by index day.
-  Index days load in batches (none yet for the probe's day, 6,093 for the day
-  before). **`EUROPEPMC_SETTLE_DAYS` = 3 is fixed before measurement**; do not
-  cite it, or `hitCount`'s exactness, as measured.
-- **Filed, not fixed here**: **#792** a record that starts matching the query
-  after its index day settled (one becoming open access, say) is never
-  fetched, and the settle measurement; **#793** the day ledger is keyed by
-  (source, day), not query, so a changed query never re-fetches settled days;
-  **#794** a record with neither DOI nor PMID is stored again on every
-  re-fetch; **#795** the shared `reconcile_delivery` passes a zero or negative
-  count delivered with records (europepmc refuses both itself; OpenAlex does
-  not).
-- **Owed**: #792's measurement (does a past index day still grow, and by how
-  much), which decides the settle period.
-- Tests (2026-11-16, PostgreSQL 18 DSN on port 5532,
-  `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,133 passed + 22 skipped; mypy
-  clean; Rust `cargo test -p bmlib -p bmlib-ffi` 1,883 passed and
-  `-p bmlib --no-default-features` 1,461; clippy (default, postgres,
-  no-default-features, bmlib-ffi) clean; the Rust oracle 45 clean.
-  `tests/test_europepmc_fetcher.py`,
-  `rust/bmlib/tests/europepmc_sync.rs`, and the shared corpus
-  `rust/oracle/europepmc_sync_cases.json` (copied to `rust/bmlib/tests/data/`;
-  expected output from `rust/oracle/dump_europepmc_sync.py`);
-  `fetcher_expected.json` now carries `opt_in`.
-
-## Merged: the library's names agree across languages (#755 items 3, 5, 6, PR #788)
-
-- **Item 3**: `is_reserved` is the device-name clause of CPython 3.13's
-  `ntpath.isreserved` in both languages: the part before the first dot,
-  trailing spaces dropped, against a list adding `COM¹`-`COM³`, `LPT¹`-`LPT³`,
-  `CONIN$` and `CONOUT$`. So `component()` refuses `CON .txt` and
-  `folder_name` prefixes `_Con .x (…)`.
-- **Item 5, whitespace**: **Rust follows Python** (the port's convention; it
-  already had `pyvalue::python_strip` for this gap). The library's id and name
-  trims and the shared `publications` `normalize_doi`/`normalize_pmid` strip
-  U+001C-U+001F. Python's code did not move.
-- **Item 5, non-UTF-8 names**: **Python follows Rust** here (Rust's names are
-  `String`s): `files._entries` decodes lossily, so such a paper folder is a
-  `stray_entry` in both scans. The temp-name check counts Rust's token in
-  bytes in Python too. A Windows lone surrogate still differs (a `shortcut:`
-  in `_entries`).
-- **Item 6, the mechanical half**: a test's `os.geteuid()` no longer runs at
-  collection on Windows; Rust's `keep_aside` builds its path as an `OsString`.
-- **The review's fix (#788)**: a name that is not UTF-8 is kept apart in the
-  listing (`Listing.undecodable`) and reported, never joined to a path. Its
-  lossy spelling can be a real sibling's (`caf\ufffd` beside `caf\xe9`), and
-  the join reached it: the scan listed that folder twice and dropped the other
-  unreported, in both languages on this branch before the fix. Pinned by
-  Linux-only tests on a real file system (both languages) and by faked
-  listings (Python).
-- **Not fixed here, #789**: a folder whose name `component()` refuses (one
-  named under the old device rule, or a user's `papers/con`) is scanned with
-  no `Problem` but every call addressing it raises `BadName`. It needs a pick
-  of remedy; the library is unreleased, so it is free to settle.
-- 44 new `library_cases.json` cases (`canonical_ids`, `folder_names`,
-  `component`): those the new device rule decides (spaces before the dot,
-  superscripts, `CONIN$`, `CONOUT$`) fail on `main`'s Python and Rust; the
-  U+001C-U+001F ones on `main`'s Rust only (Python already stripped them); 13
-  pass on `main` and pin the list entry by entry (12 device names `main`
-  already reserved, and `nul.tar.gz`); the ideographic space, `con x.txt`,
-  `COM0` and the two near-miss spaces are controls. Reasoning in
-  `docs/DECISIONS.md` (*library*).
-- **#755 stays open for the decisions**: item 1 (`record_use` trusting the
-  caller's `paper`: refuse a contradiction, or document it), item 2 (a folder
-  whose only record is evicted is invisible to `find`, so a save forks the
-  paper), item 4 (refuse or sanitise bidi/control characters in `origin`,
-  `title`, `first_author`) and item 6's noise (a `.corrupt` record reported on
-  every scan, a `LeftoverTemp` that may be in flight, `Library(root)`
-  bypassing `open_library`).
-
-## Merged: `FileClash.folder` is the paper folder's name (#755, PR #787)
-
-`save`'s clash and its `NotDownloaded` beside an evicted file name the bare
-folder, as every other error does; a `save_scenarios` case with a `plant`
-step pins it in all three runners. The `NotDownloaded` half is pinned in Rust
-only by the opt-in iCloud test, which was not run.
-
-## Merged: the FFI's fixture runs, the lookup's rules, no foreign JATS (#765, #784, #782, #766)
-
-- **#755's `FileClash` item (PR #787)**: `FileClash.folder` and `save`'s
-  `NotDownloaded` beside an evicted file name the bare paper folder.
-- **#765 (PR #786)**: `rust/bmlib-ffi/src/library_tests.rs` replays the save
-  scenarios, `component` and (Unix) `special_entries`; `folder_names` and
-  `records` test functions the FFI does not export.
-- **#784 (PR #785)**: `newest_source` and `lists_use`, exposed by bmlib-ffi
-  with `library_ids` and `paper_ids_contradiction` (bmlibrarian_lite #788).
-- **#782 (PR #783)**: Rust's zero-author line is `JatsReport::debug`; **a
-  struct literal or exhaustive destructuring must name `debug`**.
-- **#766 (PR #779)**: `save` and `record_use` refuse with `ForeignJats` a JATS
-  whose own identifiers contradict the paper's (DECISIONS, *FullTextService on
-  a library*); a Rust `match` on `LibraryError` needs the arm. #761's
-  deferrals are **#778**.
-
-## Earlier merges: MECA, dataless files, JSON depth (PRs #775, #773, #772, #771)
-
-- **MECA over requester-pays S3** (#775): SigV4, ListObjectsV2 and the
-  verified download; no `.meca` package read yet (the IAM user gets
-  `AccessDenied` on both buckets). Deferred to **#776**.
-- StudyAnalyzer can drop its `stored_name` shortcut once it re-pins; a
-  dataless *folder* has not been measured.
+Each is a CHANGELOG entry and a PR body. What a caller must still act on:
+**a Rust struct literal or exhaustive destructuring of `JatsReport` must name
+`debug`** (#782); **a `match` on `LibraryError` needs `ForeignJats`** (#766:
+`save` and `record_use` refuse a JATS whose own identifiers name another
+paper); bmlib-ffi exposes `newest_source`, `lists_use`, `library_ids` and
+`paper_ids_contradiction` (#784). MECA over requester-pays S3 (#775) reads no
+`.meca` package yet (the IAM user gets `AccessDenied` on both buckets):
+**#776**. #761's deferrals are **#778**. StudyAnalyzer can drop its
+`stored_name` shortcut once it re-pins; a dataless *folder* is unmeasured.
 
 ## The shared paper library (1a #754, 1b #763, 1c #764, all merged)
 
 StudyAnalyzer's design
-(`docs/superpowers/specs/2026-11-13-shared-paper-library-design.md`, plan
-`...-library-1a-bmlib-module.md`) asks bmlib for a module that several apps
-use to share one folder of papers. Built in both languages, in a worktree
-(`~/src/bmlib-library`), six tasks, each reviewed:
+(`docs/superpowers/specs/2026-11-13-shared-paper-library-design.md`): one
+folder of papers shared by several apps, `bmlib/library/` and
+`rust/bmlib/src/library/`, held together by `tests/fixtures/library_cases.json`
+and `tests/fixtures/library/sample/`; manuals `docs/manual/library.md` and the
+doc-tested `rust/bmlib/docs/manual/library.md`. 1b: `FullTextService` reads
+and fills a library (`library=`/`installation=`, Rust `with_library`; source
+`"library"`). 1c: bmlib-ffi's `PaperLibrary`/`LibraryScan`
+(`rust/bmlib-ffi/src/library.rs`); Swift needs
+`extension LibraryError: CustomStringConvertible {}` (UniFFI 0.32.2); the
+FFI's `find_digest`, `used_by` and `release` differ from bmlib on purpose
+(DECISIONS, *step 1c*). **Next**: StudyAnalyzer's step 2 and
+MedicalFactChecker's step 3 (re-pin the xcframework). Unreleased.
 
-- **What landed**: `bmlib/library/` and `rust/bmlib/src/library/`. Open, scan,
-  find (the whole linked group), find_digest, group, read (digest-checked),
-  save (write-once file, then the record), record_use (note a file another app
-  saved), release, remove_file, remove_folder; folder names (`folder_name`,
-  `folder_name_numbered`); versioned records; thirteen error kinds. Held
-  together by `tests/fixtures/library_cases.json` and the sample library
-  `tests/fixtures/library/sample/`; manuals `docs/manual/library.md` and
-  `rust/bmlib/docs/manual/library.md` (the Rust one is doc-tested). PR #754.
-  Review follow-ups: #755.
-- **The final review's fixes**: save, record_use and release validate `who`
-  and the ids before writing (a record `parse_record` refuses was being
-  written); `component()` refuses names
-  Windows resolves elsewhere (`...`, `x.`, `C:`, `con`); every record's ids
-  count for find and group, a conflict is `ConflictingIds`; `group` is linear;
-  an evicted own record is `NotDownloaded` (`RecordNotDownloaded` in a scan);
-  atomic-write temporaries are skipped and reported (`LeftoverTemp`); titles
-  are NFC before the cut.
 - **Rules to keep** (the reasoning is in `docs/DECISIONS.md`, "library"):
   files are write-once; one record per installation; **nothing is deleted
   automatically** (only the user's `remove_*`); no database; name clashes
   judged under case folding; a folder of only newer records fails the save
   with `NewerRecord`; iCloud placeholders count as user files on open; record
   updates are serialised in one process only.
-- **1b, merged as PR #763**: `FullTextService`
-  reads from and fills a library (`library=` and `installation=`, Rust
-  `with_library`). Results carry `library_files` and `library_failure`; source
-  `"library"`. Fixtures `tests/fixtures/fulltext_library_*.json`; manual
-  section "FullTextService on a library"; reasoning in `docs/DECISIONS.md`.
-  `save` keeps bytes once by digest (#755 item 7). `save` still rescans per
-  call (0.5 s at 4,000 papers in Python); its `shortcut:` now says to pass a
-  `Scan` when a scan's cost shows in a lookup's time.
+- `save` still rescans per call (0.5 s at 4,000 papers in Python); its
+  `shortcut:` says to pass a `Scan` when a scan's cost shows in a lookup.
 - **Parked, from the #755-7 decision**: byte-identical files of two different
-  papers (a stub PDF, say) still put both papers' records into one folder, but
-  the service no longer serves the second paper a file only the first's
-  records list (an identity check on the records). And a library holding only a
-  PDF still runs the JATS tiers on every lookup, a cost a cached PDF did not
-  have; it ends when a JATS is kept in the library.
-- **1c, merged as PR #764**: the library through bmlib-ffi
-  (`rust/bmlib-ffi/src/library.rs`): `PaperLibrary` and `LibraryScan` objects,
-  owned records, `LibraryError` with bmlib's wording as its exported `Display`,
-  `paper_ids_canonical`, `installation_new`. Identifiers and installations
-  coming in pass the validating constructors; names are checked
-  where bmlib uses them. `library_cases.json`'s identifier, installation, open,
-  scan, find, find_digest, group, read and (since #765) `save_scenarios` cases
-  run through the FFI. `find_digest`, `used_by` and
-  `release` refuse a malformed digest; `used_by` is `None` for an unknown
-  folder and says whether its list is `complete`; all unlike bmlib
-  (DECISIONS). The review's core finding, `FileClash.folder` holding a full
-  path, is fixed (this session). Not exposed: `FullTextService`'s library use
-  (MedicalFactChecker fetches in Swift; the FFI's service is the #492
-  sketch). Swift needs
-  `extension LibraryError: CustomStringConvertible {}` (UniFFI 0.32.2 omits
-  the conformance; README). Reasoning in `docs/DECISIONS.md`, *The library
-  through bmlib-ffi (step 1c)*. **Next**: StudyAnalyzer's step 2 and
-  MedicalFactChecker's step 3 (re-pin the xcframework). Not released: the
-  changelog entries are under Unreleased, and the version is still 0.13.0 /
-  0.4.0.
+  papers (a stub PDF, say) still put both papers' records into one folder,
+  though the service no longer serves the second paper a file only the
+  first's records list. A library holding only a PDF still runs the JATS
+  tiers on every lookup, until a JATS is kept in the library.
 - **Owed before the Windows build gets the Library setting**: (1) renaming
   over an open file fails on Windows; retry with backoff, and stop mapping a
   rename's `PermissionDenied` to `ReadOnly` (review item I5); (2) the long-path
@@ -262,20 +134,12 @@ use to share one folder of papers. Built in both languages, in a worktree
 
 ## Earlier: every bioRxiv/medRxiv posting, through `/details` (#341, PR #760)
 
-`biorxiv-details` and `medrxiv-details` read `/details` (30 records a page,
-measured); `biorxiv`/`medrxiv` still read `/pubs`. Records keep `source`
-`"biorxiv"`/`"medrxiv"`, so both populations meet on one row per DOI, and
-**`sync(sources=None)` includes them** (the maintainer's call). Each full-text
-source carries the record's `version`; the newest posting is the highest
-`version` compared as an integer. A page longer than the walk's step, or a
-`/details` record with no version, fails its day. **`DETAILS_SETTLE_DAYS` = 7
-is a bound; measuring it is #759.** BMLibrarian bumps its pin once released;
-MECA bulk is the expected next request.
-
-**Full-text tests** (PRs #745-#757): script `content`, not `json()`
-(responses decode through `strict_json_loads`); the record fixtures' md5s are
-those of `sample_article.xml` and `textless.pdf`. Not covered: a JATS cached
-with the PDF-beside option off (the `shortcut:` in `_check_cache`).
+`biorxiv-details`/`medrxiv-details` read `/details` (30 records a page) and
+are in `sync(sources=None)` (the maintainer's call); records keep `source`
+`"biorxiv"`/`"medrxiv"`, one row per DOI, newest posting by integer
+`version`. **`DETAILS_SETTLE_DAYS` = 7 is a bound; measuring it is #759.**
+Full-text tests script `content`, not `json()`; a JATS cached with the
+PDF-beside option off is not covered (the `shortcut:` in `_check_cache`).
 
 ## Release 0.13.0 / Rust crate 0.4.0 (released 2026-11-10)
 
@@ -386,14 +250,13 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests on `fix/library-bad-folder-name-789`** (2026-11-16, PostgreSQL 18
-  DSN on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,115 passed + 22
-  skipped (11,137 collected). Rust `cargo test -p bmlib -p bmlib-ffi` 1,875
-  passed on macOS, and `-p bmlib --no-default-features` 1,453 (the new case
-  runs inside the existing `save_scenarios` tests, so Rust's counts do not
-  move); `cargo clippy --all-targets` and `-p bmlib-ffi` with
-  `http-sketch,bindgen`, `cargo doc` and `cargo fmt --check` clean; the Rust
-  oracle 44 clean. Other recipes: `postgres_live.rs` with
+- **Tests on `fix/reconcile-nonpositive-count-795`** (2026-11-16, PostgreSQL
+  18 DSN on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,136 passed +
+  23 skipped (11,159 collected); ruff 0.15.20 and mypy clean. Rust
+  `cargo test -p bmlib -p bmlib-ffi` 1,884 passed on macOS, and
+  `-p bmlib --no-default-features` 1,461; `cargo clippy -p bmlib
+  --all-targets` and `-p bmlib-ffi` with `http-sketch,bindgen`, and
+  `cargo fmt --check` clean; the Rust oracle 45 clean. Other recipes: `postgres_live.rs` with
   `BMLIB_PG_TESTS=1 BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`; `--features embed` and the
   embedder's live tests need `BMLIB_EMBED_MODEL` (the GGUFs are in
   `~/.cache/bmlib/models/`; the Python live tests need `.[all,dev,embed]`).
@@ -421,9 +284,10 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**121 open once this PR is merged and #789 shut** (#755 stays open for its decisions): the library's #755, #762 and **#778** (PR #777's review follow-ups, above), **#776** (PR #775's
-**126 open** (2026-11-16; #755 stays open, for its decisions): Europe PMC's
-**#792**-**#795** (PR #790's review, above), the library's **#789** (a folder `component()` refuses, this PR's review), #755, #762 and **#778** (PR #777's review follow-ups, above), **#776** (PR #775's
+**124 open once this PR is merged and #795 shut** (2026-11-16; #755 stays
+open, for its decisions): Europe PMC's **#792**-**#794** (PR #790's review,
+above), the library's #755, #762 and **#778** (PR #777's review follow-ups,
+above), **#776** (PR #775's
 MECA follow-ups) and **#759** (measure the `/details` settle period) are the
 newest; #734, #733, #731, #730, #726, #725, #722, #718, #716 and #694 come
 before them; #577 stays open for its point 3, which PR #696 left open

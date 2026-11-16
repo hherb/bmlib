@@ -486,6 +486,21 @@ class TestFetchOpenAlex:
         assert result.error is None
         assert len(records) == 0
 
+    def test_a_count_of_zero_with_works_fails_the_day(self):
+        """``meta.count`` 0 beside a page of works cannot be verified (#795)."""
+        api_response = _make_api_response([_make_raw_work()], total_count=0, next_cursor=None)
+        result = fetch_openalex(
+            _mock_client([api_response]),
+            date(2024, 6, 15),
+            on_record=lambda _record: None,
+            email="test@example.com",
+        )
+
+        assert result.status == "failed"
+        assert result.record_count == 1
+        assert result.error is not None
+        assert "reported a count of 0" in result.error
+
     def test_http_error_returns_failed(self):
         """An HTTP error results in a failed FetchResult with error message."""
         client = MagicMock()

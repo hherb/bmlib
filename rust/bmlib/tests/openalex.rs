@@ -16,7 +16,7 @@
 
 //! OpenAlex walker — the oracle and the named tests.
 //!
-//! The corpus (58 cases) diffs normalisation, the abstract rebuild and the
+//! The corpus (84 cases) diffs normalisation, the abstract rebuild and the
 //! whole cursor walk against Python. One correction — a boolean `meta.count`
 //! (#313) — was retired when Python adopted the same refusal, so that case
 //! diffs strictly now; **two more are `corrected` blocks** (#349): a non-2xx now

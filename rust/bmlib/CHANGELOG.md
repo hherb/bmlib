@@ -124,6 +124,12 @@ The Python library is documented separately, in the repository's
 
 ### Fixed
 
+- **A count the delivery contradicts fails the day** (#795, as in Python).
+  `reconcile_delivery` returned clean for any `promised <= 0`: records against
+  `Some(0)` and any negative count now fail the day, and the test that
+  recorded the `promised <= 0` guard as subsumed is replaced by one holding
+  the new rule over the same inputs.
+
 - **Whitespace is Python's `str.strip()` in the library and in
   `normalize_doi` / `normalize_pmid`** (#755, as in Python). `str::trim` kept
   U+001C-U+001F, so a PMID, PMCID or DOI edged by one was refused or stored

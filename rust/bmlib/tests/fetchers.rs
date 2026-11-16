@@ -318,10 +318,9 @@ fn the_port_agrees_with_python_on_every_case() {
 // Rule 1: unreconcilable
 // ---------------------------------------------------------------------------
 
-/// **A `None` promise is not a promise of zero.** Zero is a source saying "this
-/// day is empty", which a delivery of zero satisfies; `None` is a source saying
-/// nothing at all, against which no delivery can be verified. Flattening the
-/// two either fails every quiet day or accepts every truncated one.
+/// **A `None` promise and a promise of zero reach one verdict** (#795): a zero
+/// delivery satisfies both, and records delivered against either cannot be
+/// verified. The failure says which one the source sent.
 #[test]
 fn an_unnamed_promise_is_not_a_promise_of_zero() {
     // Named zero: a zero delivery satisfies it.
@@ -337,6 +336,29 @@ fn an_unnamed_promise_is_not_a_promise_of_zero() {
         .as_deref()
         .unwrap_or_default()
         .contains("no count"));
+}
+
+/// **A count the delivery contradicts fails the day** (#795): records against a
+/// count of zero, and a negative count whatever was delivered. Both returned
+/// clean while the rule read `promised <= 0` as "nothing to check".
+#[test]
+fn a_count_the_delivery_contradicts_fails_the_day() {
+    let r = reconcile_delivery("openalex", "2024-06-10", 1, Some(0), false);
+    assert!(r
+        .failure
+        .as_deref()
+        .unwrap_or_default()
+        .contains("reported a count of 0"));
+    for delivered in [0, 5] {
+        let r = reconcile_delivery("openalex", "2024-06-10", delivered, Some(-1), false);
+        assert_eq!(
+            r.failure.as_deref(),
+            Some(
+                "openalex reported -1 records for 2024-06-10, which is not a count, so the \
+                 walk cannot be verified"
+            )
+        );
+    }
 }
 
 /// An **unverifiable success is the failure this module exists to prevent** —
@@ -448,43 +470,25 @@ fn a_reconciliation_sets_at_most_one_field() {
     }
 }
 
-/// A promised count of zero or less is the source saying there is nothing to
-/// reconcile, not a target nothing can reach.
+/// A promised count of zero or less is satisfied only by an empty day (#795).
 ///
-/// **The `promised <= 0` guard is subsumed**, and this test is where that is
-/// recorded rather than hidden. `delivered` counts records the server handed
-/// over, so it is never negative, and every `promised <= 0` is therefore
-/// `<= delivered` — the second half of the guard already answers. Checked
-/// exhaustively below: both spellings agree on every input the function can
-/// receive, and mutation confirms no test distinguishes them. The guard stays
-/// because it states *why* the line is right; it is not a rule, and a reader
-/// should not add a test that tries to exercise it.
+/// Zero with nothing delivered is the quiet day. Zero with records is a count
+/// the delivery contradicts, and a negative count is not a count, so both fail:
+/// the rule used to read any `promised <= 0` as "nothing to reconcile".
 #[test]
-fn a_non_positive_promise_is_satisfied_by_anything() {
+fn a_non_positive_promise_is_satisfied_only_by_an_empty_day() {
     for promised in [0, -1, i64::MIN] {
         for delivered in [0, 1, 3, 100] {
             let r = reconcile_delivery("s", "2024-06-10", delivered, Some(promised), false);
-            assert!(
-                !r.is_failure(),
-                "{delivered} delivered against a promise of {promised} must not fail"
+            let quiet_day = promised == 0 && delivered == 0;
+            assert_eq!(
+                r.is_failure(),
+                !quiet_day,
+                "{delivered} delivered against a promise of {promised}"
             );
+            assert_eq!(r.note, None);
         }
     }
-
-    // The exhaustiveness claim, as an assertion rather than a comment.
-    let mut differing: Vec<(i64, i64)> = Vec::new();
-    for delivered in 0..6i64 {
-        for promised in -3..6i64 {
-            if (promised <= 0 || delivered >= promised) != (delivered >= promised) {
-                differing.push((delivered, promised));
-            }
-        }
-    }
-    assert!(
-        differing.is_empty(),
-        "the guard is no longer subsumed for {differing:?} — make it load-bearing \
-         or delete it"
-    );
 }
 
 // ---------------------------------------------------------------------------

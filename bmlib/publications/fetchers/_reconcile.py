@@ -39,12 +39,14 @@ no threshold. It is also the only rule that catches a history session
 expiring on the *last* page of a long walk.
 
 *Unreconcilable* — records arrived but the source named no count to judge
-them against. There is no threshold to apply and no way to tell a complete
-walk from a truncated one, so the day cannot be claimed as complete: an
-unverifiable success is the failure this module exists to prevent. A day that
-delivered *nothing* against no count is the ordinary quiet day and passes
-silently, which is what keeps bioRxiv's total-omitting quiet response working
-(issue #88 follow-up; see ``fetchers/biorxiv.py``).
+them against, or named a count of zero, which the records contradict, or named
+a negative count, which is not a count (#795). There is no threshold to apply
+and no way to tell a complete walk from a truncated one, so the day cannot be
+claimed as complete: an unverifiable success is the failure this module exists
+to prevent. A day that delivered *nothing* against no count or a count of zero
+is the ordinary quiet day and passes silently, which is what keeps bioRxiv's
+total-omitting quiet response working (issue #88 follow-up; see
+``fetchers/biorxiv.py``).
 
 *Shortfall* — a walk that ran to its natural end and still came up short.
 Here the sources are not exact, so a threshold is unavoidable, and it is a
@@ -119,10 +121,11 @@ def reconcile_delivery(
         every day carrying a book chapter.
     promised:
         The record count the source itself reported for the day, or ``None``
-        when it reported none. ``None`` is *not* the same as zero and must not
-        be flattened into it: zero is a source saying "this day is empty",
-        which a delivery of zero satisfies, while ``None`` is a source saying
-        nothing at all, against which no delivery can be verified.
+        when it reported none. A delivery of zero satisfies both ``0`` and
+        ``None`` (the quiet day), and records delivered against either cannot
+        be verified (#795), so the two reach one verdict. Pass ``None`` rather
+        than flattening it into ``0`` all the same: the failure says which one
+        the source sent. A negative count is not a count, and fails the day.
     stalled:
         True when a page delivered no records while *promised* was unmet.
 
@@ -133,17 +136,30 @@ def reconcile_delivery(
         when it may complete but came up short; both ``None`` when the walk
         delivered what was promised.
     """
-    if promised is None:
-        if delivered <= 0:
-            return Reconciliation()
+    if promised is not None and promised < 0:
         message = (
-            f"{source} delivered {delivered} records for {date_str} but reported no count"
-            " to reconcile them against, so the walk cannot be shown to have finished"
+            f"{source} reported {promised} records for {date_str}, which is not a count,"
+            " so the walk cannot be verified"
         )
         logger.error("%s", message)
         return Reconciliation(failure=message)
 
-    if promised <= 0 or delivered >= promised:
+    if not promised:
+        if delivered <= 0:
+            return Reconciliation()
+        said = (
+            "reported no count to reconcile them against"
+            if promised is None
+            else "reported a count of 0, which the delivery contradicts"
+        )
+        message = (
+            f"{source} delivered {delivered} records for {date_str} but {said},"
+            " so the walk cannot be shown to have finished"
+        )
+        logger.error("%s", message)
+        return Reconciliation(failure=message)
+
+    if delivered >= promised:
         return Reconciliation()
 
     counted = f"{source} delivered {delivered} of {promised} records for {date_str}"

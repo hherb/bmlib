@@ -83,6 +83,17 @@
  {
   "args": {
    "date": "2024-06-10",
+   "delivered": 4,
+   "promised": -1,
+   "source": "pubmed",
+   "stalled": false
+  },
+  "fn": "reconcile",
+  "name": "recon/promise-negative-with-delivery"
+ },
+ {
+  "args": {
+   "date": "2024-06-10",
    "delivered": 10,
    "promised": 10,
    "source": "pubmed",

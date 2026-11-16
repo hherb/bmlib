@@ -40,12 +40,13 @@
 //! session expiring on the *last* page of a long walk.
 //!
 //! **Unreconcilable** — records arrived but the source named no count to judge
-//! them against. There is no threshold to apply and no way to tell a complete
-//! walk from a truncated one, so the day cannot be claimed as complete: an
-//! unverifiable success is the failure this module exists to prevent. A day
-//! that delivered *nothing* against no count is the ordinary quiet day and
-//! passes silently, which is what keeps bioRxiv's total-omitting quiet
-//! response working.
+//! them against, or named a count of zero, which the records contradict, or
+//! named a negative count, which is not a count (#795). There is no threshold
+//! to apply and no way to tell a complete walk from a truncated one, so the day
+//! cannot be claimed as complete: an unverifiable success is the failure this
+//! module exists to prevent. A day that delivered *nothing* against no count
+//! or a count of zero is the ordinary quiet day and passes silently, which is
+//! what keeps bioRxiv's total-omitting quiet response working.
 //!
 //! **Shortfall** — a walk that ran to its natural end and still came up short.
 //! Here the sources are not exact, so a threshold is unavoidable, and it is a
@@ -102,10 +103,11 @@ impl Reconciliation {
 ///
 /// # Why `promised` is an `Option` and not a number
 ///
-/// `None` is **not** the same as zero and must not be flattened into it: zero
-/// is a source saying "this day is empty", which a delivery of zero satisfies,
-/// while `None` is a source saying nothing at all, against which no delivery
-/// can be verified.
+/// A delivery of zero satisfies both `Some(0)` and `None` (the quiet day), and
+/// records delivered against either cannot be verified (#795), so the two
+/// reach one verdict. Pass `None` rather than flattening it into zero all the
+/// same: the failure says which one the source sent. A negative count is not a
+/// count, and fails the day.
 ///
 /// # `delivered` is what the *server* handed over
 ///
@@ -121,33 +123,36 @@ pub fn reconcile_delivery(
     promised: Option<i64>,
     stalled: bool,
 ) -> Reconciliation {
-    let Some(promised) = promised else {
-        if delivered <= 0 {
-            return Reconciliation::clean();
-        }
+    if let Some(promised) = promised.filter(|p| *p < 0) {
         return Reconciliation {
             failure: Some(format!(
-                "{source} delivered {delivered} records for {date_str} but reported no \
-                 count to reconcile them against, so the walk cannot be shown to have \
-                 finished"
+                "{source} reported {promised} records for {date_str}, which is not a \
+                 count, so the walk cannot be verified"
             )),
             note: None,
         };
+    }
+
+    let promised = match promised {
+        Some(promised) if promised > 0 => promised,
+        _ if delivered <= 0 => return Reconciliation::clean(),
+        unverifiable => {
+            let said = if unverifiable.is_none() {
+                "reported no count to reconcile them against"
+            } else {
+                "reported a count of 0, which the delivery contradicts"
+            };
+            return Reconciliation {
+                failure: Some(format!(
+                    "{source} delivered {delivered} records for {date_str} but {said}, so \
+                     the walk cannot be shown to have finished"
+                )),
+                note: None,
+            };
+        }
     };
 
-    // `delivered >= promised` is the whole test for every input this can
-    // receive. The `promised <= 0` half is **subsumed**, not load-bearing:
-    // `delivered` is a count of records the server handed over and so is never
-    // negative, and every `promised <= 0` is therefore `<= delivered`. Checked
-    // exhaustively over `delivered` in 0..6 and `promised` in -3..6, where the
-    // two spellings agree on every input.
-    //
-    // It is kept because it is *why* the line is right — a source promising
-    // zero is saying the day is empty, and no delivery can miss that target —
-    // and because `delivered` is the parameter whose contract would have to
-    // change for it to matter. Mutation found no test that distinguishes them,
-    // which is the honest reporting of a guard that cannot be exercised.
-    if promised <= 0 || delivered >= promised {
+    if delivered >= promised {
         return Reconciliation::clean();
     }
 

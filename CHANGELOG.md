@@ -69,6 +69,18 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A count the delivery contradicts fails the day** (#795; both languages).
+  `reconcile_delivery` returned clean for any `promised <= 0`, so an OpenAlex
+  day whose `meta.count` was 0 beside a page of works completed unverified,
+  and so did any negative count. Records delivered against a count of 0 now
+  fail the day as records against no count do, and a negative count fails it
+  whatever was delivered. A quiet day (nothing delivered against 0 or against
+  no count) still completes, bioRxiv's total-omitting one included; no
+  built-in fixture or caller sends a zero count with records. `europepmc`
+  already refused both itself. New oracle cases
+  `recon/promise-negative-with-delivery` and `fetch/zero-count-with-works`;
+  `recon/promise-zero-with-delivery` and `recon/promise-negative` now fail.
+
 - **A paper folder bmlib cannot name is reported** (#789; both languages and
   bmlib-ffi). A folder whose name `component()` refuses, such as one made under
   the device rule before #788 (`Con .x (PMID 1)`) or a user's `papers/con`,
