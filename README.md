@@ -10,8 +10,8 @@ Shared library for biomedical literature tools, in **Python** and **Rust**.
 It covers the plumbing such a tool would otherwise rewrite:
 
 - **Ingestion and lookup.** PubMed, bioRxiv/medRxiv and OpenAlex sync with
-  dedup by DOI/PMID. One paper's record by PMID, DOI, PMC ID or preprint
-  accession.
+  dedup by DOI/PMID, and an opt-in Europe PMC sync for a search you choose.
+  One paper's record by PMID, DOI, PMC ID or preprint accession.
 - **Retractions.** Retraction Watch lookup, and one four-state verdict
   (retracted / concern / clear / unchecked).
 - **Full text.** Tiered retrieval (Europe PMC, Unpaywall, DOI), JATS XML
@@ -124,7 +124,7 @@ the Python manual. The Rust manual has a page for each module too.
 | [**context_processor**](docs/manual/context_processor.md) | Hierarchical map-reduce over content larger than one context window. No batch is ever larger than `max_context_chars` |
 | [**quality**](docs/manual/quality.md) | Four-tier quality assessment (PubMed metadata → LLM classifier → deep assessment → Cochrane nine-domain risk of bias), rule-based study-type and sample-size extractors, and **`PicoAgent`**, whose PICO parts carry quotes verified against the source |
 | [**transparency**](docs/manual/transparency.md) | A 0–100 transparency score (funding, COI, data availability, trial registration and results, open access) from CrossRef, Europe PMC, PubMed, OpenAlex and ClinicalTrials.gov. A failed source is recorded as failed, never scored as a negative finding |
-| [**publications**](docs/manual/publications.md) | Ingestion from PubMed, bioRxiv, medRxiv and OpenAlex, with dedup, merge-on-upsert and date-range sync whose day bookkeeping never marks a short day complete. Also covers grants and affiliations, **`lookup_record`** for one paper, **Retraction Watch** import and lookup, and a **four-state retraction verdict** |
+| [**publications**](docs/manual/publications.md) | Ingestion from PubMed, bioRxiv, medRxiv, OpenAlex and (opt-in, for your own search) Europe PMC, with dedup, merge-on-upsert and date-range sync whose day bookkeeping never marks a short day complete. Also covers grants and affiliations, **`lookup_record`** for one paper, **Retraction Watch** import and lookup, and a **four-state retraction verdict** |
 | [**fulltext**](docs/manual/fulltext.md) | Tiered retrieval (your own sources → Europe PMC XML/PDF → Unpaywall → DOI), a JATS parser that reports what it drops, PDF → text, section segmentation and a disk cache. **`fulltext.canonical`** gives one canonical text per paper from JATS, Markdown, plain text, a PDF or HTML, with every piece a code-point span, plus sentence-aware chunks and a check of whether the text is a whole paper |
 | [**embed**](docs/manual/embeddings.md) | snowflake-arctic-embed-l-v2.0 run in process from pinned, checksum-verified GGUF files. `embed.store` keeps a paper's chunks and vectors in the database and ranks them by cosine similarity, and refuses a vector set that is stale |
 | [**citations**](docs/manual/citations.md) | `[@id:N:Label]` citation markers, Vancouver/APA/Harvard/Chicago formatting, reference lists, and **`find_passage`**, which finds an LLM's near-verbatim quote in its source and returns the source's own wording. Pure stdlib |

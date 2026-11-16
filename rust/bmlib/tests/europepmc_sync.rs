@@ -152,8 +152,10 @@ fn a_transport_error_fails_the_day_naming_the_error() {
     let mut sink = RecordingSink::new();
     let outcome = walk(&source, day(), "OPEN_ACCESS:Y", None, &mut sink);
     assert_eq!(outcome.status, "failed");
-    let error = outcome.error.expect("an error");
-    assert!(error.contains("network is unreachable"), "{error}");
+    assert_eq!(
+        outcome.error.as_deref(),
+        Some("TransportError: network is unreachable")
+    );
 }
 
 #[test]
@@ -162,11 +164,12 @@ fn page_params_carry_the_day_clause() {
     let query = params.iter().find(|(k, _)| k == "query").expect("query");
     assert_eq!(
         query.1,
-        "(OPEN_ACCESS:Y) AND FIRST_PDATE:[2024-06-10 TO 2024-06-10]"
+        "(OPEN_ACCESS:Y) AND FIRST_IDATE:[2024-06-10 TO 2024-06-10]"
     );
 }
 
-/// A client that records the URL it was asked for and answers one empty day.
+/// A client that records the URLs it was asked for and answers an empty day
+/// whose query, without the day, finds records.
 struct RecordingClient {
     urls: std::sync::Mutex<Vec<String>>,
 }
@@ -174,10 +177,48 @@ struct RecordingClient {
 impl HttpClient for RecordingClient {
     fn get(&self, url: &str) -> Result<HttpResponse, FetchError> {
         self.urls.lock().expect("lock").push(url.to_string());
-        Ok(HttpResponse::ok_text(
-            r#"{"hitCount":0,"nextCursorMark":"*","resultList":{"result":[]}}"#,
-        ))
+        Ok(HttpResponse::ok_text(if url.contains("cursorMark=") {
+            r#"{"hitCount":0,"nextCursorMark":"*","resultList":{"result":[]}}"#
+        } else {
+            r#"{"hitCount":7,"resultList":{"result":[{"id":"1"}]}}"#
+        }))
     }
+}
+
+/// A client that answers every request with one fixed response.
+struct FixedClient(u16, &'static str);
+
+impl HttpClient for FixedClient {
+    fn get(&self, _url: &str) -> Result<HttpResponse, FetchError> {
+        Ok(HttpResponse::from_bytes(self.0, self.1.as_bytes().to_vec()))
+    }
+}
+
+fn fetch_with(client: FixedClient) -> bmlib::publications::fetchers::registry::FetchOutcome {
+    let fetcher = EuropePmcFetcher {
+        client: Arc::new(client),
+    };
+    let mut request = FetchRequest::new(day());
+    request
+        .config
+        .insert("query".into(), "OPEN_ACCESS:Y".into());
+    let mut sink = RecordingSink::new();
+    fetcher.fetch(&request, &mut sink).expect("an outcome")
+}
+
+#[test]
+fn the_fetcher_fails_the_day_on_an_http_error() {
+    let outcome = fetch_with(FixedClient(503, "busy"));
+    assert_eq!(outcome.status, "failed");
+    assert_eq!(outcome.error.as_deref(), Some("HTTPStatusError: HTTP 503"));
+}
+
+#[test]
+fn the_fetcher_fails_the_day_on_a_body_that_is_not_json() {
+    let outcome = fetch_with(FixedClient(200, "<html>maintenance</html>"));
+    assert_eq!(outcome.status, "failed");
+    let error = outcome.error.expect("an error");
+    assert!(error.starts_with("ValueError: "), "{error}");
 }
 
 #[test]
@@ -197,10 +238,14 @@ fn the_fetcher_encodes_the_query_into_the_url() {
     let outcome = fetcher.fetch(&request, &mut sink).expect("a walk");
     assert_eq!(outcome.status, "completed");
     let urls = client.urls.lock().expect("lock");
-    let url = &urls[0];
-    assert!(url.starts_with(&format!("{SEARCH_URL}?")), "{url}");
-    assert!(!url.contains(' ') && !url.contains('"'), "unencoded: {url}");
-    assert!(url.contains("cursorMark=%2A"), "{url}");
+    // The day, then the query without the day, which finds records.
+    assert_eq!(urls.len(), 2, "{urls:?}");
+    for url in urls.iter() {
+        assert!(url.starts_with(&format!("{SEARCH_URL}?")), "{url}");
+        assert!(!url.contains(' ') && !url.contains('"'), "unencoded: {url}");
+    }
+    assert!(urls[0].contains("cursorMark=%2A"), "{}", urls[0]);
+    assert!(urls[1].contains("resultType=lite"), "{}", urls[1]);
 }
 
 #[test]

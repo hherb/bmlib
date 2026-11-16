@@ -40,7 +40,7 @@ from bmlib.db import (
     transaction,
 )
 from bmlib.publications.fetchers._reconcile import SHORTFALL_FAILURE_RATIO
-from bmlib.publications.fetchers.registry import get_fetcher, get_source, source_names
+from bmlib.publications.fetchers.registry import get_fetcher, get_source, list_sources
 from bmlib.publications.models import (
     AuthorAffiliation,
     DayStatus,
@@ -210,12 +210,14 @@ def _day_was_over_when_fetched(
     a re-fetch and never away from one.
 
     The two obvious cheaper rules are both unsafe, and not hypothetically:
-    all three built-in sources are US-based (UTC-5 to UTC-8), so comparing
-    UTC *dates* would call a fetch at 00:30 UTC on *D+1* durable while
-    PubMed's own day *D* still had four and a half hours to run (US Eastern in
-    winter; three and a half on daylight time, and longer for a Pacific-time
-    source), and comparing *local* dates is worse still — up to 16 hours out
-    for a machine in Sydney.
+    PubMed, bioRxiv/medRxiv and OpenAlex are US-based (UTC-5 to UTC-8), so
+    comparing UTC *dates* would call a fetch at 00:30 UTC on *D+1* durable
+    while PubMed's own day *D* still had four and a half hours to run (US
+    Eastern in winter; three and a half on daylight time, and longer for a
+    Pacific-time source), and comparing *local* dates is worse still — up to 16
+    hours out for a machine in Sydney. Europe PMC, run by EMBL-EBI in the UK
+    (UTC+0, UTC+1 in summer), ends its day before any of them, so the boundary
+    covers it too; a UTC-date rule would be an hour out for it in summer.
 
     What this does **not** fix by itself is late indexing: a record that
     appears for day *D* three days later is not covered by any rule about when
@@ -1312,7 +1314,8 @@ def sync(
     conn:
         A DB-API connection.
     sources:
-        Source names to sync.  Defaults to all registered sources.
+        Source names to sync.  Defaults to every registered source that is not
+        opt-in (``SourceDescriptor.opt_in``; ``europepmc`` is, as it needs a query).
     date_from:
         Start date (inclusive).  Defaults to yesterday.
     date_to:
@@ -1372,7 +1375,7 @@ def sync(
 
     today = date.today()
     if sources is None:
-        sources = list(source_names())
+        sources = [d.name for d in list_sources() if not d.opt_in]
     if date_to is None:
         date_to = today
     if date_from is None:

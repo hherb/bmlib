@@ -4,11 +4,11 @@
 
 The Rust port of the Python [`bmlib`](../../../../docs/manual/index.md): a
 database abstraction over SQLite and PostgreSQL, citation-marker parsing and
-reference formatting, PubMed / bioRxiv / medRxiv / OpenAlex ingestion with
-deduplication, retraction lookup, JATS XML, PDF and HTML full-text handling,
-canonical text, a tiered study-quality assessment pipeline, transparency
-analysis, in-process embedding, and an LLM client with streaming and
-malformed-JSON repair.
+reference formatting, PubMed / bioRxiv / medRxiv / OpenAlex / Europe PMC
+(opt-in) ingestion with deduplication, retraction lookup, JATS XML, PDF and
+HTML full-text handling, canonical text, a tiered study-quality assessment
+pipeline, transparency analysis, in-process embedding, and an LLM client with
+streaming and malformed-JSON repair.
 
 This manual is the usage guide: what each module is for, how its pieces fit
 together, and where it differs from the Python library. The item-level

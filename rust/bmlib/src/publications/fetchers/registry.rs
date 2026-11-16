@@ -819,6 +819,7 @@ pub fn builtin_descriptors() -> Vec<SourceDescriptor> {
             }],
             resumable: true,
             settle_days: 0,
+            opt_in: false,
         },
         SourceDescriptor {
             name: "biorxiv".to_string(),
@@ -833,6 +834,7 @@ pub fn builtin_descriptors() -> Vec<SourceDescriptor> {
             }],
             resumable: false,
             settle_days: BIORXIV_SETTLE_DAYS,
+            opt_in: false,
         },
         SourceDescriptor {
             name: "biorxiv-details".to_string(),
@@ -848,6 +850,7 @@ pub fn builtin_descriptors() -> Vec<SourceDescriptor> {
             }],
             resumable: false,
             settle_days: DETAILS_SETTLE_DAYS,
+            opt_in: false,
         },
         SourceDescriptor {
             name: "medrxiv".to_string(),
@@ -862,6 +865,7 @@ pub fn builtin_descriptors() -> Vec<SourceDescriptor> {
             }],
             resumable: false,
             settle_days: BIORXIV_SETTLE_DAYS,
+            opt_in: false,
         },
         SourceDescriptor {
             name: "medrxiv-details".to_string(),
@@ -878,6 +882,7 @@ pub fn builtin_descriptors() -> Vec<SourceDescriptor> {
             }],
             resumable: false,
             settle_days: DETAILS_SETTLE_DAYS,
+            opt_in: false,
         },
         SourceDescriptor {
             name: "openalex".to_string(),
@@ -901,6 +906,7 @@ pub fn builtin_descriptors() -> Vec<SourceDescriptor> {
             ],
             resumable: false,
             settle_days: 0,
+            opt_in: false,
         },
         SourceDescriptor {
             name: "europepmc".to_string(),
@@ -924,6 +930,7 @@ pub fn builtin_descriptors() -> Vec<SourceDescriptor> {
             ],
             resumable: false,
             settle_days: crate::publications::fetchers::europepmc::EUROPEPMC_SETTLE_DAYS,
+            opt_in: true,
         },
     ]
 }

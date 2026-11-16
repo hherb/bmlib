@@ -1,6 +1,6 @@
 # bmlib.publications — Publication Ingestion and Sync
 
-Publication ingestion, deduplication, storage, and multi-source sync for biomedical literature. Fetches records from PubMed, bioRxiv, medRxiv, and OpenAlex, stores them in a unified schema with automatic deduplication by normalised DOI and PMID, and tracks which source/date combinations have already been downloaded.
+Publication ingestion, deduplication, storage, and multi-source sync for biomedical literature. Fetches records from PubMed, bioRxiv, medRxiv, OpenAlex and (opt-in, for a search you choose) Europe PMC, stores them in a unified schema with automatic deduplication by normalised DOI and PMID, and tracks which source/date combinations have already been downloaded.
 
 ## Installation
 
@@ -23,7 +23,7 @@ Requires `httpx` for HTTP requests to external APIs.
 | `fetchers.registry` | `register_source()`, `list_sources()`, `get_source()`, `get_fetcher()`, `source_names()` | Pluggable source registry |
 | `lookup` *(0.12.0)* | `lookup_record()`, `RecordLookup`, `SourceReport`, `SourceOutcome`, `PublishedVersion` | One paper's record by PMID, DOI, PMC ID or PPR accession — see [Looking up one paper](#looking-up-one-paper-0120) |
 | `fetchers.pubmed` / `.biorxiv` / `.openalex` | `fetch_pubmed()`, `fetch_biorxiv()`, `fetch_openalex()` | Built-in fetchers |
-| `fetchers.europepmc` *(0.12.0)* | `normalize_europepmc()` | One Europe PMC search hit as a `FetchedRecord`; used by `lookup_record`, not a sync source |
+| `fetchers.europepmc` *(0.12.0)* | `normalize_europepmc()`, `fetch_europepmc()` *(unreleased, PR #790)*, `EUROPEPMC_SETTLE_DAYS` | One Europe PMC search hit as a `FetchedRecord` (used by `lookup_record`), and the opt-in `europepmc` sync source — see [`fetch_europepmc`](#fetch_europepmc-unreleased) |
 
 > **Breaking change in 0.4.0 — `on_record` now fires *before* storage.**
 > `sync()` no longer stores each record as it arrives. Records are buffered for the duration of a source/day fetch and written in a **single transaction per day** once the fetch completes. Your `on_record` callback is invoked while the record is still only in memory, so it **must not** expect to read the record back from the database. See [Buffering and commit batching](#buffering-and-commit-batching).
@@ -449,6 +449,7 @@ class SourceDescriptor:
     params: list[SourceParam] = field(default_factory=list)
     resumable: bool = False          # 0.11.0, #105
     settle_days: int = 0             # 0.11.0, #325
+    opt_in: bool = False             # unreleased, PR #790
 ```
 
 | Field | Type | Description |
@@ -463,7 +464,8 @@ class SourceDescriptor:
 | `SourceDescriptor.description` | `str` | What the source covers. |
 | `SourceDescriptor.params` | `list[SourceParam]` | Configurable parameters for this source. |
 | `SourceDescriptor.resumable` | `bool` | Whether `sync()` may pass this fetcher the per-part resume keywords. Default `False`. *(0.11.0, #105)* |
-| `SourceDescriptor.settle_days` | `int` | How many days after a day has ended the source may still add records to it. Default `0`; `biorxiv` and `medrxiv` declare `90`, `biorxiv-details` and `medrxiv-details` `7` *(unreleased, #341)*. See [A source that fills its days late](#a-source-that-fills-its-days-late). *(0.11.0, #325)* |
+| `SourceDescriptor.settle_days` | `int` | How many days after a day has ended the source may still add records to it. Default `0`; `biorxiv` and `medrxiv` declare `90`, `biorxiv-details` and `medrxiv-details` `7` *(unreleased, #341)*, `europepmc` `3` *(unreleased, PR #790)*. See [A source that fills its days late](#a-source-that-fills-its-days-late). *(0.11.0, #325)* |
+| `SourceDescriptor.opt_in` | `bool` | Whether the source runs only when named. A `sync()` with `sources=None` leaves an opt-in source out. Default `False`; of the built-ins only `europepmc` sets it, since it needs a search you choose and without one would fail every day of every default run. *(unreleased, PR #790)* |
 
 > **`resumable` — new, and `False` on purpose *(0.11.0, #105)*.** A day too
 > large for one history session is fetched in parts, and a fetcher that can
@@ -803,7 +805,7 @@ The sole public entry point for ingestion. Ensures the schema exists, determines
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `conn` | `Any` | *(required)* | A DB-API connection. |
-| `sources` | `list[str] \| None` | `None` | Source names to sync. Defaults to **all registered sources** (`source_names()`), which includes any you registered yourself. |
+| `sources` | `list[str] \| None` | `None` | Source names to sync. Defaults to **every registered source that is not opt-in** (`SourceDescriptor.opt_in`), which includes any you registered yourself; `europepmc` is opt-in, so name it to run it *(unreleased, PR #790)*. |
 | `date_from` | `date \| None` | `None` | Start date (inclusive). Defaults to yesterday (`today - 1 day`). |
 | `date_to` | `date \| None` | `None` | End date (inclusive). Defaults to today. |
 | `source_configs` | `dict[str, dict[str, Any]] \| None` | `None` | Per-source config. Each inner dict is unpacked as `**kwargs` into that source's fetcher. **Supersedes `email` and `api_keys` entirely when provided.** |
@@ -903,13 +905,13 @@ A completed day counts as durable only once it was fetched at or after **12:00 U
 - Day *D* finishes last in UTC−12, whose midnight is noon UTC on *D+1*.
 - That same instant is exactly the point beyond which "now" can no longer fall inside day *D* anywhere on earth — which is why this one rule *subsumes* the old `today` special case rather than approximating it, and why the wall clock no longer *decides* whether a completed day is done. It is still read, but only as the upper bound described below, which can move the answer towards a re-fetch and never away from one.
 
-Both cheaper rules are unsafe, and not hypothetically. All three built-in sources are US-based (UTC−5 to UTC−8): comparing UTC *dates* would call a fetch at 00:30 UTC on *D+1* durable while PubMed's own day *D* still had four and a half hours to run (US Eastern in winter; three and a half on daylight time, and longer for a Pacific-time source), and comparing *local* dates is up to 16 hours out for a machine in Sydney.
+Both cheaper rules are unsafe, and not hypothetically. PubMed, bioRxiv/medRxiv and OpenAlex are US-based (UTC−5 to UTC−8): comparing UTC *dates* would call a fetch at 00:30 UTC on *D+1* durable while PubMed's own day *D* still had four and a half hours to run (US Eastern in winter; three and a half on daylight time, and longer for a Pacific-time source), and comparing *local* dates is up to 16 hours out for a machine in Sydney. Europe PMC is run by EMBL-EBI in the UK (UTC+0, UTC+1 in summer), so its day ends before theirs and the same boundary covers it.
 
 **What it costs.** One extra day-fetch per run under the default window `[yesterday, today]` — two rather than one — because day *D* is offered again on *D+1*, which is the point of the fix. A caller passing a window of three days or more, whose run happens before 12:00 UTC, pays one more again (three); the cost does not grow with the window beyond that, and disappears entirely for a run at or after 12:00 UTC. `store_publication()` merges, so every re-fetch is idempotent.
 
 **What it costs once, on upgrade.** Every `download_days` row written by the previous release was stored while its own day was still current, so none of them is durable under this rule and the whole window is re-fetched on the first run after upgrading — measured at 29 of 29 days for a 30-day window, per source. It is one-off and self-correcting, but a wide window across several sources will make that first run much longer than the ones after it, and may meet a source's rate limiter.
 
-**When a day is never certified.** Under the default two-day window, a run that happens before 12:00 UTC never certifies anything: day *D* is fetched on *D*, offered once more on *D+1* at the same hour — still short of its own boundary — and then leaves the window. No records are lost, because that *D+1* fetch does happen after day *D* ended for every US-based source; but the row stays permanently non-durable, so a caller who later widens the window will re-fetch it. **Run at or after 12:00 UTC, or pass a window of three days or more,** and every day settles.
+**When a day is never certified.** Under the default two-day window, a run that happens before 12:00 UTC never certifies anything: day *D* is fetched on *D*, offered once more on *D+1* at the same hour — still short of its own boundary — and then leaves the window. No records are lost, because that *D+1* fetch does happen after day *D* ended for every built-in source, US-based or in the UK; but the row stays permanently non-durable, so a caller who later widens the window will re-fetch it. **Run at or after 12:00 UTC, or pass a window of three days or more,** and every day settles.
 
 **What it does not fix.** Late *indexing*. A record that appears for day *D* three days later is not covered by any rule about when *D* ended — `recheck_days` is what exists for that, and a source whose days are *routinely* filled late declares a settle period instead (next section).
 
@@ -919,12 +921,12 @@ Both cheaper rules are unsafe, and not hypothetically. All three built-in source
 
 bioRxiv's `/pubs` endpoint files a record under the date its **journal publication** appeared, and bioRxiv learns of a publication weeks after it happens. Measured on 2026-09-27 as one snapshot of weekly totals, the bioRxiv week just ended held **1** record, the week before **3**, the weeks two to five weeks old 135-470, and every week from six to seventy-six weeks old a steady 450-580 — weeks of different ages, not one week watched filling. Under the 12:00 UTC rule alone such a day is durable the morning after it ends, when it is nearly empty, and the default window `[yesterday, today]` has moved past it by the next run, so it would never be fetched again.
 
-A source declares this with `SourceDescriptor.settle_days` (`biorxiv` and `medrxiv`: **90**, roughly twice the measured plateau; whether anything is still added after that is not measured. `biorxiv-details` and `medrxiv-details`: **7** *(unreleased, #341)*, a bound rather than a measurement: `/details` files a version under the day it was posted, and old days hold their counts, but how soon a day is whole after it ends was not measured). For such a source:
+A source declares this with `SourceDescriptor.settle_days` (`biorxiv` and `medrxiv`: **90**, roughly twice the measured plateau; whether anything is still added after that is not measured. `biorxiv-details` and `medrxiv-details`: **7** *(unreleased, #341)*, a bound rather than a measurement: `/details` files a version under the day it was posted, and old days hold their counts, but how soon a day is whole after it ends was not measured. `europepmc`: **3** *(unreleased, PR #790)*, fixed before measurement: one probe saw Europe PMC load an index day in a batch, but whether a past index day still grows was not measured, #792). For such a source:
 
 - a completed day is durable only once it was fetched **at least `settle_days` after** 12:00 UTC on the following day;
 - every row that is not yet final — a `"completed"` day not yet durable, or a day whose last fetch did not complete — is re-offered on **every run, whatever the window**, however old it is. A floor such as "the last 90 days" would strand the days of a cron stopped for a season, which are exactly the incomplete ones.
 
-Only rows that exist are revisited, so the window still decides which days a caller asked for. A `"failed"` row is included because these revisits are what fail: one that does overwrites the completed row, and left to the window the day would never be offered again. A day that fails permanently retries on every run with an ERROR, as a failed day inside the window does. **The cost** is about one request per unfinished day per run: about `settle_days + c` completed days per preprint server in steady state for a cron running every *c* days, mostly one page each — roughly ninety each for `biorxiv` and `medrxiv` on a daily cron, and about eight each for `biorxiv-details` and `medrxiv-details`, at several 30-record pages a day — all merged idempotently by `store_publication()`. On the first run after upgrading, every completed bioRxiv or medRxiv row fetched less than ninety days after its day ended is revisited on each run until it settles, which is most of a daily cron's history walked for the publication population for the first time, and **every failed row of those sources is retried**, which recovers the days the `/details` outage failed. A revisit is [held to the day's peak](#a-re-fetch-is-held-to-the-days-peak) where the row has one, which a row an earlier bmlib wrote does not: refused below half while the day is unfinished and inside its refusal window, and otherwise recorded with a note when it stores fewer than the day was last recorded at. `pubmed` and `openalex` declare `0` and are unchanged.
+Only rows that exist are revisited, so the window still decides which days a caller asked for. A `"failed"` row is included because these revisits are what fail: one that does overwrites the completed row, and left to the window the day would never be offered again. A day that fails permanently retries on every run with an ERROR, as a failed day inside the window does. **The cost** is about one request per unfinished day per run: about `settle_days + c` completed days per source in steady state for a cron running every *c* days, mostly one page each — roughly ninety each for `biorxiv` and `medrxiv` on a daily cron, about eight each for `biorxiv-details` and `medrxiv-details`, at several 30-record pages a day, and about four for `europepmc`, at as many 1,000-hit pages as your query's day holds — all merged idempotently by `store_publication()`. On the first run after upgrading, every completed bioRxiv or medRxiv row fetched less than ninety days after its day ended is revisited on each run until it settles, which is most of a daily cron's history walked for the publication population for the first time, and **every failed row of those sources is retried**, which recovers the days the `/details` outage failed. A revisit is [held to the day's peak](#a-re-fetch-is-held-to-the-days-peak) where the row has one, which a row an earlier bmlib wrote does not: refused below half while the day is unfinished and inside its refusal window, and otherwise recorded with a note when it stores fewer than the day was last recorded at. `pubmed` and `openalex` declare `0` and are unchanged.
 
 #### A re-fetch is held to the day's peak
 
@@ -941,7 +943,7 @@ Before writing a day's row, `sync()` compares the number of records this fetch s
 | final, or past the refusal window | **completed**, fewer than half the peak | `"completed"`; a WARNING and a `notes` line naming the peak and which of the two let it through, if fewer than the day was last recorded at |
 
 - **A stored row is final** when it is `"completed"` and was fetched after the day ended everywhere and, for a source declaring `settle_days`, after the day settled — exactly the test that stops a day being offered again. A failed row is never final. So a final row is re-fetched only under `recheck_days`, which is where a genuine upstream shrink lives (a record deleted or merged at the source), and it is recorded with a note rather than refused.
-- **The refusal window** is `settle_days` + 30 days after the day ended: 120 days for `biorxiv` and `medrxiv`, 37 for `biorxiv-details` and `medrxiv-details`, 30 for `pubmed` and `openalex`. It outlasts the fetch that settles a day, which is the one an incident would hit, and it ends, because a refused day is `"failed"` and a failed preprint day is offered on every run: without an end, a day that genuinely lost more than half its records would be an ERROR on every run for good. Past the window the lower count completes with a note. The 30 days is a margin measured against nothing, where the settle period doubles a measured plateau.
+- **The refusal window** is `settle_days` + 30 days after the day ended: 120 days for `biorxiv` and `medrxiv`, 37 for `biorxiv-details` and `medrxiv-details`, 33 for `europepmc`, 30 for `pubmed` and `openalex`. It outlasts the fetch that settles a day, which is the one an incident would hit, and it ends, because a refused day is `"failed"` and a failed preprint day is offered on every run: without an end, a day that genuinely lost more than half its records would be an ERROR on every run for good. Past the window the lower count completes with a note. The 30 days is a margin measured against nothing, where the settle period doubles a measured plateau.
 - **A refused day** is offered again on every run for a source declaring `settle_days`, and otherwise only while the caller's window covers it. A PubMed or OpenAlex day can therefore leave the default window `"failed"`, as any failed day can (#342); the row then says the day is incomplete, where before it said the day was complete.
 - **The floor is `SHORTFALL_FAILURE_RATIO`**, the one the fetchers judge a walk by, and like it is a rule fixed before measurement (#92). It costs a genuine drop below half inside the window — most plausibly a tiny day losing its only record, 1 → 0 — an ERROR on every run it is offered until the window ends, or until you **delete the day's `download_days` row**, as the message says. That removes the peak; the next fetch stores whatever the source serves.
 - **The peak, not the previous count**, is the baseline for a refusal, so a run of shrinks each above half of the one before (105 → 60 → 50) is refused once it falls below half of the peak, rather than eroding the day one note at a time.
@@ -1006,7 +1008,7 @@ What a callback **must not** assume:
 - That the record exists in the database. It does not yet; it is only buffered.
 - That `Publication.id` is available, or that `get_publication_by_doi()` will find the record.
 - That being called means the record will be stored — a later per-record failure, or a failure writing the day-status row, can roll it back.
-- That raising is safe. An exception from `on_record` escapes into the fetcher's record loop and aborts the rest of that day's fetch — `fetch_biorxiv` converts it into a failed `FetchResult`, while `fetch_pubmed` and `fetch_openalex` let it propagate to `sync()`'s per-day handler. Either way the day is marked `"failed"` (and retried next run), though whatever was buffered before the throw is still stored. Catch your own exceptions.
+- That raising is safe. An exception from `on_record` escapes into the fetcher's record loop and aborts the rest of that day's fetch — `fetch_biorxiv` and `fetch_europepmc` convert it into a failed `FetchResult` (europepmc's names it: "Handing on a Europe PMC record … failed"), while `fetch_pubmed` and `fetch_openalex` let it propagate to `sync()`'s per-day handler. Either way the day is marked `"failed"` (and retried next run), though whatever was buffered before the throw is still stored. Catch your own exceptions.
 
 To act on records **after** they are durably stored, do the work between `sync()` calls (for example one call per day, then query the database), rather than in `on_record`.
 
@@ -1132,9 +1134,9 @@ def source_names() -> list[str]
 | `list_sources()` | Descriptors for all registered sources. |
 | `get_source(name)` | The `(descriptor, fetcher)` tuple. Raises `ValueError(f"Unknown source {name!r}. Available: [...]")` if unregistered. |
 | `get_fetcher(name)` | Just the fetcher callable. Same `ValueError` on an unknown name. |
-| `source_names()` | Names of all registered sources — this is what `sync()` defaults `sources` to. |
+| `source_names()` | Names of all registered sources. `sync()` defaults `sources` to those of them that are not opt-in. |
 
-`bmlib.publications.fetchers` additionally exports `ALL_SOURCES = ["pubmed", "biorxiv", "biorxiv-details", "medrxiv", "medrxiv-details", "openalex"]` (the `*-details` names *unreleased*, #341), a backward-compatibility constant for code that reads the built-in list at module level. It does not reflect runtime registrations; use `source_names()` instead.
+`bmlib.publications.fetchers` additionally exports `ALL_SOURCES = ["pubmed", "biorxiv", "biorxiv-details", "medrxiv", "medrxiv-details", "openalex", "europepmc"]` (the `*-details` names *unreleased*, #341; `europepmc` *unreleased*, PR #790), a backward-compatibility constant for code that reads the built-in list at module level. It lists every built-in, opt-in ones included, and does not reflect runtime registrations; use `source_names()` instead.
 
 ### Built-in sources
 
@@ -1146,8 +1148,9 @@ def source_names() -> list[str]
 | `medrxiv` | medRxiv | `fetch_biorxiv` (`server="medrxiv"`) | `api_key` — reserved, unused *(secret)* |
 | `medrxiv-details` | medRxiv (all postings) | `fetch_biorxiv` (`server="medrxiv"`, `endpoint="details"`) *(unreleased, #341)* | `api_key` — reserved, unused *(secret)* |
 | `openalex` | OpenAlex | `fetch_openalex` | `email` — contact email for polite API access *(**required**)*; `api_key` — OpenAlex API key for premium access *(secret)* |
+| `europepmc` | Europe PMC | `fetch_europepmc` *(unreleased, PR #790; **opt-in**)* | `query` — Europe PMC search, without a date clause *(**required**)*; `email` — contact email sent to Europe PMC |
 
-The four bioRxiv sources are thin wrappers that call `fetch_biorxiv` with their `server` and `endpoint`. **`biorxiv`/`medrxiv` and their `*-details` twins list different populations** — preprints by the day their journal version appeared, against every version by the day it was posted — and they are separate sources rather than one source with a setting because `download_days` is keyed by the source's name: a day completed under `/pubs` must not read as completed for `/details`. Sync both and the records meet on one row per DOI. Only `openalex` has a genuinely required parameter — omitting `email` makes its fetcher raise, which `sync()` records as a failed day.
+The four bioRxiv sources are thin wrappers that call `fetch_biorxiv` with their `server` and `endpoint`. **`biorxiv`/`medrxiv` and their `*-details` twins list different populations** — preprints by the day their journal version appeared, against every version by the day it was posted — and they are separate sources rather than one source with a setting because `download_days` is keyed by the source's name: a day completed under `/pubs` must not read as completed for `/details`. Sync both and the records meet on one row per DOI. `openalex` and `europepmc` have genuinely required parameters — omitting `openalex`'s `email` or `europepmc`'s `query` makes the fetcher raise `TypeError`, which `sync()` records as a failed day, and a blank `query` fails the day unsent. `europepmc` is opt-in, so a `sync()` that names no sources does not run it and so never fails for want of a query.
 
 **Example:**
 
@@ -1311,7 +1314,7 @@ All fetchers pass a `FetchedRecord` to `on_record`, matching `sync()`. (Before 0
 
 > **New (0.10.0).** Issue #88.
 
-Each built-in fetcher learns a record count before it walks pages — PubMed's `<Count>`, OpenAlex's `meta.count`, bioRxiv's `messages[0].total`. Before this change none of them compared that promise against what arrived, so a walk that stopped early returned `status="completed"`, `sync()` stored the day as done, and `_days_needing_fetch()` did not offer it again once it was in the past (with `recheck_days` at its default). The records were permanently absent, with nothing logged above INFO.
+Each built-in fetcher learns a record count before it walks pages — PubMed's `<Count>`, OpenAlex's `meta.count`, bioRxiv's `messages[0].total`, and *(unreleased)* Europe PMC's `hitCount`, which [`fetch_europepmc`](#fetch_europepmc-unreleased) holds to a stricter rule of its own (no shortfall floor). Before this change none of them compared that promise against what arrived, so a walk that stopped early returned `status="completed"`, `sync()` stored the day as done, and `_days_needing_fetch()` did not offer it again once it was in the past (with `recheck_days` at its default). The records were permanently absent, with nothing logged above INFO.
 
 The comparison now happens in one shared place and applies three rules that differ in kind:
 
@@ -1612,6 +1615,48 @@ Fetch all OpenAlex works published on `target_date`.
 
 Core fields are guaranteed present (possibly `None`/empty); source-specific
 data goes in `extras`.
+
+### `fetch_europepmc` *(unreleased)*
+
+> **New (PR #790).** Opt-in: name `"europepmc"` in `sources` and give it a `query` in `source_configs`.
+
+```python
+def fetch_europepmc(
+    client: Any,
+    target_date: date,
+    *,
+    on_record: Callable[[FetchedRecord], None],
+    on_progress: Callable[[SyncProgress], None] | None = None,
+    query: str,
+    email: str | None = None,
+) -> FetchResult
+```
+
+Fetch every Europe PMC record matching `query` that Europe PMC **first indexed** on `target_date`.
+
+- The search sent is `(<query>) AND FIRST_IDATE:[<day> TO <day>]`: the day the record entered Europe PMC (`firstIndexDate`), not the day it was published. Walked by first-publication day, about a fifth of each day's records arrive more than 15 days later (2026-06-10: 1,530 of 6,243, live probe 2026-11-16), with a tail past 180 days; a record published earlier but indexed later still has an index day.
+- `resultType=core`, `pageSize=1000`, `cursorMark` paging from `*`, one request a second (`email`, when given, is sent with each). Each hit goes through `normalize_europepmc()`: a record Europe PMC holds the text of (`inEPMC` `"Y"`, with a PMC ID or a `PPR` accession) carries an `xml` source for its `fullTextXML`, whatever `isOpenAccess` says.
+- **The first page's `hitCount` is the promise, and any walk that ends short of it fails the day.** An empty page while records remain is the shared [stall rule](#reconciling-a-walk-against-the-sources-own-count); a cursor that stops (no, `null`, empty or repeated `nextCursorMark`) while short fails with europepmc's own message. The shared 50% shortfall floor is **not** applied: the count is computed from the same search the walk pages through. That is an argument, not a measurement that `hitCount` is exact.
+- **An empty day is checked.** A `hitCount` of 0 completes the day only after a second request (`resultType=lite`, `pageSize=1`) asks the query without the date clause and finds something. Zero there means the query is broken — a misspelt field matches nothing, with HTTP 200 — so the day fails.
+- **Also fail the day:** a `hitCount` that is not a count (missing, `null`, a boolean, a float, a string, negative); a `hitCount` of 0 with records on the first page; a `nextCursorMark` that is present but not a string; a hit that is not an object; a hit whose `firstIndexDate` is not the day walked (Europe PMC drops the date clause of a query with an unbalanced bracket and still answers HTTP 200); an error body or a page with no result list; an HTTP or transport error; a blank `query` (ASCII whitespace only), which sends nothing; and an `on_record` that raises.
+- `settle_days` is **3** (`EUROPEPMC_SETTLE_DAYS`), **fixed before measurement**: one probe saw an index day loaded in a batch (none yet for the probe's own day, 6,093 for the day before), but whether a past index day grows later is not measured (#792).
+
+Known limits, each filed:
+
+- A record that starts matching your query after its index day has settled — one that becomes open access, for a query asking for open access — is never fetched (#792).
+- `download_days` is keyed by source and day, not by query: change the query and the days already completed under the old one are not fetched again (#793). To re-walk them, delete the source's `download_days` rows and sync a window that covers those days.
+- A record with neither a DOI nor a PMID has nothing to deduplicate on, so it is stored again on every re-fetch of its day (#794).
+- The shared `reconcile_delivery` passes a zero or negative count delivered with records (#795). `fetch_europepmc` refuses both itself; `fetch_openalex` does not.
+
+**Example:**
+
+```python
+sync(
+    conn,
+    sources=["europepmc"],
+    source_configs={"europepmc": {"query": 'TITLE:"sepsis"', "email": "you@example.org"}},
+)
+```
 
 ---
 

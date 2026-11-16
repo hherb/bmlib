@@ -1,7 +1,7 @@
 # bmlib::publications — Publication Ingestion and Sync
 
-Publication records from PubMed, bioRxiv/medRxiv and OpenAlex, stored once per
-paper (deduplicated by DOI and PMID, merged on upsert), a date-keyed sync that
+Publication records from PubMed, bioRxiv/medRxiv, OpenAlex and (opt-in, for a
+caller's search) Europe PMC, stored once per paper (deduplicated by DOI and PMID, merged on upsert), a date-keyed sync that
 records which days are done, a one-paper lookup, and the Retraction Watch
 export with a retraction-status verdict. The Python page is
 [publications.md](../../../../docs/manual/publications.md); this one describes
@@ -29,7 +29,7 @@ Retraction Watch functions and the day-selection rules; the fetchers,
 | `Grant` | `agency`, `grant_id`, `country`, and the `source` that asserted it |
 | `AuthorAffiliation` | `author` (`"Last, Fore"`), `affiliation` (Markdown), `position` (0-based in the author list), `source` |
 | `FullTextSource` | A stored full-text location (`source`, `url`, `format`, `version`) |
-| `SourceDescriptor`, `SourceParam` | A registered source's metadata: `name`, `params`, `resumable`, `settle_days` |
+| `SourceDescriptor`, `SourceParam` | A registered source's metadata: `name`, `params`, `resumable`, `settle_days`, `opt_in` |
 | `DownloadDay`, `PartCheckpoint` | A `download_days` row and a finished part of a partitioned day |
 | `FetchResult`, `SyncReport`, `SyncProgress` | One day's result, and a run's totals (`days_processed`, `records_added`, `records_merged`, `records_failed`, `errors`, `notes`, `sources_synced`) |
 | `RetractionNotice`, `RetractionNature` | One Retraction Watch row and its kind |
@@ -179,20 +179,31 @@ Python's module-level registry is a `Registry` value the caller owns:
 `register(descriptor, Box<dyn Fetcher>)` (replacing an entry of the same name,
 refusing an unusable `settle_days`), `fetcher(name)`, `descriptor(name)`
 (`UnknownSource` names what is registered), `list_sources`, `source_names`,
-`contains`, `is_resumable`. `builtin_registry(client)` wires the four built-ins
-to one shared `Arc<dyn HttpClient + Send + Sync>`; `builtin_descriptors()`
-lists them without a client.
+`contains`, `is_resumable`. `builtin_registry(client)` wires the seven
+built-ins to one shared `Arc<dyn HttpClient + Send + Sync>`;
+`builtin_descriptors()` lists them without a client. A descriptor's `opt_in`
+marks a source that runs only when named: Python's `sync()` leaves one out when
+no sources are named, and a Rust `SyncRequest` names its sources itself, so a
+caller building a default list should leave such a source out too. Of the
+built-ins only `europepmc` is opt-in.
 
 | Source | Fetcher | Notes |
 |---|---|---|
 | `pubmed` | `pubmed::PubMedFetcher` (`::http(client)`, or `::new` over an `Eutils` transport) | `api_key` config; `resumable`; a day over `EFETCH_MAX_RETRIEVABLE` (9,999) records is planned into Entrez-date parts (`plan_partitions`) and walked part by part, each finished part checkpointed |
 | `biorxiv`, `medrxiv` | `biorxiv::BiorxivFetcher::new(client, server)` | reads `/pubs`; `settle_days` = `BIORXIV_SETTLE_DAYS` (90) |
+| `biorxiv-details`, `medrxiv-details` | `biorxiv::BiorxivFetcher::new(client, server).with_endpoint(Endpoint::Details)` | reads `/details`; `settle_days` = `DETAILS_SETTLE_DAYS` (7) |
 | `openalex` | `openalex::OpenAlexFetcher { client }` | `email` config (required by the descriptor), optional `api_key` |
+| `europepmc` | `europepmc::EuropePmcFetcher { client }` (`walk` over any `SearchPages`; `HttpSearchPages` percent-encodes) | **opt-in**; `query` config (required), optional `email`; walks `FIRST_IDATE` (first-index) days; `settle_days` = `EUROPEPMC_SETTLE_DAYS` (3, fixed before measurement, #792); does not sleep (`RATE_LIMIT_SECONDS` is for the caller's transport) |
 
-`fetchers::europepmc` is not a sync source: its `normalize` turns one Europe
-PMC search hit into a `FetchedRecord` for `lookup_record`. PubMed titles and
-abstracts are read as Markdown (`text_with_formatting`, `escape_markdown`), as
-in Python.
+`fetchers::europepmc`'s `normalize` also turns one Europe PMC search hit into a
+`FetchedRecord` for `lookup_record`. The sync source holds a walk to the first
+page's `hitCount` with no shortfall floor: any walk ending short of it fails the
+day, and an empty day completes only if the query without its date clause finds
+something. The Python page's [`fetch_europepmc`
+section](../../../../docs/manual/publications.md#fetch_europepmc-unreleased) has
+the rules and the known limits (#792-#795); the Rust walk keeps them, except
+that its `FetchSink` cannot fail a record. PubMed titles and abstracts are read
+as Markdown (`text_with_formatting`, `escape_markdown`), as in Python.
 
 `HttpClient` is the transport seam: `get(url)` returns an `HttpResponse`
 (`status`, raw `body` bytes) for any status the server answered with, and

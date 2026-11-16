@@ -8,19 +8,44 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
-- **A `europepmc` day-by-day sync source** (both languages; 15 shared
-  oracle cases). `fetch_europepmc(client, day, *, on_record,
-  on_progress=None, query, email=None)` walks a Europe PMC search for one
-  day, `(<query>) AND FIRST_PDATE:[<day> TO <day>]`, with
-  `resultType=core`, 1,000-hit pages and `cursorMark` paging (one request a
-  second). Each hit goes through `normalize_europepmc`, so an open-access
-  record carries its `fullTextXML` source. The first page's `hitCount` is
-  the day's promise: a short walk, an error body, a non-numeric count or a
-  hit that is not an object fails the day, which is then fetched again.
-  `query` is required; settle period 14 days (`EUROPEPMC_SETTLE_DAYS`).
-  `"europepmc"` joins `ALL_SOURCES`, so `sync()` with no sources named runs
-  it too, and without a `query` it fails its day, as `openalex` does
-  without an `email`.
+- **A `europepmc` day-by-day sync source** (both languages; 31 shared oracle
+  cases). `fetch_europepmc(client, day, *, on_record, on_progress=None, query,
+  email=None)` walks a Europe PMC search one day at a time, `(<query>) AND
+  FIRST_IDATE:[<day> TO <day>]`: the day Europe PMC first indexed a record
+  (`firstIndexDate`), not its publication day. By first-publication day about a
+  fifth of each day's records arrive more than 15 days later (2026-06-10: 1,530
+  of 6,243, live probe 2026-11-16), with a tail past 180 days. Pages are
+  `resultType=core`, 1,000 hits, `cursorMark` paging, one request a second.
+  Each hit goes through `normalize_europepmc`, so a record Europe PMC holds the
+  text of (`inEPMC` `"Y"`, with a PMC ID or `PPR` accession) carries its
+  `fullTextXML` source, whatever `isOpenAccess` says. The first page's
+  `hitCount` is the promise, and **any** walk that ends short of it fails the
+  day: an empty page through `reconcile_delivery`'s stall rule, a cursor that
+  stops (missing, empty or repeated `nextCursorMark`) with its own message.
+  The shared 50% shortfall floor is not applied, because the count is the
+  search's own. A `hitCount` that is not a count, a zero count with records, a
+  `nextCursorMark` that is not a string, a hit that is not an object, a hit
+  not first indexed on the day (Europe PMC drops the date clause of a query
+  with an unbalanced bracket and answers HTTP 200), an error body, an HTTP or
+  transport error, a blank query and a failing `on_record` each fail the day
+  too. An empty day completes only after a second request finds the query
+  matches something without the date clause; zero there is a broken query (a
+  misspelt field matches nothing, also with HTTP 200). `query` is required,
+  `email` optional; settle period 3 days (`EUROPEPMC_SETTLE_DAYS`), **fixed
+  before measurement**, not measured (#792). `"europepmc"` joins
+  `ALL_SOURCES` but is opt-in (below), so `sync()` with no sources named does
+  not run it; named without a `query`, it fails its day. Known limits, each
+  filed: a record that starts matching the query after its index day settled
+  (one that becomes open access, say) is never fetched (#792); the day ledger
+  is keyed by source and day, not query, so a changed query does not re-fetch
+  settled days (#793); a record with neither DOI nor PMID is stored again on
+  every re-fetch (#794). Europe PMC is run by EMBL-EBI in the UK.
+- **`SourceDescriptor.opt_in`** (both languages; Python `bool = False`). A
+  `sync()` with no sources named runs every registered source that is not
+  opt-in. `europepmc` is the only opt-in built-in: run without a query it
+  would fail every day, re-offered for ever by its settle period. Rust's sync
+  takes its sources explicitly; a Rust caller choosing defaults should honour
+  the field.
 - **The full-text lookup's library rules, alone** (#784; both languages).
   `newest_source(scan, ids, kind)` is the file `LibraryStore.find_source_in`
   reads, not yet read, and `lists_use(scan, who, file)` the check

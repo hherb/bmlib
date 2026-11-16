@@ -93,6 +93,7 @@ fn descriptor_json(descriptor: &SourceDescriptor) -> Value {
         "description": descriptor.description,
         "resumable": descriptor.resumable,
         "settle_days": descriptor.settle_days,
+        "opt_in": descriptor.opt_in,
         "params": descriptor.params.iter().map(|p| serde_json::json!({
             "name": p.name,
             "description": p.description,
@@ -258,6 +259,7 @@ fn stub_sharing(
             params: Vec::new(),
             resumable,
             settle_days: 0,
+            opt_in: false,
         },
         Box::new(StubFetcher {
             outcome: FetchOutcome::completed(0),
@@ -596,10 +598,20 @@ fn the_builtin_descriptors_declare_what_the_sync_loop_reads() {
         vec![("openalex", "email"), ("europepmc", "query")]
     );
 
+    // Europe PMC alone runs only when named: without the search it requires it
+    // would fail every default run's days, re-offered for ever.
+    let opt_in: Vec<&str> = descriptors
+        .iter()
+        .filter(|d| d.opt_in)
+        .map(|d| d.name.as_str())
+        .collect();
+    assert_eq!(opt_in, vec!["europepmc"]);
+
     // The settle period is read by day selection, outside every per-day handler,
     // so a built-in that declared an unusable one would cost a whole run its
     // report. Five declare it: `/pubs` fills a day in weeks late, `/details` is
-    // given a short margin (#341), and Europe PMC indexes past dates late.
+    // given a short margin (#341), and Europe PMC's index days load in batches
+    // (a margin fixed before measurement).
     let settling: Vec<(&str, u32)> = descriptors
         .iter()
         .filter(|d| d.settle_days > 0)

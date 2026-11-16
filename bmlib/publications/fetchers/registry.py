@@ -266,6 +266,7 @@ def _register_builtins() -> None:
                 SourceParam("email", "Contact email sent to Europe PMC"),
             ],
             settle_days=EUROPEPMC_SETTLE_DAYS,
+            opt_in=True,
         ),
         fetch_europepmc,
     )

@@ -26,7 +26,7 @@
 //! | `retractions.py` | [`retractions`] | ported |
 //! | `retraction_status.py` | [`retraction_status`] | ported, plus [`retraction_status::RetractionIndex`] for the apps (#504) |
 //! | `sync.py` | [`sync`] | ported (rules + storage helpers) |
-//! | `fetchers/` | [`fetchers`] | ported — `_reconcile`, `registry`, the three fetchers, `PubMedFetcher`, `builtin_registry` |
+//! | `fetchers/` | [`fetchers`] | ported — `_reconcile`, `registry`, the four fetchers (Europe PMC's opt-in), `PubMedFetcher`, `builtin_registry` |
 
 pub mod csv;
 pub mod fetchers;

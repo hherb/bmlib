@@ -201,9 +201,10 @@ registry, and `.gitignore` covers it.
 | `publications/retractions` | 735 lines | 1 file | **ported**, 27 named tests + 67 oracle cases |
 | `publications/sync` | 1,219 lines | 1 file | **ported** — rules, storage helpers, the per-source/per-day loop and the day's part buffer. 53 named tests (11 `sync_source`, 8 `sync_credit`, 29 `sync_rules`, 5 in-module) + 108 oracle cases (87 `sync_cases`, 21 `sync_credit_cases`) |
 | `publications/fetchers/_reconcile` | 170 lines | 1 file | **ported**, 17 named tests + 24 oracle cases |
-| `publications/fetchers/registry` | 234 lines | 1 file | **ported** — the resume-keyword check is a compile-time matter here; `Fetcher::fetch` hands records to a `FetchSink` as they are read, so a caller can store one part at a time; `builtin_registry(client)` wires all four built-in sources to their fetchers |
+| `publications/fetchers/registry` | 234 lines | 1 file | **ported** — the resume-keyword check is a compile-time matter here; `Fetcher::fetch` hands records to a `FetchSink` as they are read, so a caller can store one part at a time; `builtin_registry(client)` wires all seven built-in sources to their fetchers, and each descriptor carries Python's `opt_in` |
 | `publications/fetchers/biorxiv` | 371 lines | 1 file | **ported**, 24 named tests + 68 oracle cases (three `corrected`: #349's two and #361's) |
 | `publications/fetchers/openalex` | 383 lines | 1 file | **ported** — 24 named tests + 59 oracle cases; #313's correction was retired when Python adopted it and #349's two plus #361's are the current `corrected` blocks |
+| `publications/fetchers/europepmc` | 550 lines | 1 file | **ported** — `normalize` (for `lookup_record`) and the opt-in day-by-day sync source (`walk`, `EuropePmcFetcher`); 31 oracle cases (`europepmc_sync_cases.json`) plus named tests in `tests/europepmc_sync.rs` |
 | `publications/fetchers/pubmed` | 1,583 lines | 1 file | **ported** — reader, ladder, walk, part loop, transport, `fetch_pubmed`, and `PubMedFetcher` over them (6 named tests). 83 named tests + 148 oracle cases |
 | `embed/` | 1,183 lines, 5 files | 5 files | **ported** — the vector rules and model files held to the shared contract (7 tests), the verified download (15 tests against a loopback server and 2 without), and the `Embedder` over llama-cpp-2 behind the `embed` feature: 9 live tests against the reference vectors when `BMLIB_EMBED_MODEL` names a GGUF file, plus 1 without a model, and 5 model-free unit tests of batch packing, the token limit and the query check. `embed::store` (StudyAnalyzer item 8) follows `bmlib/embed/store.py`: 7 contract tests over `vector_store.json`, 37 SQLite tests, a PostgreSQL round trip, 3 more live tests (`load_model`, and the store over the real embedder) and 2 more without a model (a missing file, a file of another size) |
 | `quality/` (pure half) | ~2,000 | — | |
@@ -346,11 +347,11 @@ rust/oracle/biorxiv_cases.json    68 cases, three with corrected expectations
                                   (#365)
 rust/oracle/dump_openalex.py      normalization, abstract rebuild, cursor walk
 rust/oracle/openalex_cases.json   59 cases, three with corrected expectations
-rust/oracle/dump_europepmc_sync.py  Europe PMC day-by-day search walk
-rust/oracle/europepmc_sync_cases.json  15 cases
                                   — #313's correction was retired when Python
                                   adopted it, and #349's two plus #361's one are
                                   the current ones (see below)
+rust/oracle/dump_europepmc_sync.py  Europe PMC day-by-day search walk
+rust/oracle/europepmc_sync_cases.json  31 cases
 rust/oracle/dump_pubmed.py        Markdown rendering + the whole XML reader
 rust/oracle/pubmed_cases.json     80 cases, all diffed strictly
 rust/oracle/dump_pubmed_walk.py   the EDAT ladder + the session walk

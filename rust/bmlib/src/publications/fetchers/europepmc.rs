@@ -14,14 +14,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-//! One Europe PMC search record as a [`FetchedRecord`] — port of
-//! `bmlib/publications/fetchers/europepmc.py`.
+//! Europe PMC search records as [`FetchedRecord`], and the `europepmc` sync
+//! source — port of `bmlib/publications/fetchers/europepmc.py`.
 //!
-//! Not a sync fetcher: [`crate::publications::lookup::lookup_record`] asks Europe
-//! PMC for a preprint accession (`PPR` + digits), which neither PubMed nor
-//! OpenAlex knows, and this reads the `resultType=core` hit it gets back. Every
-//! field is read type-checked, so a value of the wrong type costs that field and
-//! not the record.
+//! [`normalize`] reads one `resultType=core` hit. Every field is read
+//! type-checked, so a value of the wrong type costs that field and not the
+//! record. Two callers use it: [`crate::publications::lookup::lookup_record`],
+//! which asks Europe PMC for a preprint accession (`PPR` + digits) neither
+//! PubMed nor OpenAlex knows, and [`walk`], the opt-in sync source that walks a
+//! caller's search one first-index day at a time.
 
 use std::sync::LazyLock;
 
@@ -201,8 +202,11 @@ pub const PAGE_SIZE: usize = 1000;
 /// the caller's transport spaces requests (bmlib's fetchers do not sleep).
 pub const RATE_LIMIT_SECONDS: f64 = 1.0;
 
-/// Europe PMC adds records for past dates late, so recent days are re-fetched.
-pub const EUROPEPMC_SETTLE_DAYS: u32 = 14;
+/// Fixed before measurement, not measured: the walk is by first index date,
+/// and one probe (2026-11-16) saw index days loaded in batches (none yet for
+/// that day, 6,093 for the day before), so a day is re-fetched for three days
+/// past its end. Whether a past index day still grows later is unmeasured.
+pub const EUROPEPMC_SETTLE_DAYS: u32 = 3;
 
 /// The cursor that starts a walk.
 pub const FIRST_CURSOR: &str = "*";
@@ -218,7 +222,7 @@ pub fn page_params(
     let mut params = vec![
         (
             "query".to_string(),
-            format!("({query}) AND FIRST_PDATE:[{date_str} TO {date_str}]"),
+            format!("({query}) AND FIRST_IDATE:[{date_str} TO {date_str}]"),
         ),
         ("resultType".to_string(), "core".to_string()),
         ("format".to_string(), "json".to_string()),
@@ -263,12 +267,62 @@ fn error_text(error: &FetchError) -> String {
     }
 }
 
-/// Walk every record matching `query` first published on `date`, handing each
-/// to `sink` (Python's `fetch_europepmc`).
+/// One page and its result list, or why the day fails when either is unusable.
+fn get_page(
+    source: &dyn SearchPages,
+    params: &[(String, String)],
+    date_str: &str,
+) -> Result<(Value, Vec<Value>), String> {
+    let data = source.page(params).map_err(|error| error_text(&error))?;
+    // An error answer still arrives as an object, so the envelope is checked,
+    // never defaulted (OpenAlex's #88).
+    if !data.is_object() {
+        return Err(format!(
+            "Europe PMC returned a {} payload, not an object, for {date_str}",
+            json_type_name(&data)
+        ));
+    }
+    let Some(results) = data
+        .get("resultList")
+        .and_then(|r| r.get("result"))
+        .and_then(Value::as_array)
+        .cloned()
+    else {
+        return Err(format!(
+            "Europe PMC returned a page carrying no result list for {date_str}"
+        ));
+    };
+    Ok((data, results))
+}
+
+/// The page's `hitCount` if it is a count: an integer, not a boolean (#313),
+/// not negative.
+fn hit_count(data: &Value) -> Option<i64> {
+    data.get("hitCount")
+        .filter(|v| !v.is_boolean())
+        .and_then(Value::as_i64)
+        .filter(|n| *n >= 0)
+}
+
+fn no_count(date_str: &str, delivered: i64) -> FetchOutcome {
+    failed_outcome(
+        format!("Europe PMC returned a page with no hitCount that is a count for {date_str}"),
+        delivered,
+    )
+}
+
+/// Walk every record matching `query` first indexed on `date`, handing each to
+/// `sink` (Python's `fetch_europepmc`).
 ///
-/// The promise is the first page's `hitCount`; the walk follows `cursorMark`
-/// until the cursor stops moving or a page is empty, and
-/// [`reconcile_delivery`] judges what arrived against the promise.
+/// The day is the day a record entered Europe PMC (`FIRST_IDATE`), which a
+/// record published earlier but indexed later still has. The promise is the
+/// first page's `hitCount`, computed by the same search, so **any** walk that
+/// ends short of it fails the day. A search Europe PMC cannot apply is answered
+/// with HTTP 200, so a record not first indexed on the day (the date clause
+/// dropped, as an unbalanced bracket does) fails the day, and an empty day
+/// completes only if the query without its date clause finds anything (a
+/// misspelt field matches nothing). The day ledger is keyed by source and day,
+/// not by query.
 #[must_use]
 pub fn walk(
     source: &dyn SearchPages,
@@ -291,44 +345,29 @@ pub fn walk(
     let mut stalled = false;
 
     loop {
-        let data = match source.page(&page_params(&date_str, &cursor, query, email)) {
-            Ok(data) => data,
-            Err(error) => return failed_outcome(error_text(&error), sink.delivered()),
-        };
-        if !data.is_object() {
-            return failed_outcome(
-                format!(
-                    "Europe PMC returned a {} payload, not an object, for {date_str}",
-                    json_type_name(&data)
-                ),
-                sink.delivered(),
-            );
-        }
-        let Some(results) = data
-            .get("resultList")
-            .and_then(|r| r.get("result"))
-            .and_then(Value::as_array)
-        else {
-            return failed_outcome(
-                format!("Europe PMC returned a page carrying no result list for {date_str}"),
-                sink.delivered(),
-            );
+        let params = page_params(&date_str, &cursor, query, email);
+        let (data, results) = match get_page(source, &params, &date_str) {
+            Ok(page) => page,
+            Err(message) => return failed_outcome(message, sink.delivered()),
         };
         if is_first_page {
-            let Some(count) = data
-                .get("hitCount")
-                .filter(|v| !v.is_boolean())
-                .and_then(Value::as_i64)
-            else {
+            let Some(count) = hit_count(&data) else {
+                return no_count(&date_str, sink.delivered());
+            };
+            if count == 0 && !results.is_empty() {
                 return failed_outcome(
-                    format!("Europe PMC returned a page with no numeric hitCount for {date_str}"),
+                    format!(
+                        "Europe PMC promised no records for {date_str} but its first page \
+                         carried {}",
+                        results.len()
+                    ),
                     sink.delivered(),
                 );
-            };
+            }
             promised = count;
             is_first_page = false;
         }
-        for raw in results {
+        for raw in &results {
             let Some(record) = normalize(raw) else {
                 return failed_outcome(
                     format!(
@@ -339,9 +378,21 @@ pub fn walk(
                     sink.delivered(),
                 );
             };
+            if raw.get("firstIndexDate").and_then(Value::as_str) != Some(date_str.as_str()) {
+                return failed_outcome(
+                    format!(
+                        "Europe PMC returned a record not first indexed on {date_str}, so the \
+                         search did not keep to the day (an unbalanced bracket in the query \
+                         drops its date clause)"
+                    ),
+                    sink.delivered(),
+                );
+            }
             sink.record(record);
         }
         if results.is_empty() {
+            // An empty page also bounds the loop; it is a stall while the
+            // promise is unmet.
             stalled = sink.delivered() < promised;
             break;
         }
@@ -349,11 +400,39 @@ pub fn walk(
             delivered: sink.delivered(),
             promised: Some(promised),
         });
-        match data.get("nextCursorMark").and_then(Value::as_str) {
-            // Europe PMC repeats the cursor it was sent on the last page.
-            Some(next) if !next.is_empty() && next != cursor => cursor = next.to_string(),
-            _ => break,
+        // Europe PMC sends no cursor with the last page; a repeated or empty
+        // one ends the walk too, and what it left unmet is judged below.
+        match data.get("nextCursorMark") {
+            None | Some(Value::Null) => break,
+            Some(Value::String(next)) if !next.is_empty() && *next != cursor => {
+                cursor.clone_from(next);
+            }
+            Some(Value::String(_)) => break,
+            Some(_) => {
+                return failed_outcome(
+                    format!(
+                        "Europe PMC returned a nextCursorMark that is not a string for {date_str}"
+                    ),
+                    sink.delivered(),
+                );
+            }
         }
+    }
+
+    if promised == 0 {
+        return check_empty_day(source, &date_str, query, email);
+    }
+    if !stalled && sink.delivered() < promised {
+        // The count is the search's own, so no shortfall is benign here, unlike
+        // the shared floor `reconcile_delivery` applies.
+        return failed_outcome(
+            format!(
+                "europepmc delivered {} of {promised} records for {date_str} and then sent no \
+                 new cursor, so the walk stopped short",
+                sink.delivered()
+            ),
+            sink.delivered(),
+        );
     }
 
     let verdict = reconcile_delivery(
@@ -375,6 +454,48 @@ pub fn walk(
         error: verdict.failure,
         note: verdict.note,
         parts: Vec::new(),
+    }
+}
+
+/// Complete an empty day only if the query, without its date clause, finds
+/// anything (Python's `_check_empty_day`).
+fn check_empty_day(
+    source: &dyn SearchPages,
+    date_str: &str,
+    query: &str,
+    email: Option<&str>,
+) -> FetchOutcome {
+    let mut params = vec![
+        ("query".to_string(), format!("({query})")),
+        ("resultType".to_string(), "lite".to_string()),
+        ("format".to_string(), "json".to_string()),
+        ("pageSize".to_string(), "1".to_string()),
+    ];
+    if let Some(email) = email.filter(|e| !e.is_empty()) {
+        params.push(("email".to_string(), email.to_string()));
+    }
+    let data = match get_page(source, &params, date_str) {
+        Ok((data, _)) => data,
+        Err(message) => return failed_outcome(message, 0),
+    };
+    match hit_count(&data) {
+        None => no_count(date_str, 0),
+        Some(0) => failed_outcome(
+            format!(
+                "Europe PMC finds nothing for the query on any day, so {date_str} is not taken \
+                 as empty: the query is broken (a misspelt field matches nothing, with no error)"
+            ),
+            0,
+        ),
+        Some(_) => FetchOutcome {
+            record_count: 0,
+            status: "completed".to_string(),
+            promised: Some(0),
+            stalled: false,
+            error: None,
+            note: None,
+            parts: Vec::new(),
+        },
     }
 }
 
@@ -403,7 +524,7 @@ impl SearchPages for HttpSearchPages {
 }
 
 /// The `europepmc` source: a Europe PMC search (config `query`, optional
-/// `email`) walked one first-publication day at a time.
+/// `email`) walked one first-index day at a time.
 pub struct EuropePmcFetcher {
     /// The transport.
     pub client: std::sync::Arc<dyn HttpClient + Send + Sync>,
