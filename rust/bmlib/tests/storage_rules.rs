@@ -159,6 +159,26 @@ fn an_empty_result_is_none_not_an_empty_string() {
     assert_eq!(normalize_pmid(None), None);
 }
 
+/// Whitespace is Python's `str.strip()`, which also strips U+001C-U+001F
+/// (#755); `str::trim` kept them.
+#[test]
+fn whitespace_is_pythons() {
+    assert_eq!(
+        normalize_doi(Some("\u{1c}doi:10.1/X\u{1f}")),
+        Some("10.1/x".to_string())
+    );
+    // Stripped again once the prefix is off.
+    assert_eq!(
+        normalize_doi(Some("doi:\u{1c}10.1/X")),
+        Some("10.1/x".to_string())
+    );
+    assert_eq!(
+        normalize_pmid(Some("\u{1e}123\u{1d}")),
+        Some("123".to_string())
+    );
+    assert_eq!(normalize_pmid(Some("\u{1f}")), None);
+}
+
 /// Non-ASCII lowercasing is Unicode-aware, as Python's `str.lower()` is. A
 /// byte-wise ASCII fold would leave these unchanged.
 #[test]

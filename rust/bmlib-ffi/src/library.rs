@@ -377,7 +377,8 @@ fn check_digest(sha256: &str) -> Result<(), LibraryError> {
 /// Something odd a scan found and did not use.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum LibraryProblem {
-    /// A record file could not be read or is not a valid record.
+    /// A record file could not be read, is not a valid record, or its name is
+    /// not UTF-8 (shown lossily).
     UnreadableRecord {
         /// The paper's folder.
         folder: String,
@@ -439,7 +440,8 @@ pub enum LibraryProblem {
         /// The file.
         name: String,
     },
-    /// An entry of `papers/` that is not a folder.
+    /// An entry of `papers/` that is not a folder, a symbolic link to one
+    /// included, or whose name is not UTF-8 (shown lossily).
     StrayEntry {
         /// The entry.
         name: String,

@@ -20,11 +20,41 @@ use unicode_normalization::UnicodeNormalization;
 
 use super::ids::{is_bidi_control, PaperInfo};
 use super::{MAX_AUTHOR_CHARS_IN_NAME, MAX_FOLDER_NAME_BYTES, MAX_TITLE_CHARS_IN_NAME};
+use crate::pyvalue::{is_python_space, python_strip};
 
-/// Device names Windows refuses as a file's base name.
-const RESERVED: [&str; 22] = [
-    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
-    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+/// Device names Windows refuses as a file's base name: CPython 3.13's
+/// `ntpath.isreserved` list, the superscript digits and console names included.
+const RESERVED: [&str; 30] = [
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "CONIN$",
+    "CONOUT$",
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+    "COM\u{b9}",
+    "COM\u{b2}",
+    "COM\u{b3}",
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
+    "LPT\u{b9}",
+    "LPT\u{b2}",
+    "LPT\u{b3}",
 ];
 
 /// The longest prefix of `s` that is at most `max` bytes, on a character
@@ -96,7 +126,7 @@ fn named(info: &PaperInfo, n: u32) -> String {
     // NFC before any cut by characters, so NFD input (Swift, PDFKit) fits the same.
     let nfc = |s: &str| s.nfc().collect::<String>();
     let author = info.first_author.as_deref().map(nfc).map(|a| {
-        a.trim()
+        python_strip(&a)
             .chars()
             .take(MAX_AUTHOR_CHARS_IN_NAME)
             .collect::<String>()
@@ -111,8 +141,8 @@ fn named(info: &PaperInfo, n: u32) -> String {
         .filter(|s| !s.is_empty());
     let head = head.collect::<Vec<_>>().join(" ");
     let title = info.title.as_deref().map(nfc).map_or(String::new(), |t| {
-        cut_title(t.trim(), MAX_TITLE_CHARS_IN_NAME)
-            .trim_end()
+        cut_title(python_strip(&t), MAX_TITLE_CHARS_IN_NAME)
+            .trim_end_matches(is_python_space)
             .to_owned()
     });
     let body = match (head.is_empty(), title.is_empty()) {
@@ -139,9 +169,11 @@ fn named(info: &PaperInfo, n: u32) -> String {
     name
 }
 
-/// True when the part before the first `.` is a Windows device name.
+/// True when the part before the first `.`, trailing spaces dropped, is a
+/// Windows device name (`nul .txt` opens the device too).
 pub(super) fn is_reserved(name: &str) -> bool {
-    RESERVED.contains(&name.split('.').next().unwrap_or("").to_uppercase().as_str())
+    let base = name.split('.').next().unwrap_or("").trim_end_matches(' ');
+    RESERVED.contains(&base.to_uppercase().as_str())
 }
 
 /// `body suffix` within `limit` bytes: the body is cut at a character
