@@ -103,6 +103,10 @@ fn every_core_problem() -> Vec<lib::Problem> {
         P::BadFolderName {
             folder: "folder-i".into(),
         },
+        P::UndecodableName {
+            folder: f(),
+            name: "name-j".into(),
+        },
     ]
 }
 
@@ -309,6 +313,9 @@ fn problem_json(p: &LibraryProblem) -> Value {
         LibraryProblem::BadFolderName { folder } => {
             json!({"kind": "bad_folder_name", "folder": folder})
         }
+        LibraryProblem::UndecodableName { folder, name } => {
+            json!({"kind": "undecodable_name", "folder": folder, "name": name})
+        }
     }
 }
 
@@ -416,7 +423,10 @@ fn every_problem_variant_decides_whether_uses_are_complete() {
     let uncounted: Vec<Option<&str>> = problems.iter().map(uncounted_record).collect();
     // In `every_core_problem`'s order; its `LeftoverTemp` is outside `records/`.
     let a = Some("folder-a");
-    assert_eq!(uncounted, [a, a, a, a, None, a, None, None, None, None]);
+    assert_eq!(
+        uncounted,
+        [a, a, a, a, None, a, None, None, None, None, None]
+    );
     let temp = |name: &str| P::LeftoverTemp {
         folder: "f".into(),
         name: name.into(),

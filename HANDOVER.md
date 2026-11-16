@@ -1,12 +1,28 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-16 (**#795, on `fix/reconcile-nonpositive-count-795`**).
-Merged since the last update: PR #790 (the `europepmc` sync source) and PR
-#791 (#789), below. **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the
-merge of #736) and **the Rust crate 0.4.0 on crates.io** from the same commit;
-everything since is under Unreleased._
+_Last updated: 2026-11-17 (**#796, on `fix/library-undecodable-name-796`**).
+Merged since the last update: PR #797 (#795), below. **0.13.0 is on PyPI**
+(tag `v0.13.0` on `161849c0`, the merge of #736) and **the Rust crate 0.4.0
+on crates.io** from the same commit; everything since is under Unreleased._
 
-## This session: a count the delivery contradicts fails the day (#795)
+## This session: a file name that is not UTF-8 is a problem, not a file (#796)
+
+- A scan listed a paper folder's non-UTF-8 file names lossily in
+  `files_on_disk` (and as `unrecorded_file`), so a caller handing one back
+  to `read` or `remove_file` had it joined: `Missing`, or a real sibling
+  holding the lossy spelling, which `remove_file` deleted. Now each is a
+  `Problem::UndecodableName { folder, name }` (`undecodable_name`), and
+  `files_on_disk` holds only UTF-8 names, so every listed name is safe to
+  join and `read` / `remove_file` need no refusal of their own.
+- **Breaks Rust and FFI callers** (`LibraryProblem::UndecodableName`: an
+  exhaustive `match`, Swift `switch` or Kotlin `when` needs the case).
+  StudyAnalyzer's clear refuses any listed name holding U+FFFD meanwhile
+  (its #141); after a re-pin it can drop that and show the problem instead.
+- Pinned by each language's own Linux test (a real `x\ufffd.pdf` beside
+  `x\xe9.pdf`: one listed file, one problem) and Python's faked-listing test;
+  macOS cannot hold such names, so the Linux ones run only in CI.
+
+## Merged: a count the delivery contradicts fails the day (#795, PR #797)
 
 - `reconcile_delivery` (Python `_reconcile.py`, Rust `reconcile.rs`) returned
   clean for any `promised <= 0`. Now records against a count of 0 fail the day

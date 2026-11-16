@@ -43,6 +43,13 @@ The Python library is documented separately, in the repository's
 
 ### Changed — breaking
 
+- **`library::Problem` gains `UndecodableName { folder, name }`** (#796, as
+  in Python), and bmlib-ffi's `LibraryProblem` the same case, so an
+  exhaustive `match`, Swift `switch` or Kotlin `when` needs it. A file in a
+  paper folder whose name is not UTF-8 is reported so, and is no longer in
+  `PaperFolder::files_on_disk` (nor an `UnrecordedFile`): its lossy name
+  could be handed back to `read` or `remove_file`, which joined it and
+  reached nothing, or a real sibling holding that spelling.
 - **`library::Problem` gains `BadFolderName { folder }`** (#789, as in
   Python), so an exhaustive `match` on it needs the arm, and bmlib-ffi's
   `LibraryProblem` gains the same case for a Swift `switch` or a Kotlin `when`.

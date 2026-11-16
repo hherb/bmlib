@@ -83,6 +83,14 @@ All notable changes to bmlib are documented here. The format is based on
   `fetch/negative-total` (bioRxiv); `recon/promise-zero-with-delivery` and
   `recon/promise-negative` now fail.
 
+- **A file name that is not UTF-8 is a problem, not a listed file** (#796;
+  both languages). A scan reported it in `PaperFolder.files_on_disk` (and as
+  `unrecorded_file`), lossily, so a caller handing it back to `read` or
+  `remove_file` had it joined to a path: it reached nothing, or a real
+  sibling holding the lossy spelling, which `remove_file` then deleted. It is
+  now an `undecodable_name` problem (`folder`, `name`) only, to show and ask
+  the user to rename. Only file systems that allow such names (Linux, some
+  Windows volumes) hold one.
 - **A paper folder bmlib cannot name is reported** (#789; both languages and
   bmlib-ffi). A folder whose name `component()` refuses, such as one made under
   the device rule before #788 (`Con .x (PMID 1)`) or a user's `papers/con`,

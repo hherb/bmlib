@@ -915,6 +915,36 @@ fn a_non_utf8_folder_is_reported_beside_one_with_its_lossy_name() {
     fs::remove_dir_all(dir).unwrap();
 }
 
+/// #796: a file whose name is not UTF-8 is an `UndecodableName` problem, not
+/// one of the folder's files, so its lossy name, which a real sibling holds
+/// here, is never handed back to be joined. Linux only, as above.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_non_utf8_file_is_not_listed_beside_one_with_its_lossy_name() {
+    use bmlib::library::Problem;
+    use std::os::unix::ffi::OsStrExt;
+    let (dir, lib) = scratch("lossy-file");
+    let folder = dir.join("papers").join("p");
+    fs::create_dir(&folder).unwrap();
+    for name in [&b"x\xe9.pdf"[..], "x\u{fffd}.pdf".as_bytes()] {
+        fs::write(folder.join(std::ffi::OsStr::from_bytes(name)), name).unwrap();
+    }
+    let scan = lib.scan().unwrap();
+    assert_eq!(scan.folders[0].files_on_disk, ["x\u{fffd}.pdf"]);
+    let (folder, name) = ("p".to_owned(), "x\u{fffd}.pdf".to_owned());
+    assert_eq!(
+        scan.problems,
+        [
+            Problem::UndecodableName {
+                folder: folder.clone(),
+                name: name.clone(),
+            },
+            Problem::UnrecordedFile { folder, name },
+        ]
+    );
+    fs::remove_dir_all(dir).unwrap();
+}
+
 /// A corrupt record is kept aside beside itself under a library root whose
 /// path is not UTF-8: the path is built from the OS string, not a lossy
 /// display. Linux only, as above.

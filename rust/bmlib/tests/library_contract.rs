@@ -325,6 +325,9 @@ fn problem_json(p: &Problem) -> Value {
         }
         Problem::StrayEntry { name } => json!({"kind": "stray_entry", "name": name}),
         Problem::BadFolderName { folder } => json!({"kind": "bad_folder_name", "folder": folder}),
+        Problem::UndecodableName { folder, name } => {
+            json!({"kind": "undecodable_name", "folder": folder, "name": name})
+        }
     }
 }
 

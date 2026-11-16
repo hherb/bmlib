@@ -52,8 +52,8 @@ pub struct PaperFolder {
     pub folder: String,
     /// The valid, correctly named records, by file name (bytes).
     pub records: Vec<Record>,
-    /// The source files present, by name (bytes); placeholders and `records/`
-    /// are left out.
+    /// The source files present, by name (bytes); placeholders, `records/` and
+    /// names that are not UTF-8 ([`Problem::UndecodableName`]) are left out.
     pub files_on_disk: Vec<String>,
 }
 
@@ -173,6 +173,17 @@ pub enum Problem {
     BadFolderName {
         /// The paper's folder.
         folder: String,
+    },
+    /// A file in a paper folder whose name is not UTF-8, shown lossily (with
+    /// U+FFFD). It is not in [`PaperFolder::files_on_disk`]: the lossy name may
+    /// be a real sibling's spelling, which [`Library::read`] or
+    /// [`Library::remove_file`] would reach instead, so it is only ever shown
+    /// (#796). Ask the user to rename it.
+    UndecodableName {
+        /// The paper's folder.
+        folder: String,
+        /// The file's name, lossily.
+        name: String,
     },
 }
 
@@ -314,13 +325,17 @@ pub(super) fn scan_folder(dir: &Path, folder: &str, problems: &mut Vec<Problem>)
                     name,
                 });
             }
-            let mut on_disk: Vec<String> = found
+            for name in found.undecodable {
+                problems.push(Problem::UndecodableName {
+                    folder: folder.to_owned(),
+                    name,
+                });
+            }
+            found
                 .names
                 .into_iter()
                 .filter(|n| n != RECORDS_DIR && !listed_dir(&dir.join(n)))
-                .collect();
-            on_disk.extend(found.undecodable);
-            on_disk
+                .collect()
         }
         Err(e) => {
             problems.push(unreadable_folder(e.to_string()));
