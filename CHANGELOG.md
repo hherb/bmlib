@@ -76,10 +76,12 @@ All notable changes to bmlib are documented here. The format is based on
   fail the day as records against no count do, and a negative count fails it
   whatever was delivered. A quiet day (nothing delivered against 0 or against
   no count) still completes, bioRxiv's total-omitting one included; no
-  built-in fixture or caller sends a zero count with records. `europepmc`
+  existing fixture changes verdict except the two below. `europepmc`
   already refused both itself. New oracle cases
-  `recon/promise-negative-with-delivery` and `fetch/zero-count-with-works`;
-  `recon/promise-zero-with-delivery` and `recon/promise-negative` now fail.
+  `recon/promise-negative-with-delivery`, `fetch/zero-count-with-works` and
+  `fetch/negative-count` (OpenAlex), and `fetch/zero-total-with-records` and
+  `fetch/negative-total` (bioRxiv); `recon/promise-zero-with-delivery` and
+  `recon/promise-negative` now fail.
 
 - **A paper folder bmlib cannot name is reported** (#789; both languages and
   bmlib-ffi). A folder whose name `component()` refuses, such as one made under

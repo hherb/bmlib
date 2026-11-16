@@ -79,6 +79,8 @@ paper); bmlib-ffi exposes `newest_source`, `lists_use`, `library_ids` and
 `.meca` package yet (the IAM user gets `AccessDenied` on both buckets):
 **#776**. #761's deferrals are **#778**. StudyAnalyzer can drop its
 `stored_name` shortcut once it re-pins; a dataless *folder* is unmeasured.
+#787's `NotDownloaded` half is pinned in Rust only by the opt-in iCloud test,
+which was not run.
 
 ## The shared paper library (1a #754, 1b #763, 1c #764, all merged)
 
@@ -93,7 +95,9 @@ and fills a library (`library=`/`installation=`, Rust `with_library`; source
 (`rust/bmlib-ffi/src/library.rs`); Swift needs
 `extension LibraryError: CustomStringConvertible {}` (UniFFI 0.32.2); the
 FFI's `find_digest`, `used_by` and `release` differ from bmlib on purpose
-(DECISIONS, *step 1c*). **Next**: StudyAnalyzer's step 2 and
+(DECISIONS, *step 1c*). Not exposed: `FullTextService`'s library use
+through the FFI (MedicalFactChecker fetches in Swift; the FFI's service is
+the #492 sketch). **Next**: StudyAnalyzer's step 2 and
 MedicalFactChecker's step 3 (re-pin the xcframework). Unreleased.
 
 - **Rules to keep** (the reasoning is in `docs/DECISIONS.md`, "library"):
@@ -138,6 +142,8 @@ MedicalFactChecker's step 3 (re-pin the xcframework). Unreleased.
 are in `sync(sources=None)` (the maintainer's call); records keep `source`
 `"biorxiv"`/`"medrxiv"`, one row per DOI, newest posting by integer
 `version`. **`DETAILS_SETTLE_DAYS` = 7 is a bound; measuring it is #759.**
+BMLibrarian bumps its pin once released; MECA bulk is the expected next
+request.
 Full-text tests script `content`, not `json()`; a JATS cached with the
 PDF-beside option off is not covered (the `shortcut:` in `_check_cache`).
 
@@ -251,8 +257,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache. The two questions are independent, and a downstream reading only the
   number must still read this list.
 - **Tests on `fix/reconcile-nonpositive-count-795`** (2026-11-16, PostgreSQL
-  18 DSN on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,136 passed +
-  23 skipped (11,159 collected); ruff 0.15.20 and mypy clean. Rust
+  18 DSN on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,139 passed +
+  23 skipped (11,162 collected); ruff 0.15.20 and mypy clean. Rust
   `cargo test -p bmlib -p bmlib-ffi` 1,884 passed on macOS, and
   `-p bmlib --no-default-features` 1,461; `cargo clippy -p bmlib
   --all-targets` and `-p bmlib-ffi` with `http-sketch,bindgen`, and

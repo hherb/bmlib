@@ -605,6 +605,52 @@
     }
   },
   {
+    "name": "fetch/zero-total-with-records",
+    "ok": true,
+    "value": {
+      "error": "biorxiv delivered 1 records for 2024-06-10 but reported a count of 0, which the delivery contradicts, so the walk cannot be shown to have finished",
+      "note": null,
+      "progress": [
+        [
+          1,
+          1,
+          "in_progress"
+        ]
+      ],
+      "record_count": 1,
+      "records": [
+        "R1"
+      ],
+      "status": "failed",
+      "urls": [
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
+      ]
+    }
+  },
+  {
+    "name": "fetch/negative-total",
+    "ok": true,
+    "value": {
+      "error": "biorxiv reported -1 records for 2024-06-10, which is not a count, so the walk cannot be verified",
+      "note": null,
+      "progress": [
+        [
+          1,
+          -1,
+          "in_progress"
+        ]
+      ],
+      "record_count": 1,
+      "records": [
+        "R1"
+      ],
+      "status": "failed",
+      "urls": [
+        "https://api.biorxiv.org/pubs/biorxiv/2024-06-10/2024-06-10/0"
+      ]
+    }
+  },
+  {
     "name": "fetch/quiet-day-omits-total-and-collection",
     "ok": true,
     "value": {

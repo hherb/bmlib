@@ -322,7 +322,7 @@ fn the_port_agrees_with_python_on_every_case() {
 /// delivery satisfies both, and records delivered against either cannot be
 /// verified. The failure says which one the source sent.
 #[test]
-fn an_unnamed_promise_is_not_a_promise_of_zero() {
+fn an_unnamed_promise_and_a_promise_of_zero_reach_one_verdict() {
     // Named zero: a zero delivery satisfies it.
     assert!(!reconcile_delivery("s", "2024-06-10", 0, Some(0), false).is_failure());
     // Unnamed, zero delivered: the ordinary quiet day, which must pass —
@@ -330,12 +330,13 @@ fn an_unnamed_promise_is_not_a_promise_of_zero() {
     assert!(!reconcile_delivery("s", "2024-06-10", 0, None, false).is_failure());
     // Unnamed, records delivered: unverifiable, so it cannot be called complete.
     let r = reconcile_delivery("s", "2024-06-10", 5, None, false);
-    assert!(r.is_failure());
-    assert!(r
-        .failure
-        .as_deref()
-        .unwrap_or_default()
-        .contains("no count"));
+    assert_eq!(
+        r.failure.as_deref(),
+        Some(
+            "s delivered 5 records for 2024-06-10 but reported no count to reconcile them \
+             against, so the walk cannot be shown to have finished"
+        )
+    );
 }
 
 /// **A count the delivery contradicts fails the day** (#795): records against a
@@ -344,13 +345,16 @@ fn an_unnamed_promise_is_not_a_promise_of_zero() {
 #[test]
 fn a_count_the_delivery_contradicts_fails_the_day() {
     let r = reconcile_delivery("openalex", "2024-06-10", 1, Some(0), false);
-    assert!(r
-        .failure
-        .as_deref()
-        .unwrap_or_default()
-        .contains("reported a count of 0"));
-    for delivered in [0, 5] {
-        let r = reconcile_delivery("openalex", "2024-06-10", delivered, Some(-1), false);
+    assert_eq!(
+        r.failure.as_deref(),
+        Some(
+            "openalex delivered 1 records for 2024-06-10 but reported a count of 0, which \
+             the delivery contradicts, so the walk cannot be shown to have finished"
+        )
+    );
+    // A stall against a negative count cannot happen, but the order is pinned.
+    for (delivered, stalled) in [(0, false), (5, false), (0, true)] {
+        let r = reconcile_delivery("openalex", "2024-06-10", delivered, Some(-1), stalled);
         assert_eq!(
             r.failure.as_deref(),
             Some(

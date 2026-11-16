@@ -498,8 +498,10 @@ class TestFetchOpenAlex:
 
         assert result.status == "failed"
         assert result.record_count == 1
-        assert result.error is not None
-        assert "reported a count of 0" in result.error
+        assert result.error == (
+            "openalex delivered 1 records for 2024-06-15 but reported a count of 0, which"
+            " the delivery contradicts, so the walk cannot be shown to have finished"
+        )
 
     def test_http_error_returns_failed(self):
         """An HTTP error results in a failed FetchResult with error message."""

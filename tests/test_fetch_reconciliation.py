@@ -132,7 +132,20 @@ class TestACountTheDeliveryContradicts:
             " so the walk cannot be verified"
         )
         assert empty == full == (message, None)
-        assert [r.levelno for r in caplog.records] == [logging.ERROR, logging.ERROR]
+        assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+            (logging.ERROR, message),
+            (logging.ERROR, message),
+        ]
+
+    def test_a_negative_count_is_judged_before_a_stall(self):
+        """No caller can stall against a negative count, but the order is pinned."""
+        verdict = reconcile_delivery(
+            "openalex", "2024-01-15", delivered=0, promised=-1, stalled=True
+        )
+        assert verdict.failure == (
+            "openalex reported -1 records for 2024-01-15, which is not a count,"
+            " so the walk cannot be verified"
+        )
 
 
 class TestAStalledWalk:

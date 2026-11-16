@@ -1646,7 +1646,6 @@ Known limits, each filed:
 - A record that starts matching your query after its index day has settled — one that becomes open access, for a query asking for open access — is never fetched (#792).
 - `download_days` is keyed by source and day, not by query: change the query and the days already completed under the old one are not fetched again (#793). To re-walk them, delete the source's `download_days` rows and sync a window that covers those days.
 - A record with neither a DOI nor a PMID has nothing to deduplicate on, so it is stored again on every re-fetch of its day (#794).
-- The shared `reconcile_delivery` passes a zero or negative count delivered with records (#795). `fetch_europepmc` refuses both itself; `fetch_openalex` does not.
 
 **Example:**
 
