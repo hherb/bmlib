@@ -169,9 +169,16 @@ A `FileRef` is `(folder, name, sha256, kind)`.
   a file, even when it was swapped in after the library was opened. An entry
   that cannot be examined (a folder that cannot be searched, an I/O error) is
   never taken for absent: a scan reports it as `unreadable_folder`, and the
-  other calls fail with `Io` or `ReadOnly`. A save does not yet act on those
-  reports, so a paper whose folder is unreadable can get a second folder
-  (#778). The library's own root may be a link.
+  other calls fail with `Io` or `ReadOnly`. **A save does not fork a paper
+  into a second folder beside one it cannot read** (#778, #755): when no
+  folder holds the paper, and a folder whose records cannot be read
+  (`unreadable_folder`) or whose record is not downloaded
+  (`record_not_downloaded`) has a name ending in one of the paper's
+  identifiers (`(PMID 123)`, before any ` (2)`), `save` fails with `Io`
+  naming that folder and writes nothing. The paper's own folder name is still
+  joined as before. A folder named by another identifier than the save knows
+  (a PMID-named folder, a DOI-only save) is not caught. The library's own root
+  may be a link.
 - **Concurrency.** Updates to a record are serialised within one process, so
   threads of one installation do not lose each other's entries. Two *processes*
   of one installation are out of scope. Different installations never share a

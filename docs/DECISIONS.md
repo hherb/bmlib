@@ -6561,6 +6561,26 @@ undo.
   itself, because the other installations' records sit inside it and a rename
   is the user's call, like any removal. Pinned by a `save_scenarios` case in
   `library_cases.json`, in Python, Rust and the FFI runner.
+- **A save refuses to fork a paper beside a folder it cannot read, judged by
+  the folder's name** (#778 item 1, #755 item 2; the maintainer's pick,
+  2026-11-17). A folder whose `records/` cannot be listed or examined, or
+  whose only record iCloud has evicted, holds no record a scan can read, so
+  `find` misses it. A save under the same name already joins it (or fails
+  writing there). One under a revised title, or knowing the paper by another
+  identifier, made a second folder. Now, when no folder holds the paper and
+  such a folder's name ends in one of the paper's identifiers, `save` fails
+  with `Io` naming it, and nothing is written. The name is the only evidence
+  left, and every name bmlib writes ends in one identifier, so it catches a
+  revised title. The paper's own name is exempt, so that join is unchanged.
+  Rejected: refusing every save while any folder is unreadable (one bad
+  folder or one evicted record would stop all saves), and accepting the fork
+  (a second store of the paper, the failure the design exists to prevent).
+  **Known miss**: a save that knows only an identifier the name does not
+  carry (a DOI-only save beside a PMID-named folder) still forks, as does a
+  folder a user renamed or a name cut short of its identifier. Reading an
+  identifier from a name never chooses a folder, only refuses. Pinned by a
+  `save_scenarios` case (an evicted record) in all three runners, and by
+  unreadable-folder tests in each language.
 - **Whitespace is Python's `str.strip()` in both languages**, U+001C-U+001F
   included, as everywhere else the port follows Python: Rust strips identifiers
   and the name's author and title with `pyvalue::python_strip`, and so does its

@@ -124,6 +124,13 @@ The Python library is documented separately, in the repository's
 
 ### Fixed
 
+- **`Library::save` no longer forks a paper beside a folder it cannot read**
+  (#778 item 1, #755 item 2, as in Python). When no folder holds the paper and
+  a folder with an `UnreadableFolder` or `RecordNotDownloaded` problem has a
+  name ending in one of the paper's identifiers, `save` returns
+  `LibraryError::Io` naming that folder and writes nothing. The paper's own
+  folder name is still joined as before.
+
 - **A count the delivery contradicts fails the day** (#795, as in Python).
   `reconcile_delivery` returned clean for any `promised <= 0`: records against
   `Some(0)` and any negative count now fail the day, and the test that

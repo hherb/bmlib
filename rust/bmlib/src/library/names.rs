@@ -18,7 +18,7 @@
 
 use unicode_normalization::UnicodeNormalization;
 
-use super::ids::{is_bidi_control, PaperInfo};
+use super::ids::{is_bidi_control, PaperIds, PaperInfo};
 use super::{MAX_AUTHOR_CHARS_IN_NAME, MAX_FOLDER_NAME_BYTES, MAX_TITLE_CHARS_IN_NAME};
 use crate::pyvalue::{is_python_space, python_strip};
 
@@ -92,6 +92,41 @@ fn sanitise(s: &str) -> String {
         .collect();
     let joined = spaced.split_whitespace().collect::<Vec<_>>().join(" ");
     joined.trim_start_matches(['.', ' ']).to_owned()
+}
+
+/// Whether `folder` could be [`folder_name_numbered`]'s name for a paper
+/// holding one of `ids`: it ends `(PMID …)`, `(DOI …)` or `(PMCID …)` naming
+/// one of them, before any ` (n)`, compared after NFC and lowercasing.
+///
+/// Nothing else reads an identifier from a name. A save asks this only of a
+/// folder whose records it cannot read (#778, #755). A name cut short or
+/// renamed by a user is a miss, so this can only ever refuse a save, never
+/// choose a folder. Python's `names.may_name` is the twin.
+pub(crate) fn may_name(folder: &str, ids: &PaperIds) -> bool {
+    let name = folder.nfc().collect::<String>().to_lowercase();
+    let mut bodies = vec![name.as_str()];
+    if let Some(body) = numbered_body(&name) {
+        bodies.push(body);
+    }
+    [
+        ("PMID", &ids.pmid),
+        ("DOI", &ids.doi),
+        ("PMCID", &ids.pmcid),
+    ]
+    .into_iter()
+    .filter_map(|(label, value)| value.as_ref().map(|v| (label, v)))
+    .any(|(label, value)| {
+        let tag = format!("({})", sanitise(&format!("{label} {value}"))).to_lowercase();
+        bodies.iter().any(|b| b.ends_with(&tag))
+    })
+}
+
+/// `name` without a trailing ` (n)` (one or more ASCII digits), if it has one:
+/// Python's `re.fullmatch(r"(.*) \((\d+)\)", name)`.
+fn numbered_body(name: &str) -> Option<&str> {
+    let open = name.strip_suffix(')')?.rfind(" (")?;
+    let digits = &name[open + 2..name.len() - 1];
+    (!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())).then(|| &name[..open])
 }
 
 /// The folder name for a paper: `year author – title (ID)`, at most
@@ -195,4 +230,65 @@ fn fit(body: &str, suffix: &str, limit: usize) -> String {
     cut_bytes(&name, limit)
         .trim_end_matches(['.', ' '])
         .to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::may_name;
+    use crate::library::PaperIds;
+
+    /// Python's `test_may_name_reads_the_identifier_a_folder_name_ends_in`, case for case.
+    #[test]
+    fn may_name_reads_the_identifier_a_folder_name_ends_in() {
+        let cases: [(&str, [Option<&str>; 3], bool); 12] = [
+            ("2024 Smith – T (PMID 123)", [Some("123"), None, None], true),
+            (
+                "2024 Smith – T (PMID 123) (2)",
+                [Some("123"), None, None],
+                true,
+            ),
+            ("2024 Smith – T (pmid 123)", [Some("123"), None, None], true),
+            ("(PMID 123)", [Some("123"), None, None], true),
+            (
+                "2024 Smith – T (PMID 1234)",
+                [Some("123"), None, None],
+                false,
+            ),
+            (
+                "2024 Smith – T (PMID 123) x",
+                [Some("123"), None, None],
+                false,
+            ),
+            (
+                "2024 Smith – T (PMID 123) ()",
+                [Some("123"), None, None],
+                false,
+            ),
+            (
+                "2024 Smith – T (DOI 10.1 x)",
+                [None, Some("10.1/x"), None],
+                true,
+            ),
+            (
+                "2024 Smith – T (DOI 10.1 x)",
+                [Some("123"), Some("10.1/x"), None],
+                true,
+            ),
+            (
+                "2024 Smith – T (PMCID PMC9)",
+                [None, None, Some("PMC9")],
+                true,
+            ),
+            (
+                "2024 Smith – T (PMID 123)",
+                [None, Some("10.1/x"), None],
+                false,
+            ),
+            ("2024 Smith – T (no identifier)", [None, None, None], false),
+        ];
+        for (folder, [pmid, doi, pmcid], expect) in cases {
+            let ids = PaperIds::canonical(pmid, doi, pmcid).unwrap();
+            assert_eq!(may_name(folder, &ids), expect, "{folder} {ids:?}");
+        }
+    }
 }

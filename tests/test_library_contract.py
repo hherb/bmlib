@@ -363,11 +363,21 @@ _STEP_ERRORS: dict[str, tuple[type[LibraryError], tuple[str, ...]]] = {
 }
 
 
-def _refused(step: dict[str, Any], call: Callable[[], object]) -> object:
-    """*call*'s result, or, when *step* expects an error, the check that it raises that one."""
+def _refused(step: dict[str, Any], call: Callable[[], object], root: Path) -> object:
+    """*call*'s result, or, when *step* expects an error, the check that it raises that one.
+
+    An ``io`` error names its ``path`` relative to the library *root*; its reason is the
+    system's or the library's wording and is not compared.
+    """
     want = step.get("expect")
     if not isinstance(want, dict):
         return call()
+    if want["error"] == "io":
+        with pytest.raises(Io) as io_err:
+            call()
+        assert io_err.value.path.relative_to(root).as_posix() == want["path"]
+        assert set(want) == {"error", "path"}
+        return None
     kind, fields = _STEP_ERRORS[want["error"]]
     with pytest.raises(kind) as err:
         call()
@@ -401,6 +411,7 @@ def test_save_scenarios_match_the_fixture(case: dict[str, Any], tmp_path: Path) 
                     SourceKind(step["kind"]),
                     step["origin"],
                 ),
+                lib.root,
             )
             saved[-1] = got if isinstance(got, FileRef) else None
         elif op == "plant":
@@ -418,7 +429,7 @@ def test_save_scenarios_match_the_fixture(case: dict[str, Any], tmp_path: Path) 
             ref = saved[step["of"]]
             assert ref is not None
             who = Installation.new(step["app"], step["id"], "Test Mac")
-            _refused(step, lambda: lib.record_use(who, _paper_info(step["paper"]), ref))
+            _refused(step, lambda: lib.record_use(who, _paper_info(step["paper"]), ref), lib.root)
         elif op == "remove_file":
             ref = saved[step["of"]]
             assert ref is not None

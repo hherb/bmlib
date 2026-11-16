@@ -68,12 +68,13 @@ from bmlib.library.files import (
     write_replace,
 )
 from bmlib.library.ids import Installation, PaperIds, PaperInfo, SourceKind, canonical_ids
-from bmlib.library.names import folder_name, folder_name_numbered
+from bmlib.library.names import folder_name, folder_name_numbered, may_name
 from bmlib.library.records import FileEntry, Record, RecordProblem, parse_record, render_record
 from bmlib.library.scan import (
     FileRef,
     PaperFolder,
     Problem,
+    Scan,
     _scan_folder,
     find,
     find_digest,
@@ -123,6 +124,34 @@ def _belongs_to(papers: Path, name: str, paper: PaperInfo) -> bool:
                 raise NewerRecord(name, p.file, p.version)
         return True
     return found.shares_any(paper.ids)
+
+
+# The problems that hide a folder's records from find: its paper may be in it (#778, #755).
+_HIDING = ("unreadable_folder", "record_not_downloaded")
+
+
+def _refuse_hidden_folder(scan: Scan, papers: Path, paper: PaperInfo) -> None:
+    """Refuse a new folder while one the scan could not read may hold the paper.
+
+    A folder whose records cannot be listed or read, or whose record is only an iCloud
+    placeholder, is invisible to :func:`find`. A save under a revised title or another
+    identifier would then fork the paper into a second folder. The folder's name is the
+    only evidence left, so a name ending in one of the paper's identifiers refuses
+    (:func:`may_name`). The paper's own folder name is left to :func:`_claim_folder`, which
+    joins that folder as it always has.
+
+    :raises Io: naming the folder; nothing is written.
+    """
+    own = _folded(folder_name(paper))
+    for p in scan.problems:
+        if p.kind not in _HIDING or p.folder is None or _folded(p.folder) == own:
+            continue
+        if may_name(p.folder, paper.ids):
+            raise Io(
+                papers / p.folder,
+                "its records cannot be read or are not downloaded, and its name says it may "
+                "hold this paper; nothing was written",
+            )
 
 
 def _claim_folder(papers: Path, paper: PaperInfo) -> str:
@@ -439,6 +468,8 @@ def save_file(
         folder holds one (#766; nothing is written).
     :raises NotDownloaded, DigestMismatch: a JATS in the folder cannot be checked (nothing is
         written).
+    :raises Io: no folder holds the paper, and one whose records cannot be read (or are not
+        downloaded) is named for one of its identifiers (#778, #755; nothing is written).
     :raises ReadOnly: the library cannot be written.
     :raises Io: any other failure.
     """
@@ -465,6 +496,7 @@ def save_file(
     elif found:
         folder = found[0].folder
     else:
+        _refuse_hidden_folder(scan, papers, paper)
         folder = _claim_folder(papers, paper)
     directory = papers / component(folder)
     # Only a JATS was checked above: the same bytes saved as another kind skip nothing.
@@ -502,6 +534,8 @@ def record_file_use(root: Path, who: Installation, paper: PaperInfo, file: FileR
     :raises ForeignJats: the file is a JATS whose own identifiers contradict ``paper.ids``, or
         its folder holds one (#766; nothing is written); another JATS there that cannot be read
         raises as reading it does.
+    :raises Io: no folder holds the paper, and one whose records cannot be read (or are not
+        downloaded) is named for one of its identifiers (#778, #755; nothing is written).
     :raises ReadOnly: the library cannot be written.
     :raises Io: any other failure.
     """

@@ -57,7 +57,7 @@ All notable changes to bmlib are documented here. The format is based on
   library by the service's rules instead of a copy of them.
 - **bmlib-ffi runs the library fixture's `save_scenarios`, `component` and
   `special_entries`** (#765; tests only). `rust/bmlib-ffi/src/library_tests.rs`
-  replays all 30 scenarios of `tests/fixtures/library_cases.json` (save,
+  replays every scenario of `tests/fixtures/library_cases.json` (save,
   record_use, release, used_by, find_digest, read, remove_file and
   remove_folder, the #766 `ForeignJats` refusals among them) through
   `PaperLibrary` and `LibraryScan`, and checks the files on disk and every
@@ -68,6 +68,18 @@ All notable changes to bmlib are documented here. The format is based on
   it does not export.
 
 ### Fixed
+
+- **A save no longer forks a paper beside a folder it cannot read** (#778
+  item 1, #755 item 2; both languages). A folder whose `records/` cannot be
+  listed or examined (`unreadable_folder`), or whose record is only an iCloud
+  placeholder (`record_not_downloaded`), is invisible to `find`, so a save
+  under a revised title or another identifier made a second folder for the
+  paper. When no folder holds the paper and such a folder's name ends in one
+  of its identifiers (`(PMID 123)`, before any ` (2)`), `save` now raises `Io`
+  naming the folder and writes nothing; the paper's own folder name is still
+  joined as before. Not caught: a folder named by an identifier the save does
+  not know (`docs/DECISIONS.md`). A new `save_scenarios` case in
+  `library_cases.json` pins it in Python, Rust and the FFI runner.
 
 - **A count the delivery contradicts fails the day** (#795; both languages).
   `reconcile_delivery` returned clean for any `promised <= 0`, so an OpenAlex

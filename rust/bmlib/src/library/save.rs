@@ -32,7 +32,8 @@ use super::files::{
     is_not_downloaded, list_names, paper_dir, read_bytes, remove_dir_all, remove_file, rename,
     sha256_hex, sync_name, write_once, write_replace,
 };
-use super::scan::{scan_folder, PaperFolder, Problem};
+use super::names::may_name;
+use super::scan::{scan_folder, PaperFolder, Problem, Scan};
 use super::{
     find, find_digest, folder_name, folder_name_numbered, parse_record, render_record, FileEntry,
     FileRef, Installation, Library, LibraryError, PaperIds, PaperInfo, Record, RecordProblem,
@@ -98,6 +99,35 @@ fn belongs_to(papers: &Path, name: &str, paper: &PaperInfo) -> Result<bool, Libr
         };
     }
     Ok(found.shares_any(&paper.ids))
+}
+
+/// Refuse a new folder while one the scan could not read may hold the paper.
+///
+/// A folder whose records cannot be listed or read, or whose record is only
+/// an iCloud placeholder, is invisible to `find`. A save under a revised
+/// title or another identifier would then fork the paper into a second
+/// folder. The folder's name is the only evidence left, so a name ending in
+/// one of the paper's identifiers refuses ([`may_name`]; #778, #755). The
+/// paper's own folder name is left to `claim_folder`, which joins that folder
+/// as it always has. Nothing is written.
+fn refuse_hidden_folder(scan: &Scan, papers: &Path, paper: &PaperInfo) -> Result<(), LibraryError> {
+    let own = folded(&folder_name(paper));
+    for p in &scan.problems {
+        let folder = match p {
+            Problem::UnreadableFolder { folder, .. }
+            | Problem::RecordNotDownloaded { folder, .. } => folder,
+            _ => continue,
+        };
+        if folded(folder) != own && may_name(folder, &paper.ids) {
+            return Err(LibraryError::Io {
+                path: papers.join(folder),
+                reason: "its records cannot be read or are not downloaded, and its name says \
+                         it may hold this paper; nothing was written"
+                    .to_owned(),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// The folder `paper` goes in when no folder holds it yet: a new one, or one a
@@ -478,6 +508,9 @@ impl Library {
     /// `bytes` are a JATS naming another paper or the folder holds one, and
     /// [`LibraryError::NotDownloaded`] or [`LibraryError::DigestMismatch`] when
     /// a JATS there cannot be checked (nothing is written);
+    /// [`LibraryError::Io`] when no folder holds the paper and one whose
+    /// records cannot be read (or are not downloaded) is named for one of its
+    /// identifiers (#778, #755; nothing is written);
     /// [`LibraryError::ReadOnly`]; [`LibraryError::Io`].
     pub fn save(
         &self,
@@ -522,7 +555,10 @@ impl Library {
             .or_else(|| find(&scan, &paper.ids).first().map(|f| f.folder.clone()));
         let folder = match existing {
             Some(f) => f,
-            None => claim_folder(&papers, paper)?,
+            None => {
+                refuse_hidden_folder(&scan, &papers, paper)?;
+                claim_folder(&papers, paper)?
+            }
         };
         let dir = papers.join(component(&folder)?);
         let found = scan_folder(&dir, &folder, &mut Vec::new());

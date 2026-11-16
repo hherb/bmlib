@@ -3954,6 +3954,168 @@
      }
     }
    }
+  },
+  {
+   "name": "a save is refused, not forked, beside a folder named for the paper whose only record is not downloaded; its own name still joins it (#778, #755)",
+   "steps": [
+    {
+     "op": "plant",
+     "path": "papers/2024 Smith – Metformin (PMID 111)/records/.studyanalyzer-aaaa.json.icloud",
+     "text": ""
+    },
+    {
+     "op": "scan",
+     "expect": {
+      "folders": [
+       "2024 Smith – Metformin (PMID 111)"
+      ],
+      "problems": [
+       {
+        "kind": "record_not_downloaded",
+        "folder": "2024 Smith – Metformin (PMID 111)",
+        "file": "studyanalyzer-aaaa.json"
+       }
+      ]
+     }
+    },
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "111",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin revised"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test",
+     "expect": {
+      "error": "io",
+      "path": "papers/2024 Smith – Metformin (PMID 111)"
+     }
+    },
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "111",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes two",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "111",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin revised"
+     },
+     "text": "pdf bytes three",
+     "kind": "pdf",
+     "origin": "unit test"
+    },
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "222",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin revised"
+     },
+     "text": "pdf bytes four",
+     "kind": "pdf",
+     "origin": "unit test"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/pdf-3edfce96708a.pdf",
+     "papers/2024 Smith – Metformin (PMID 111)/pdf-4385842bccaf.pdf",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/.studyanalyzer-aaaa.json.icloud",
+     "papers/2024 Smith – Metformin (PMID 111)/records/medicalfactchecker-bbbb.json",
+     "papers/2024 Smith – Metformin revised (PMID 222)/",
+     "papers/2024 Smith – Metformin revised (PMID 222)/pdf-fc01f1ae20ee.pdf",
+     "papers/2024 Smith – Metformin revised (PMID 222)/records/",
+     "papers/2024 Smith – Metformin revised (PMID 222)/records/medicalfactchecker-bbbb.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111)/records/medicalfactchecker-bbbb.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "medicalfactchecker",
+       "id": "bbbb",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": null,
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "3edfce96708a9f933d023d7aefb59ce7030cfcb829ca5430f8f98dff4ab3db2b",
+        "kind": "pdf",
+        "name": "pdf-3edfce96708a.pdf",
+        "origin": "unit test",
+        "size": 13
+       },
+       {
+        "sha256": "4385842bccaf12f47dcb2ed694fcfb79435297512be815698aaa419b424817ee",
+        "kind": "pdf",
+        "name": "pdf-4385842bccaf.pdf",
+        "origin": "unit test",
+        "size": 15
+       }
+      ]
+     },
+     "papers/2024 Smith – Metformin revised (PMID 222)/records/medicalfactchecker-bbbb.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "medicalfactchecker",
+       "id": "bbbb",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "222",
+       "doi": null,
+       "pmcid": null,
+       "title": "Metformin revised",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "fc01f1ae20ee4326db1e355992c13f6ee3d3fa95c7b1544fff2bb60a2369ab4d",
+        "kind": "pdf",
+        "name": "pdf-fc01f1ae20ee.pdf",
+        "origin": "unit test",
+        "size": 14
+       }
+      ]
+     }
+    }
+   }
   }
  ],
   "component": [
