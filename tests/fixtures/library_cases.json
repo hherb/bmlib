@@ -3852,6 +3852,108 @@
      }
     }
    }
+  },
+  {
+   "name": "a folder bmlib cannot name is a problem, before its own, a renamed one is not, and a save of its paper is refused, not forked (#789)",
+   "steps": [
+    {
+     "op": "plant",
+     "path": "papers/Con .x (PMID 1)/records/studyanalyzer-aaaa.json",
+     "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"aaaa\",\n    \"label\": \"Test Mac\"\n  },\n  \"paper\": {\n    \"pmid\": \"1\",\n    \"doi\": null,\n    \"pmcid\": null,\n    \"title\": \"Con .x\",\n    \"year\": null,\n    \"first_author\": null\n  },\n  \"files\": []\n}\n"
+    },
+    {
+     "op": "plant",
+     "path": "papers/Con .x (PMID 1)/notes.txt",
+     "text": "a user's note\n"
+    },
+    {
+     "op": "plant",
+     "path": "papers/_Con .x (PMID 2)/records/studyanalyzer-aaaa.json",
+     "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"aaaa\",\n    \"label\": \"Test Mac\"\n  },\n  \"paper\": {\n    \"pmid\": \"2\",\n    \"doi\": null,\n    \"pmcid\": null,\n    \"title\": \"Con .x\",\n    \"year\": null,\n    \"first_author\": null\n  },\n  \"files\": []\n}\n"
+    },
+    {
+     "op": "plant",
+     "path": "papers/con/records/studyanalyzer-aaaa.json",
+     "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"aaaa\",\n    \"label\": \"Test Mac\"\n  },\n  \"paper\": {\n    \"pmid\": \"3\",\n    \"doi\": null,\n    \"pmcid\": null,\n    \"title\": \"con\",\n    \"year\": null,\n    \"first_author\": null\n  },\n  \"files\": []\n}\n"
+    },
+    {
+     "op": "scan",
+     "expect": {
+      "folders": [
+       "Con .x (PMID 1)",
+       "_Con .x (PMID 2)",
+       "con"
+      ],
+      "problems": [
+       {
+        "kind": "bad_folder_name",
+        "folder": "Con .x (PMID 1)"
+       },
+       {
+        "kind": "unrecorded_file",
+        "folder": "Con .x (PMID 1)",
+        "name": "notes.txt"
+       },
+       {
+        "kind": "bad_folder_name",
+        "folder": "con"
+       }
+      ]
+     }
+    },
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "1",
+      "title": "Con .x"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test",
+     "expect": {
+      "error": "bad_name",
+      "name": "Con .x (PMID 1)"
+     }
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/Con .x (PMID 1)/",
+     "papers/Con .x (PMID 1)/notes.txt",
+     "papers/Con .x (PMID 1)/records/",
+     "papers/Con .x (PMID 1)/records/studyanalyzer-aaaa.json",
+     "papers/_Con .x (PMID 2)/",
+     "papers/_Con .x (PMID 2)/records/",
+     "papers/_Con .x (PMID 2)/records/studyanalyzer-aaaa.json",
+     "papers/con/",
+     "papers/con/records/",
+     "papers/con/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {
+     "papers/Con .x (PMID 1)/records/studyanalyzer-aaaa.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "studyanalyzer",
+       "id": "aaaa",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "1",
+       "doi": null,
+       "pmcid": null,
+       "title": "Con .x",
+       "year": null,
+       "first_author": null
+      },
+      "files": []
+     }
+    }
+   }
   }
  ],
   "component": [

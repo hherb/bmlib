@@ -43,6 +43,14 @@ The Python library is documented separately, in the repository's
 
 ### Changed — breaking
 
+- **`library::Problem` gains `BadFolderName { folder }`** (#789, as in
+  Python), so an exhaustive `match` on it needs the arm, and bmlib-ffi's
+  `LibraryProblem` gains the same case for a Swift `switch` or a Kotlin `when`.
+  A scan reports a paper folder whose name bmlib's `component()` refuses (one
+  named under the device rule before #788, `Con .x (PMID 1)`, or a user's
+  `papers/con`). The folder stays in `folders`, so `find` sees the paper and
+  `save` of it fails with `BadName` rather than making a second folder; the
+  user renames it.
 - **`SourceDescriptor` gains `pub opt_in: bool`** (as in Python's `opt_in`),
   so a struct literal of it must name the field; `SourceDescriptor::new` sets
   `false`. Only `europepmc` sets it among the built-ins. Python's `sync()`

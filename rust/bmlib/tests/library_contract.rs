@@ -324,6 +324,7 @@ fn problem_json(p: &Problem) -> Value {
             json!({"kind": "unrecorded_file", "folder": folder, "name": name})
         }
         Problem::StrayEntry { name } => json!({"kind": "stray_entry", "name": name}),
+        Problem::BadFolderName { folder } => json!({"kind": "bad_folder_name", "folder": folder}),
     }
 }
 
@@ -543,6 +544,9 @@ fn refused<T>(name: &str, step: &Value, got: Result<T, LibraryError>) -> Option<
         Err(LibraryError::FileClash { folder, name: file }) => {
             serde_json::json!({"error": "file_clash", "folder": folder, "name": file})
         }
+        Err(LibraryError::BadName { name: refused }) => {
+            serde_json::json!({"error": "bad_name", "name": refused})
+        }
         Err(e) => panic!("{name}: {e}"),
         Ok(_) => panic!("{name}: not refused"),
     };
@@ -580,11 +584,23 @@ fn save_scenarios_match_the_fixture() {
                         ),
                     );
                 }
-                "plant" => std::fs::write(
-                    base.join(step["path"].as_str().unwrap()),
-                    step["text"].as_str().unwrap(),
-                )
-                .unwrap(),
+                "plant" => {
+                    let path = base.join(step["path"].as_str().unwrap());
+                    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                    std::fs::write(path, step["text"].as_str().unwrap()).unwrap();
+                }
+                "scan" => {
+                    let scan = lib.scan().unwrap();
+                    let folders: Vec<&str> =
+                        scan.folders.iter().map(|f| f.folder.as_str()).collect();
+                    assert_eq!(
+                        serde_json::json!(folders),
+                        step["expect"]["folders"],
+                        "{name}"
+                    );
+                    let problems: Vec<Value> = scan.problems.iter().map(problem_json).collect();
+                    assert_eq!(Value::Array(problems), step["expect"]["problems"], "{name}");
+                }
                 "release" => lib.release(&installation(step), &of(step)).unwrap(),
                 "record_use" => {
                     let got =

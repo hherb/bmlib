@@ -200,6 +200,7 @@ versions, so some will be real).
 | `"unrecorded_file"` | A source file no record lists (a crash, or a record lost) |
 | `"leftover_temp"` | A temporary of an atomic write, in flight or left by a crash; never deleted, and never a user's file |
 | `"stray_entry"` | Something in `papers/` that is not a folder, a symbolic link to one included, or whose name is not UTF-8 *(unreleased)* |
+| `"bad_folder_name"` | A paper folder whose name bmlib refuses as a path component, such as `con` or `Con .x (PMID 1)` (from before the device rule of #788), both of which Windows reads as a device. It is still listed, so `find` sees the paper and `save` refuses with `BadName` rather than making a second folder; ask the user to rename it *(unreleased)* |
 
 ## Errors and what to tell the user
 

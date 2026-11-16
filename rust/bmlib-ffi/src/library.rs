@@ -355,7 +355,8 @@ fn uncounted_record(p: &lib::Problem) -> Option<&str> {
         P::LeftoverTemp { .. }
         | P::ConflictingIds { .. }
         | P::UnrecordedFile { .. }
-        | P::StrayEntry { .. } => None,
+        | P::StrayEntry { .. }
+        | P::BadFolderName { .. } => None,
     }
 }
 
@@ -446,6 +447,13 @@ pub enum LibraryProblem {
         /// The entry.
         name: String,
     },
+    /// A paper folder named so that bmlib cannot address it (`con`, say). It is
+    /// still scanned and listed, but every call naming it fails with `BadName`
+    /// until the user renames it (#789).
+    BadFolderName {
+        /// The paper's folder.
+        folder: String,
+    },
 }
 
 impl From<&lib::Problem> for LibraryProblem {
@@ -480,6 +488,7 @@ impl From<&lib::Problem> for LibraryProblem {
             },
             P::UnrecordedFile { folder, name } => Self::UnrecordedFile { folder, name },
             P::StrayEntry { name } => Self::StrayEntry { name },
+            P::BadFolderName { folder } => Self::BadFolderName { folder },
         }
     }
 }

@@ -6547,8 +6547,18 @@ undo.
   bytes. The list and the rule are the device-name clause of CPython 3.13's
   `ntpath.isreserved` (the part before the first dot, trailing spaces dropped;
   `COM¹`-`COM³`, `LPT¹`-`LPT³`, `CONIN$`, `CONOUT$`), which errs towards
-  refusing; `COM0` is not on it (#755). A folder already named under the old
-  rule is #789.
+  refusing; `COM0` is not on it (#755).
+- **A folder whose name `component()` refuses is reported and kept, not
+  addressed** (#789). One named under the old device rule (`Con .x (PMID 1)`),
+  or a user's `papers/con`, is a `bad_folder_name` problem and stays in
+  `folders`, so `find` sees its paper and `save`, `read`, `record_use`,
+  `release` and `remove_*` raise `BadName` until the user renames it. Dropping it from
+  `folders` would let `save` fork the paper into a second folder (#778 item 1's
+  failure). Addressing it by its listed name would skip the device check that
+  protects Windows, where `Con .x` opens the console. bmlib does not rename it
+  itself, because the other installations' records sit inside it and a rename
+  is the user's call, like any removal. Pinned by a `save_scenarios` case in
+  `library_cases.json`, in Python, Rust and the FFI runner.
 - **Whitespace is Python's `str.strip()` in both languages**, U+001C-U+001F
   included, as everywhere else the port follows Python: Rust strips identifiers
   and the name's author and title with `pyvalue::python_strip`, and so does its

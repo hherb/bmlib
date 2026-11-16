@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from bmlib.library.constants import DIGEST_PREFIX_HEX, PAPERS_DIR, RECORDS_DIR
-from bmlib.library.errors import DigestMismatch, Missing, NotDownloaded
+from bmlib.library.errors import BadName, DigestMismatch, Missing, NotDownloaded
 from bmlib.library.files import (
     Listing,
     check_folder,
@@ -102,7 +102,12 @@ class Problem:
       both count for :func:`find` and :func:`group`;
     - ``unrecorded_file`` (``folder``, ``name``);
     - ``stray_entry`` (``name``): not a folder, a symbolic link to one included, or a name
-      that is not UTF-8 (shown lossily).
+      that is not UTF-8 (shown lossily);
+    - ``bad_folder_name`` (``folder``): a paper folder whose name bmlib refuses as a path
+      component, such as ``con`` or ``Con .x (PMID 1)`` (made under the device rule before
+      #788), both of which a Windows file system reads as a device. It is still scanned and in
+      ``folders``, so :func:`find` sees the paper, but every call naming it raises
+      :class:`BadName` until the user renames it (#789).
 
     Fields a kind does not use are ``None``.
     """
@@ -246,6 +251,10 @@ def scan_library(root: Path) -> Scan:
             problems.append(Problem("unreadable_folder", folder=name, reason=str(e)))
             continue
         if a_folder:
+            try:
+                component(name)
+            except BadName:
+                problems.append(Problem("bad_folder_name", folder=name))
             folders.append(_scan_folder(papers / name, name, problems))
         else:
             problems.append(Problem("stray_entry", name=name))
