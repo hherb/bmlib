@@ -32,6 +32,7 @@ ALL_SOURCES = [
     "medrxiv",
     "medrxiv-details",
     "openalex",
+    "europepmc",
 ]
 
 __all__ = [

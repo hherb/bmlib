@@ -12,6 +12,7 @@
         "description": "Preprint server for biology",
         "display_name": "bioRxiv",
         "name": "biorxiv",
+        "opt_in": false,
         "params": [
           {
             "default": null,
@@ -28,6 +29,7 @@
         "description": "Preprint server for biology (every version, by the day it was posted)",
         "display_name": "bioRxiv (all postings)",
         "name": "biorxiv-details",
+        "opt_in": false,
         "params": [
           {
             "default": null,
@@ -41,9 +43,34 @@
         "settle_days": 7
       },
       {
+        "description": "Europe PMC search (peer-reviewed and preprint records)",
+        "display_name": "Europe PMC",
+        "name": "europepmc",
+        "opt_in": true,
+        "params": [
+          {
+            "default": null,
+            "description": "Europe PMC search, without a date clause",
+            "name": "query",
+            "required": true,
+            "secret": false
+          },
+          {
+            "default": null,
+            "description": "Contact email sent to Europe PMC",
+            "name": "email",
+            "required": false,
+            "secret": false
+          }
+        ],
+        "resumable": false,
+        "settle_days": 3
+      },
+      {
         "description": "Preprint server for health sciences",
         "display_name": "medRxiv",
         "name": "medrxiv",
+        "opt_in": false,
         "params": [
           {
             "default": null,
@@ -60,6 +87,7 @@
         "description": "Preprint server for health sciences (every version, by the day it was posted)",
         "display_name": "medRxiv (all postings)",
         "name": "medrxiv-details",
+        "opt_in": false,
         "params": [
           {
             "default": null,
@@ -76,6 +104,7 @@
         "description": "Open catalog of scholarly works, authors, and institutions",
         "display_name": "OpenAlex",
         "name": "openalex",
+        "opt_in": false,
         "params": [
           {
             "default": null,
@@ -99,6 +128,7 @@
         "description": "NCBI PubMed biomedical literature database",
         "display_name": "PubMed",
         "name": "pubmed",
+        "opt_in": false,
         "params": [
           {
             "default": null,
@@ -119,6 +149,7 @@
     "value": [
       "biorxiv",
       "biorxiv-details",
+      "europepmc",
       "medrxiv",
       "medrxiv-details",
       "openalex",

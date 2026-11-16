@@ -781,20 +781,27 @@ class SourceDescriptor:
     """How many days after a day has ended the source may still add to it.
 
     ``0`` for a source that declares no settle period, which is every
-    built-in except bioRxiv and medRxiv — not a claim that their days are
-    complete once over (PubMed indexes late on a smaller scale, #342). The
-    ``/pubs`` endpoint bioRxiv and medRxiv read files a record under the date
-    its *publication* appeared and learns of the publication weeks later, so
-    a day fetched as soon as it ends is nearly empty (#325). For a source
-    declaring ``settle_days``, ``sync()`` counts a completed day as durable
-    only once it was fetched at least that many days after the day ended,
-    and re-offers every day of that source that is not yet durable — a
-    completed day that has not settled, and a day whose last fetch failed —
-    on every run *whatever the caller's window*, since a day that left the
-    window unfinished would otherwise never be seen again.
+    built-in except bioRxiv, medRxiv and Europe PMC — not a claim that their
+    days are complete once over (PubMed indexes late on a smaller scale,
+    #342). The ``/pubs`` endpoint bioRxiv and medRxiv read files a record
+    under the date its *publication* appeared and learns of the publication
+    weeks later, so a day fetched as soon as it ends is nearly empty (#325).
+    For a source declaring ``settle_days``, ``sync()`` counts a completed day
+    as durable only once it was fetched at least that many days after the
+    day ended, and re-offers every day of that source that is not yet
+    durable — a completed day that has not settled, and a day whose last
+    fetch failed — on every run *whatever the caller's window*, since a day
+    that left the window unfinished would otherwise never be seen again.
 
     Checked by :meth:`check_settle_days` at construction, at registration and
     where ``sync()`` reads it, because the dataclass is mutable.
+    """
+    opt_in: bool = False
+    """Whether the source runs only when named.
+
+    A ``sync()`` with no sources named leaves an opt-in source out. ``europepmc``
+    is one: it needs a search the caller chooses, and run without one it would
+    fail every day of every default run, re-offered for ever by its settle period.
     """
 
     def __post_init__(self) -> None:

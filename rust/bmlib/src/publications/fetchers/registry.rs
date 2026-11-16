@@ -819,6 +819,7 @@ pub fn builtin_descriptors() -> Vec<SourceDescriptor> {
             }],
             resumable: true,
             settle_days: 0,
+            opt_in: false,
         },
         SourceDescriptor {
             name: "biorxiv".to_string(),
@@ -833,6 +834,7 @@ pub fn builtin_descriptors() -> Vec<SourceDescriptor> {
             }],
             resumable: false,
             settle_days: BIORXIV_SETTLE_DAYS,
+            opt_in: false,
         },
         SourceDescriptor {
             name: "biorxiv-details".to_string(),
@@ -848,6 +850,7 @@ pub fn builtin_descriptors() -> Vec<SourceDescriptor> {
             }],
             resumable: false,
             settle_days: DETAILS_SETTLE_DAYS,
+            opt_in: false,
         },
         SourceDescriptor {
             name: "medrxiv".to_string(),
@@ -862,6 +865,7 @@ pub fn builtin_descriptors() -> Vec<SourceDescriptor> {
             }],
             resumable: false,
             settle_days: BIORXIV_SETTLE_DAYS,
+            opt_in: false,
         },
         SourceDescriptor {
             name: "medrxiv-details".to_string(),
@@ -878,6 +882,7 @@ pub fn builtin_descriptors() -> Vec<SourceDescriptor> {
             }],
             resumable: false,
             settle_days: DETAILS_SETTLE_DAYS,
+            opt_in: false,
         },
         SourceDescriptor {
             name: "openalex".to_string(),
@@ -901,6 +906,31 @@ pub fn builtin_descriptors() -> Vec<SourceDescriptor> {
             ],
             resumable: false,
             settle_days: 0,
+            opt_in: false,
+        },
+        SourceDescriptor {
+            name: "europepmc".to_string(),
+            display_name: "Europe PMC".to_string(),
+            description: "Europe PMC search (peer-reviewed and preprint records)".to_string(),
+            params: vec![
+                SourceParam {
+                    name: "query".to_string(),
+                    description: "Europe PMC search, without a date clause".to_string(),
+                    required: true,
+                    default: None,
+                    secret: false,
+                },
+                SourceParam {
+                    name: "email".to_string(),
+                    description: "Contact email sent to Europe PMC".to_string(),
+                    required: false,
+                    default: None,
+                    secret: false,
+                },
+            ],
+            resumable: false,
+            settle_days: crate::publications::fetchers::europepmc::EUROPEPMC_SETTLE_DAYS,
+            opt_in: true,
         },
     ]
 }
@@ -955,6 +985,9 @@ pub fn builtin_registry(
                 .with_endpoint(crate::publications::fetchers::biorxiv::Endpoint::Details),
             ),
             "openalex" => Box::new(crate::publications::fetchers::openalex::OpenAlexFetcher {
+                client: client.clone(),
+            }),
+            "europepmc" => Box::new(crate::publications::fetchers::europepmc::EuropePmcFetcher {
                 client: client.clone(),
             }),
             other => panic!(

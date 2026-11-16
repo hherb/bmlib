@@ -38,6 +38,115 @@ open for its decisions**: item 1 (`record_use` trusting the caller's
 `origin`, `title`, `first_author`) and item 6's noise (a `.corrupt` record
 reported on every scan, a `LeftoverTemp` that may be in flight,
 `Library(root)` bypassing `open_library`).
+_Last updated: 2026-11-16 (**PR #790, the `europepmc` sync source, on
+`feat/europepmc-sync`**). Merged since the last update: #788 (#755 items 3, 5
+and 6), below. **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge
+of #736) and **the Rust crate 0.4.0 on crates.io** from the same commit;
+everything since is under Unreleased._
+
+## This session: an opt-in Europe PMC sync source (PR #790)
+
+- **What it does**: `fetch_europepmc` (Rust `fetchers::europepmc::walk`,
+  `EuropePmcFetcher`) walks a caller's Europe PMC search one day at a time,
+  `(<query>) AND FIRST_IDATE:[<day> TO <day>]`, registered in both registries
+  as `europepmc` with `query` required and `email` optional. Records go
+  through `normalize_europepmc`, which `lookup_record` already used.
+- **Opt-in**: `SourceDescriptor.opt_in` is new (Python `bool = False`, Rust
+  `pub opt_in: bool`). `sync(sources=None)` runs every registered source that
+  is not opt-in, so a default sync does not run `europepmc`, which without a
+  query would fail every day, re-offered for ever by its settle period.
+  `ALL_SOURCES` still lists all seven built-ins. **The Rust field breaks a
+  `SourceDescriptor` struct literal** (Rust CHANGELOG, Changed — breaking).
+- **The review's changes**: the walk moved from `FIRST_PDATE` to `FIRST_IDATE`
+  (first indexed, not first published); any walk short of the first page's
+  `hitCount` now fails the day, with no 50% shortfall floor, because the count
+  is the search's own; a hit not first indexed on the day fails it (Europe PMC
+  drops the date clause on an unbalanced bracket and answers 200); an empty
+  day is completed only after the query without the date clause is seen to
+  match something (a misspelt field matches nothing, also with 200); a
+  `nextCursorMark` that is not a string, a zero count with records, a negative
+  count, and a blank query (ASCII whitespace only, #557) fail the day; a
+  failing `on_record` is no longer blamed on Europe PMC; the settle period
+  went from 14 days to 3; the source became opt-in. The shared oracle corpus
+  grew from 15 cases to 31.
+- **The live probe (2026-11-16)**: by first-publication day about a fifth of
+  each day's records arrive more than 15 days later (2026-06-10: 1,530 of
+  6,243), with a tail past 180 days, which is why the walk is by index day.
+  Index days load in batches (none yet for the probe's day, 6,093 for the day
+  before). **`EUROPEPMC_SETTLE_DAYS` = 3 is fixed before measurement**; do not
+  cite it, or `hitCount`'s exactness, as measured.
+- **Filed, not fixed here**: **#792** a record that starts matching the query
+  after its index day settled (one becoming open access, say) is never
+  fetched, and the settle measurement; **#793** the day ledger is keyed by
+  (source, day), not query, so a changed query never re-fetches settled days;
+  **#794** a record with neither DOI nor PMID is stored again on every
+  re-fetch; **#795** the shared `reconcile_delivery` passes a zero or negative
+  count delivered with records (europepmc refuses both itself; OpenAlex does
+  not).
+- **Owed**: #792's measurement (does a past index day still grow, and by how
+  much), which decides the settle period.
+- Tests (2026-11-16, PostgreSQL 18 DSN on port 5532,
+  `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,133 passed + 22 skipped; mypy
+  clean; Rust `cargo test -p bmlib -p bmlib-ffi` 1,883 passed and
+  `-p bmlib --no-default-features` 1,461; clippy (default, postgres,
+  no-default-features, bmlib-ffi) clean; the Rust oracle 45 clean.
+  `tests/test_europepmc_fetcher.py`,
+  `rust/bmlib/tests/europepmc_sync.rs`, and the shared corpus
+  `rust/oracle/europepmc_sync_cases.json` (copied to `rust/bmlib/tests/data/`;
+  expected output from `rust/oracle/dump_europepmc_sync.py`);
+  `fetcher_expected.json` now carries `opt_in`.
+
+## Merged: the library's names agree across languages (#755 items 3, 5, 6, PR #788)
+
+- **Item 3**: `is_reserved` is the device-name clause of CPython 3.13's
+  `ntpath.isreserved` in both languages: the part before the first dot,
+  trailing spaces dropped, against a list adding `COM¹`-`COM³`, `LPT¹`-`LPT³`,
+  `CONIN$` and `CONOUT$`. So `component()` refuses `CON .txt` and
+  `folder_name` prefixes `_Con .x (…)`.
+- **Item 5, whitespace**: **Rust follows Python** (the port's convention; it
+  already had `pyvalue::python_strip` for this gap). The library's id and name
+  trims and the shared `publications` `normalize_doi`/`normalize_pmid` strip
+  U+001C-U+001F. Python's code did not move.
+- **Item 5, non-UTF-8 names**: **Python follows Rust** here (Rust's names are
+  `String`s): `files._entries` decodes lossily, so such a paper folder is a
+  `stray_entry` in both scans. The temp-name check counts Rust's token in
+  bytes in Python too. A Windows lone surrogate still differs (a `shortcut:`
+  in `_entries`).
+- **Item 6, the mechanical half**: a test's `os.geteuid()` no longer runs at
+  collection on Windows; Rust's `keep_aside` builds its path as an `OsString`.
+- **The review's fix (#788)**: a name that is not UTF-8 is kept apart in the
+  listing (`Listing.undecodable`) and reported, never joined to a path. Its
+  lossy spelling can be a real sibling's (`caf\ufffd` beside `caf\xe9`), and
+  the join reached it: the scan listed that folder twice and dropped the other
+  unreported, in both languages on this branch before the fix. Pinned by
+  Linux-only tests on a real file system (both languages) and by faked
+  listings (Python).
+- **Not fixed here, #789**: a folder whose name `component()` refuses (one
+  named under the old device rule, or a user's `papers/con`) is scanned with
+  no `Problem` but every call addressing it raises `BadName`. It needs a pick
+  of remedy; the library is unreleased, so it is free to settle.
+- 44 new `library_cases.json` cases (`canonical_ids`, `folder_names`,
+  `component`): those the new device rule decides (spaces before the dot,
+  superscripts, `CONIN$`, `CONOUT$`) fail on `main`'s Python and Rust; the
+  U+001C-U+001F ones on `main`'s Rust only (Python already stripped them); 13
+  pass on `main` and pin the list entry by entry (12 device names `main`
+  already reserved, and `nul.tar.gz`); the ideographic space, `con x.txt`,
+  `COM0` and the two near-miss spaces are controls. Reasoning in
+  `docs/DECISIONS.md` (*library*).
+- **#755 stays open for the decisions**: item 1 (`record_use` trusting the
+  caller's `paper`: refuse a contradiction, or document it), item 2 (a folder
+  whose only record is evicted is invisible to `find`, so a save forks the
+  paper), item 4 (refuse or sanitise bidi/control characters in `origin`,
+  `title`, `first_author`) and item 6's noise (a `.corrupt` record reported on
+  every scan, a `LeftoverTemp` that may be in flight, `Library(root)`
+  bypassing `open_library`).
+
+## Merged: `FileClash.folder` is the paper folder's name (#755, PR #787)
+
+`save`'s clash and its `NotDownloaded` beside an evicted file name the bare
+folder, as every other error does; a `save_scenarios` case with a `plant`
+step pins it in all three runners. The `NotDownloaded` half is pinned in Rust
+only by the opt-in iCloud test, which was not run.
 
 ## Merged: the FFI's fixture runs, the lookup's rules, no foreign JATS (#765, #784, #782, #766)
 
@@ -313,6 +422,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 ### Open GitHub issues
 
 **121 open once this PR is merged and #789 shut** (#755 stays open for its decisions): the library's #755, #762 and **#778** (PR #777's review follow-ups, above), **#776** (PR #775's
+**126 open** (2026-11-16; #755 stays open, for its decisions): Europe PMC's
+**#792**-**#795** (PR #790's review, above), the library's **#789** (a folder `component()` refuses, this PR's review), #755, #762 and **#778** (PR #777's review follow-ups, above), **#776** (PR #775's
 MECA follow-ups) and **#759** (measure the `/details` settle period) are the
 newest; #734, #733, #731, #730, #726, #725, #722, #718, #716 and #694 come
 before them; #577 stays open for its point 3, which PR #696 left open

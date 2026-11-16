@@ -22,6 +22,7 @@
 //! | `registry.py` | [`registry`] | ported |
 //! | `biorxiv.py` | [`biorxiv`] | ported |
 //! | `openalex.py` | [`openalex`] | ported |
+//! | `europepmc.py` | [`europepmc`] | ported (`normalize` and the opt-in sync walk) |
 //! | `pubmed.py` | [`pubmed`] | in progress (XML reader) |
 
 pub mod biorxiv;

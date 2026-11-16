@@ -4281,12 +4281,14 @@ full. What is easy to get wrong later:
 
 - **The 12:00 is not a safety margin, and must not be "simplified" to a date
   comparison.** Day *D* ends last in UTC−12, whose midnight is noon UTC on
-  *D+1*. All three built-in sources are US-based (UTC−5 to UTC−8), so
-  comparing UTC *dates* calls a fetch at 00:30 UTC on *D+1* durable while
+  *D+1*. PubMed, bioRxiv/medRxiv and OpenAlex are US-based (UTC−5 to
+  UTC−8), so comparing UTC *dates* calls a fetch at 00:30 UTC on *D+1* durable while
   PubMed's day *D* still has four and a half hours to run (US Eastern in
   winter; three and a half on daylight time, and longer still for a
   Pacific-time source); comparing *local* dates is up to 16 hours out for a
-  machine in Sydney. Pinned by
+  machine in Sydney. Europe PMC (PR #790) is run by EMBL-EBI in the UK
+  (UTC+0, UTC+1 in summer), ends its day before them, and is covered by the
+  same boundary. Pinned by
   `test_a_second_before_noon_utc_the_next_day_is_not` and
   `test_an_offset_timestamp_is_compared_as_an_instant_not_as_a_wall_clock`.
   **Both figures were rounded wrong in the first round** — "five hours" and
@@ -4379,7 +4381,7 @@ full. What is easy to get wrong later:
   UTC**, and that is a property of the window, not a defect in the rule. Day
   *D* is fetched on *D*, re-fetched on *D+1* at the same hour — still short of
   its own boundary — and then the window slides past it. No records are lost:
-  the *D+1* fetch happens after day *D* ended for every US-based source. But
+  the *D+1* fetch happens after day *D* ended for every built-in source. But
   the row is left permanently non-durable, so a caller who later widens the
   window re-fetches it. Running at or after 12:00 UTC, or with a window of
   three days or more, settles every day.

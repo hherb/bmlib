@@ -21,11 +21,16 @@
 //!
 //! Every built-in fetcher learns a record count from its source before walking
 //! pages — PubMed's `<Count>`, OpenAlex's `meta.count`, bioRxiv's
-//! `messages[0].total` — and none of them used to compare that promise against
-//! what arrived (#88). A walk that stopped early therefore returned
-//! `status="completed"`, `sync` wrote the day to `download_days` as done, and
-//! day selection never offered that day again once it was in the past:
-//! **the records are permanently absent, with nothing logged above INFO.**
+//! `messages[0].total`, Europe PMC's `hitCount` — and none of the first three
+//! used to compare that promise against what arrived (#88). A walk that
+//! stopped early therefore returned `status="completed"`, `sync` wrote the day
+//! to `download_days` as done, and day selection never offered that day again
+//! once it was in the past: **the records are permanently absent, with nothing
+//! logged above INFO.**
+//!
+//! `europepmc` applies a stricter rule of its own on top: its count is
+//! computed from the search it walks, so it fails any shortfall a walk ends on
+//! and never reaches the shortfall floor below.
 //!
 //! # Three rules, deliberately different in kind
 //!

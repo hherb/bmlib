@@ -11,6 +11,29 @@ The Python library is documented separately, in the repository's
 
 ### Added
 
+- **A `europepmc` day-by-day sync source** (as in Python; the argument is the
+  root `CHANGELOG.md`'s). `publications::fetchers::europepmc::{walk,
+  page_params, SearchPages, HttpSearchPages, EuropePmcFetcher}` walk a Europe
+  PMC search one first-index day at a time, `(<query>) AND
+  FIRST_IDATE:[<day> TO <day>]` (the day Europe PMC first indexed a record,
+  not its publication day), with `resultType=core`, 1,000-hit pages and
+  `cursorMark` paging, the parameters percent-encoded. Constants:
+  `SEARCH_URL`, `PAGE_SIZE` (1000), `FIRST_CURSOR` (`"*"`),
+  `EUROPEPMC_SETTLE_DAYS` (3, fixed before measurement, #792) and
+  `RATE_LIMIT_SECONDS` (1.0). The first page's `hitCount` is the promise, and
+  any walk ending short of it fails the day (the stall through
+  `reconcile_delivery`, a stopped cursor with its own message; no shortfall
+  floor). A count that is not a count, a zero count with records, a
+  `nextCursorMark` that is not a string, a hit that is not an object or not
+  first indexed on the day, an error body, an HTTP or transport error and a
+  blank query (ASCII whitespace only, #557) each fail the day; an empty day
+  completes only if the query without its date clause finds something.
+  `builtin_descriptors` and `builtin_registry` gain `europepmc` (config
+  `query` required, `email` optional, `opt_in: true`). Like the other fetchers
+  it does not sleep: `RATE_LIMIT_SECONDS` is for the caller's transport. 31
+  oracle cases (`rust/oracle/europepmc_sync_cases.json`, expected output from
+  `rust/oracle/dump_europepmc_sync.py`) plus named tests in
+  `tests/europepmc_sync.rs`.
 - **`fulltext::newest_source`, `fulltext::lists_use`, and `contradiction`
   made public** (#784, as in Python): the file `LibraryStore::find_source_in`
   reads, and the check `note_use_in` makes before it writes, for a caller
@@ -28,6 +51,13 @@ The Python library is documented separately, in the repository's
   `papers/con`). The folder stays in `folders`, so `find` sees the paper and
   `save` of it fails with `BadName` rather than making a second folder; the
   user renames it.
+- **`SourceDescriptor` gains `pub opt_in: bool`** (as in Python's `opt_in`),
+  so a struct literal of it must name the field; `SourceDescriptor::new` sets
+  `false`. Only `europepmc` sets it among the built-ins. Python's `sync()`
+  leaves an opt-in source out when no sources are named; Rust's sync takes its
+  sources explicitly, so a caller choosing the sources to offer by default
+  should leave such a source out too. `fetcher_expected.json` now carries
+  `opt_in`.
 - **`JatsReport` gains `debug: Vec<String>`** (#782), so a struct literal or an
   exhaustive destructuring of it must name the field. It holds the lines
   Python logs at DEBUG, logged at DEBUG by `parse_audited` (and so by `parse`
