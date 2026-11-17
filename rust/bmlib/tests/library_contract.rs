@@ -551,6 +551,13 @@ fn refused<T>(name: &str, step: &Value, root: &Path, got: Result<T, LibraryError
         Err(LibraryError::BadName { name: refused }) => {
             serde_json::json!({"error": "bad_name", "name": refused})
         }
+        Err(LibraryError::NewerRecord {
+            folder,
+            file,
+            version,
+        }) => {
+            serde_json::json!({"error": "newer_record", "folder": folder, "file": file, "version": version})
+        }
         Err(LibraryError::Io { path, .. }) => {
             let rel = path.strip_prefix(root).unwrap_or(&path);
             serde_json::json!({"error": "io", "path": rel.to_string_lossy().replace('\\', "/")})

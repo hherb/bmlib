@@ -121,7 +121,8 @@ def may_name(folder: str, ids: PaperIds) -> bool:
     so this can only ever refuse a save, never choose a folder.
     """
     name = unicodedata.normalize("NFC", folder).lower()
-    numbered = re.fullmatch(r"(.*) \(\d+\)", name)
+    # ASCII digits, and a newline in a user's name is just a character: Rust's twin reads it so.
+    numbered = re.fullmatch(r"(.*) \([0-9]+\)", name, re.DOTALL)
     bodies = [name] + ([numbered.group(1)] if numbered else [])
     for label, value in (("PMID", ids.pmid), ("DOI", ids.doi), ("PMCID", ids.pmcid)):
         if value is None:

@@ -70,16 +70,19 @@ All notable changes to bmlib are documented here. The format is based on
 ### Fixed
 
 - **A save no longer forks a paper beside a folder it cannot read** (#778
-  item 1, #755 item 2; both languages). A folder whose `records/` cannot be
-  listed or examined (`unreadable_folder`), or whose record is only an iCloud
-  placeholder (`record_not_downloaded`), is invisible to `find`, so a save
-  under a revised title or another identifier made a second folder for the
-  paper. When no folder holds the paper and such a folder's name ends in one
-  of its identifiers (`(PMID 123)`, before any ` (2)`), `save` now raises `Io`
-  naming the folder and writes nothing; the paper's own folder name is still
-  joined as before. Not caught: a folder named by an identifier the save does
-  not know (`docs/DECISIONS.md`). A new `save_scenarios` case in
-  `library_cases.json` pins it in Python, Rust and the FFI runner.
+  item 1, #755 item 2 in part; both languages). A folder with a record a scan
+  cannot use is invisible to `find`: its `records/` cannot be listed or
+  examined (`unreadable_folder`), or a record cannot be read
+  (`unreadable_record`), is not downloaded (`record_not_downloaded`), is
+  misnamed (`misnamed_record`) or is newer (`newer_record`). A save under a
+  revised title or another identifier then made a second folder for the
+  paper. Now, when the save would make a new folder and such a folder's name
+  ends in one of the paper's identifiers (`(PMID 123)`, before any ` (2)`),
+  `save` raises `Io` naming the folder, or `NewerRecord` for a newer record,
+  and writes nothing. A folder the save joins, the paper's own name numbered
+  or not, is never refused. Not caught: a folder named by an identifier the
+  save does not know (`docs/DECISIONS.md`). Five `save_scenarios` cases in
+  `library_cases.json` pin it in Python, Rust and the FFI runner.
 
 - **A count the delivery contradicts fails the day** (#795; both languages).
   `reconcile_delivery` returned clean for any `promised <= 0`, so an OpenAlex

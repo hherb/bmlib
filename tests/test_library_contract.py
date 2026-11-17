@@ -51,6 +51,7 @@ from bmlib.library import (
     LibraryError,
     Missing,
     NewerLibrary,
+    NewerRecord,
     NotALibrary,
     NotDownloaded,
     PaperIds,
@@ -360,6 +361,7 @@ _STEP_ERRORS: dict[str, tuple[type[LibraryError], tuple[str, ...]]] = {
     "foreign_jats": (ForeignJats, ("folder", "name", "field", "theirs", "ours")),
     "file_clash": (FileClash, ("folder", "name")),
     "bad_name": (BadName, ("name",)),
+    "newer_record": (NewerRecord, ("folder", "file", "version")),
 }
 
 

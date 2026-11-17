@@ -122,7 +122,7 @@ pub(crate) fn may_name(folder: &str, ids: &PaperIds) -> bool {
 }
 
 /// `name` without a trailing ` (n)` (one or more ASCII digits), if it has one:
-/// Python's `re.fullmatch(r"(.*) \((\d+)\)", name)`.
+/// Python's `re.fullmatch(r"(.*) \([0-9]+\)", name, re.DOTALL)`.
 fn numbered_body(name: &str) -> Option<&str> {
     let open = name.strip_suffix(')')?.rfind(" (")?;
     let digits = &name[open + 2..name.len() - 1];
@@ -240,7 +240,7 @@ mod tests {
     /// Python's `test_may_name_reads_the_identifier_a_folder_name_ends_in`, case for case.
     #[test]
     fn may_name_reads_the_identifier_a_folder_name_ends_in() {
-        let cases: [(&str, [Option<&str>; 3], bool); 12] = [
+        let cases: [(&str, [Option<&str>; 3], bool); 15] = [
             ("2024 Smith – T (PMID 123)", [Some("123"), None, None], true),
             (
                 "2024 Smith – T (PMID 123) (2)",
@@ -263,6 +263,21 @@ mod tests {
                 "2024 Smith – T (PMID 123) ()",
                 [Some("123"), None, None],
                 false,
+            ),
+            (
+                "2024 Smith – T (PMID 123) (x)",
+                [Some("123"), None, None],
+                false,
+            ),
+            (
+                "2024 Smith – T (PMID 123) (٢)",
+                [Some("123"), None, None],
+                false,
+            ),
+            (
+                "2024 Smith –\nT (PMID 123) (2)",
+                [Some("123"), None, None],
+                true,
             ),
             (
                 "2024 Smith – T (DOI 10.1 x)",

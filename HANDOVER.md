@@ -11,25 +11,37 @@ everything since is under Unreleased. **Next: release 0.14.0 / crate 0.5.0**
 
 ## This session: a save does not fork a paper beside a folder it cannot read
 
-- **The maintainer's pick (2026-11-17)**: when no folder holds the paper and a
-  folder with an `unreadable_folder` or `record_not_downloaded` problem has a
-  name ending in one of the paper's identifiers (`names.may_name`: `(PMID
-  123)`, before any ` (2)`, NFC and lowercased), `save` raises `Io` naming it
-  and writes nothing. The paper's own folder name is exempt, so a same-name
-  save joins as before. Both languages (`_refuse_hidden_folder`,
-  `refuse_hidden_folder`), reasoning in `docs/DECISIONS.md` (*library*).
+- **The maintainer's pick (2026-11-17)**: when the save would make a new
+  folder and a folder with a record the scan cannot use (`unreadable_folder`,
+  `unreadable_record`, `record_not_downloaded`, `misnamed_record`,
+  `newer_record`) has a name ending in one of the paper's identifiers
+  (`names.may_name`: `(PMID 123)`, before any ` (2)`, NFC and lowercased),
+  `save` raises `Io` naming it (`NewerRecord` for a newer record) and writes
+  nothing. Only `_claim_folder`'s create step asks, so a folder the save joins
+  (the paper's own name, numbered or not) is never refused. Both languages
+  (`_refuse_hidden_folder`, `refuse_hidden_folder`), reasoning in
+  `docs/DECISIONS.md` (*library*).
+- **Widened by `/finalcheck`'s review**: the first cut covered two problem
+  kinds and exempted only the plain own name. A corrupt, misnamed or newer
+  record forked the paper the same way, and a paper whose own folder was
+  `… (2)` (a file at the plain name, #761) was refused a save that joined it on
+  `main`. Python's ` (n)` read `\d` (any Unicode digit) and stopped at a
+  newline; it now reads `[0-9]` with `re.DOTALL`, as Rust does.
 - **Why the name**: measured first, a save under the same name already joined
   the folder (or failed writing there); it forked only under a revised title
   or another identifier. **Known miss**: a DOI-only save beside a PMID-named
   folder still forks, as do renamed and cut-short names.
-- **Pinned**: a new `save_scenarios` case (an evicted record: refused, the own
-  name joins, the refusal lifts once a readable record names the paper, another
-  paper saves) in Python, Rust and the FFI runner, which all gained an `io`
-  step error (`path` relative to the root, reason not compared). Removing the
-  refusal or the own-name exemption fails the case in every runner. Unreadable
+- **Pinned**: five `save_scenarios` cases in Python, Rust and the FFI runner:
+  an evicted record (refused, the own name joins, the refusal lifts once a
+  readable record names the paper, another paper saves), a corrupt, a
+  misnamed and a newer record, and the paper's own numbered folder. The
+  runners gained `io` (`path` relative to the root, reason not compared) and
+  `newer_record` step errors. The four review cases fail on the first cut in
+  Python and Rust. Unreadable
   `records/` (chmod) and `may_name`'s table are tested in each language.
 - **Still open**: #778 items 2-4, #755 items 1 and 4 (after 0.14, the
-  maintainer's call) and 6's noise.
+  maintainer's call), item 2's own example (a DOI-only save beside a
+  PMID-named folder, the known miss) and 6's noise.
 
 ## Merged: a count the delivery contradicts fails the day (#795, PR #797)
 
@@ -136,7 +148,7 @@ MedicalFactChecker's step 3 (re-pin the xcframework). Unreleased.
 - **Open library issues**: #778 (PR #777's deferrals; items 2-4 left, item 1
   fixed above), #762 (a non-UTF-8 library JATS, Python serves it, Rust
   refuses; the #766 check inherits the gap), #755 (items 1, 4 and 6's noise;
-  item 2 fixed above).
+  item 2 fixed above except its DOI-only example, the known miss).
 - **Left open on purpose**: separate processes of one installation writing one
   record (out of scope; an app has one process per installation).
 

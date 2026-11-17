@@ -952,6 +952,11 @@ fn step_refused<T>(
         Err(LibraryError::BadName { name: refused }) => {
             json!({"error": "bad_name", "name": refused})
         }
+        Err(LibraryError::NewerRecord {
+            folder,
+            file,
+            version,
+        }) => json!({"error": "newer_record", "folder": folder, "file": file, "version": version}),
         Err(LibraryError::Io { path, .. }) => {
             let rel = Path::new(&path)
                 .strip_prefix(root)

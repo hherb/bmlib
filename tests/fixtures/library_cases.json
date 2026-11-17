@@ -4116,6 +4116,209 @@
      }
     }
    }
+  },
+  {
+   "name": "a save is refused, not forked, beside a folder named for the paper whose record is not valid JSON (#778)",
+   "steps": [
+    {
+     "op": "plant",
+     "path": "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json",
+     "text": "{ not json"
+    },
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "111",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin revised"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test",
+     "expect": {
+      "error": "io",
+      "path": "papers/2024 Smith – Metformin (PMID 111)"
+     }
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {}
+   }
+  },
+  {
+   "name": "a save is refused, not forked, beside a folder named for the paper whose record is misnamed (#778)",
+   "steps": [
+    {
+     "op": "plant",
+     "path": "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-zzzz.json",
+     "text": "{\n  \"format\": \"bmlib-library-record\",\n  \"version\": 1,\n  \"installation\": {\n    \"app\": \"studyanalyzer\",\n    \"id\": \"aaaa\",\n    \"label\": \"Test Mac\"\n  },\n  \"paper\": {\n    \"pmid\": \"111\",\n    \"doi\": null,\n    \"pmcid\": null,\n    \"title\": \"Metformin\",\n    \"year\": 2024,\n    \"first_author\": \"Smith\"\n  },\n  \"files\": []\n}\n"
+    },
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "111",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin revised"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test",
+     "expect": {
+      "error": "io",
+      "path": "papers/2024 Smith – Metformin (PMID 111)"
+     }
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-zzzz.json"
+    ],
+    "records": {}
+   }
+  },
+  {
+   "name": "a save beside a folder named for the paper whose record is newer is NewerRecord, not a fork (#778)",
+   "steps": [
+    {
+     "op": "plant",
+     "path": "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json",
+     "text": "{\"format\": \"bmlib-library-record\", \"version\": 99}\n"
+    },
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "111",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin revised"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test",
+     "expect": {
+      "error": "newer_record",
+      "folder": "2024 Smith – Metformin (PMID 111)",
+      "file": "studyanalyzer-aaaa.json",
+      "version": 99
+     }
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/",
+     "papers/2024 Smith – Metformin (PMID 111)/records/studyanalyzer-aaaa.json"
+    ],
+    "records": {}
+   }
+  },
+  {
+   "name": "the paper's own numbered folder, its only record not downloaded, is joined, and a revised title beside it is refused (#778, #798 review)",
+   "steps": [
+    {
+     "op": "plant",
+     "path": "papers/2024 Smith – Metformin (PMID 111)",
+     "text": "a file"
+    },
+    {
+     "op": "plant",
+     "path": "papers/2024 Smith – Metformin (PMID 111) (2)/records/.studyanalyzer-aaaa.json.icloud",
+     "text": ""
+    },
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "111",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin revised"
+     },
+     "text": "pdf bytes one",
+     "kind": "pdf",
+     "origin": "unit test",
+     "expect": {
+      "error": "io",
+      "path": "papers/2024 Smith – Metformin (PMID 111) (2)"
+     }
+    },
+    {
+     "op": "save",
+     "app": "medicalfactchecker",
+     "id": "bbbb",
+     "paper": {
+      "pmid": "111",
+      "year": 2024,
+      "first_author": "Smith",
+      "title": "Metformin"
+     },
+     "text": "pdf bytes two",
+     "kind": "pdf",
+     "origin": "unit test"
+    }
+   ],
+   "expect": {
+    "paths": [
+     "bmlib-library.json",
+     "papers/",
+     "papers/2024 Smith – Metformin (PMID 111)",
+     "papers/2024 Smith – Metformin (PMID 111) (2)/",
+     "papers/2024 Smith – Metformin (PMID 111) (2)/pdf-3edfce96708a.pdf",
+     "papers/2024 Smith – Metformin (PMID 111) (2)/records/",
+     "papers/2024 Smith – Metformin (PMID 111) (2)/records/.studyanalyzer-aaaa.json.icloud",
+     "papers/2024 Smith – Metformin (PMID 111) (2)/records/medicalfactchecker-bbbb.json"
+    ],
+    "records": {
+     "papers/2024 Smith – Metformin (PMID 111) (2)/records/medicalfactchecker-bbbb.json": {
+      "format": "bmlib-library-record",
+      "version": 1,
+      "installation": {
+       "app": "medicalfactchecker",
+       "id": "bbbb",
+       "label": "Test Mac"
+      },
+      "paper": {
+       "pmid": "111",
+       "doi": null,
+       "pmcid": null,
+       "title": "Metformin",
+       "year": 2024,
+       "first_author": "Smith"
+      },
+      "files": [
+       {
+        "sha256": "3edfce96708a9f933d023d7aefb59ce7030cfcb829ca5430f8f98dff4ab3db2b",
+        "kind": "pdf",
+        "name": "pdf-3edfce96708a.pdf",
+        "origin": "unit test",
+        "size": 13
+       }
+      ]
+     }
+    }
+   }
   }
  ],
   "component": [
