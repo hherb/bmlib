@@ -25,16 +25,19 @@ from pathlib import Path
 import pytest
 
 from bmlib.library import (
+    FileRef,
     Installation,
     PaperFolder,
     PaperInfo,
     Record,
     Scan,
+    SourceKind,
     canonical_ids,
     find,
     find_digest,
     group,
     open_library,
+    sha256_hex,
 )
 
 
@@ -235,7 +238,15 @@ def test_a_non_utf8_file_is_not_listed_beside_one_with_its_lossy_name(tmp_path: 
             f.write(name)
     scan = lib.scan()
     assert scan.folders[0].files_on_disk == ("x\ufffd.pdf",)
-    assert [(p.kind, p.name) for p in scan.problems] == [
-        ("undecodable_name", "x\ufffd.pdf"),
-        ("unrecorded_file", "x\ufffd.pdf"),
+    assert [(p.kind, p.folder, p.name) for p in scan.problems] == [
+        ("undecodable_name", "p", "x\ufffd.pdf"),
+        ("unrecorded_file", "p", "x\ufffd.pdf"),
     ]
+    # The listed name reaches its own file, and removing it leaves the undecodable one alone.
+    real = "x\ufffd.pdf".encode()
+    ref = FileRef("p", "x\ufffd.pdf", sha256_hex(real), SourceKind.PDF)
+    assert lib.read(ref) == real
+    lib.remove_file(ref)
+    assert sorted(os.listdir(folder)) == [b"x\xe9.pdf"]
+    with open(folder + b"/x\xe9.pdf", "rb") as f:
+        assert f.read() == b"x\xe9.pdf"

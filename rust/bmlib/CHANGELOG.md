@@ -45,10 +45,10 @@ The Python library is documented separately, in the repository's
 
 - **`library::Problem` gains `UndecodableName { folder, name }`** (#796, as
   in Python), and bmlib-ffi's `LibraryProblem` the same case, so an
-  exhaustive `match`, Swift `switch` or Kotlin `when` needs it. A file in a
-  paper folder whose name is not UTF-8 is reported so, and is no longer in
-  `PaperFolder::files_on_disk` (nor an `UnrecordedFile`): its lossy name
-  could be handed back to `read` or `remove_file`, which joined it and
+  exhaustive `match`, Swift `switch` or Kotlin `when` needs it. A file or
+  folder in a paper folder whose name is not UTF-8 is reported so, and is no
+  longer in `PaperFolder::files_on_disk` (nor an `UnrecordedFile`): its lossy
+  name could be handed back to `read` or `remove_file`, which joined it and
   reached nothing, or a real sibling holding that spelling.
 - **`library::Problem` gains `BadFolderName { folder }`** (#789, as in
   Python), so an exhaustive `match` on it needs the arm, and bmlib-ffi's
@@ -163,7 +163,7 @@ The Python library is documented separately, in the repository's
   a path, a `caf\xe9` folder's name reached a real `caf\ufffd` beside it,
   which the scan listed twice while the other was dropped unreported. Such a
   name is a `StrayEntry` in `papers/`, an `UnreadableRecord` in `records/` and
-  an `UnrecordedFile` beside them, and `save` no longer counts it as a name
+  an `UndecodableName` beside them (#796), and `save` no longer counts it as a name
   clash.
 - **`LibraryError::FileClash`'s `folder` is the paper folder's bare name**
   (#755, as in Python). It held the folder's full path, unlike `Missing`,

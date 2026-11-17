@@ -958,6 +958,35 @@ fn a_non_utf8_file_is_not_listed_beside_one_with_its_lossy_name() {
             },
         ]
     );
+    // The listed name reaches its own file, and removing it leaves the
+    // undecodable ones alone.
+    let real = "x\u{fffd}.pdf".as_bytes();
+    let file = FileRef {
+        folder: folder.clone(),
+        name: name.clone(),
+        sha256: sha256_hex(real),
+        kind: SourceKind::Pdf,
+    };
+    assert_eq!(lib.read(&file).unwrap(), real);
+    lib.remove_file(&file).unwrap();
+    let dir_of = dir.join("papers").join("p");
+    let mut left: Vec<Vec<u8>> = fs::read_dir(&dir_of)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().as_bytes().to_vec())
+        .collect();
+    left.sort();
+    assert_eq!(
+        left,
+        [
+            b"records".to_vec(),
+            b"x\xe9.pdf".to_vec(),
+            b"x\xea.pdf".to_vec()
+        ]
+    );
+    for name in [&b"x\xe9.pdf"[..], b"x\xea.pdf"] {
+        let path = dir_of.join(std::ffi::OsStr::from_bytes(name));
+        assert_eq!(fs::read(path).unwrap(), name);
+    }
     fs::remove_dir_all(dir).unwrap();
 }
 

@@ -1,7 +1,8 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-17 (**#796, on `fix/library-undecodable-name-796`**).
-Merged since the last update: PR #798 (#778 item 1, #755 item 2), below.
+_Last updated: 2026-11-17 (**PR #799's review follow-up, on
+`fix/library-undecodable-name-followup`**). Merged since the last update: PR
+#799 (#796), below.
 **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge of #736) and
 **the Rust crate 0.4.0 on crates.io** from the same commit; everything since
 is under Unreleased. **Next: release 0.14.0 / crate 0.5.0** (the maintainer's
@@ -9,7 +10,23 @@ call, 2026-11-17; BMLibrarian Lite's desktop needs `bmlib.library` from
 PyPI). bmlibrarian_lite's Python suite passed against `main` at `525ea8c1`
 (9,201 tests), so the release does not break it._
 
-## This session: a name that is not UTF-8 is a problem, not a file (#796)
+## This session: PR #799's review follow-up (tests and docs only)
+
+- PR #799 merged before its `/finalcheck` review finished, so the findings
+  land here. No code changed: the review found the two languages agree on
+  the name, the problem order and `files_on_disk`, and nothing now skips a
+  file it used to see (`remove_folder` never reads the listing).
+- **The data-loss path is pinned**: both Linux tests now `read` and
+  `remove_file` the real `x\ufffd.pdf` and check the undecodable look-alikes
+  are left on disk with their bytes. They run only in CI (ubuntu).
+- **Docs**: two Unreleased CHANGELOG entries (#788's review, both languages)
+  still called such a name an `unrecorded_file`; the FFI's `files_on_disk`
+  and `remove_folder` now say such files are unlisted yet deleted with the
+  folder; "the entry's name", since it can be a folder; DECISIONS and the
+  CHANGELOG agree that Linux, and Windows for a name holding an unpaired
+  surrogate, are where such names occur; ROADMAP gains #796's row.
+
+## Merged: a name that is not UTF-8 is a problem, not a file (#796, PR #799)
 
 - A scan listed a paper folder's non-UTF-8 entry names lossily in
   `files_on_disk` (and as `unrecorded_file`), so a caller handing one back
@@ -93,8 +110,8 @@ steps in all three runners. Reasoning in `docs/DECISIONS.md` (*library*).
 - **Filed from its review, open**: **#792** (a record that starts matching
   after its index day settled is never fetched; and measure the settle
   period), **#793** (the day ledger ignores the query), **#794** (a record
-  with neither DOI nor PMID is stored again on every re-fetch). #795 is this
-  session's.
+  with neither DOI nor PMID is stored again on every re-fetch). #795 was fixed
+  by PR #797.
 
 ## Earlier library and FFI merges (PRs #771-#788)
 
@@ -290,11 +307,11 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests on `fix/reconcile-nonpositive-count-795`** (2026-11-16, PostgreSQL
-  18 DSN on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,139 passed +
-  23 skipped (11,162 collected); ruff 0.15.20 and mypy clean. Rust
-  `cargo test -p bmlib -p bmlib-ffi` 1,884 passed on macOS, and
-  `-p bmlib --no-default-features` 1,461; `cargo clippy -p bmlib
+- **Tests on `fix/library-undecodable-name-followup`** (2026-11-17, PostgreSQL
+  18 DSN on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,162 passed +
+  23 skipped (11,185 collected); ruff 0.15.20 and mypy clean. Rust
+  `cargo test -p bmlib -p bmlib-ffi` 1,887 passed on macOS, and
+  `-p bmlib --no-default-features` 1,464; `cargo clippy -p bmlib
   --all-targets` and `-p bmlib-ffi` with `http-sketch,bindgen`, and
   `cargo fmt --check` clean; the Rust oracle 45 clean. Other recipes: `postgres_live.rs` with
   `BMLIB_PG_TESTS=1 BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`; `--features embed` and the
@@ -302,8 +319,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   `~/.cache/bmlib/models/`; the Python live tests need `.[all,dev,embed]`).
   Measure `main` with `pytest --collect-only` and never subtract from a
   previous handover's number. The default skips are the PostgreSQL
-  parameterisations, a PostgreSQL-only schema test, a non-UTF-8 file name
-  (APFS) and `test_pymupdf_requires_dependency`.
+  parameterisations, a PostgreSQL-only schema test, three non-UTF-8 name
+  tests (APFS) and `test_pymupdf_requires_dependency`.
 - **Run the PostgreSQL half locally — it finds real bugs.** Postgres.app 16
   runs on `localhost:5432` here (`createdb -h localhost -U postgres bmlib_test`
   once); set `BMLIB_TEST_POSTGRESQL_DSN="host=localhost port=5432
