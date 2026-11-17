@@ -6,6 +6,128 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-11-17
+
+**The shared paper library and the evidence weight.** `bmlib.library` (Rust
+`bmlib::library`, bmlib-ffi's `PaperLibrary`) keeps the papers several apps
+fetch in one folder the user chooses, as plain files: write-once sources
+named for their digest, one record per installation, nothing deleted unless
+the user asks, and every oddity a scan meets reported as a `Problem` (#754,
+#763, #764, hardened by #761-#796). `FullTextService` reads and fills such a
+library (`library=`, `installation=`) and finds more: JATS from PMC's AWS Open
+Data bucket after NCBI's (#751), and, with `fetch_pdf_with_jats`, the PDF
+beside a JATS, retried and sought again on a later hit (#739, #744, #746,
+#748, #750). A caller's `pdf` source no longer ends the chain (#739).
+`bmlib.quality` gains StudyAnalyzer's unattended evidence weight
+(`assess_unattended`): the design and primary-outcome proposals, RoB 2 asked
+one domain per call with D5 judged from facts, RoB 2's decision rules, and the
+evidence ladder. Publications gain `biorxiv-details` / `medrxiv-details`
+(every posting, now in a default `sync()`; #341) and the opt-in `europepmc`
+(a caller's search, one first-index day at a time), and a count the delivery
+contradicts fails its day (#795). `bmlib.fulltext.meca` signs and reads
+requester-pays S3 for medRxiv's and bioRxiv's MECA buckets; reading a `.meca`
+package is not part of it yet (#776). `canonical_from_html` caps a page's `<`
+count instead of its length, so a page saved with its images inline converts
+(#656).
+
+**This is a minor bump because public APIs break**; every break is gathered
+under *Changed — breaking* below. `bmlib.library` and the evidence-weight
+modules are new in this release, so the breaks their entries record (a new
+`Problem` kind, `ForeignJats`) concern only a caller of `main` between
+releases. The Rust crate is released beside it as **0.5.0**, from the same
+merge commit; its notes are in `rust/bmlib/CHANGELOG.md`.
+
+**The data answer, which the number cannot give:**
+
+- **Nothing a 0.13.0 caller stored goes stale.** Checked by diffing the
+  constants and modules against `v0.13.0`: `RENDERER_VERSION` stays 7, so the
+  full-text cache is kept (a `jats/<key>.pdf-retry` mark may now sit beside a
+  JATS whose PDF is still owed). The JATS, PDF (7), Markdown (2), plain-text
+  and HTML (1) canonical versions, the chunker, `EMBEDDING_RECIPE_VERSION`,
+  `ensure_schema()`, the extractors' output and every stored retraction and
+  transparency value are unchanged too.
+- **A re-fetch labels bioRxiv and medRxiv full-text sources with their
+  version.** `/details` gives an unversioned row of the same source and URL
+  its version (`"1"`), and each posting stores its own URLs. Rows from `/pubs`
+  keep `None`.
+- **A default `sync()` stores more.** Every bioRxiv and medRxiv posting is
+  fetched from the first run (several hundred records a day), and
+  `download_days` gains the two `*-details` sources' rows.
+- **New stored formats**, each read back checked: the library's marker and
+  records (`LIBRARY_VERSION` 1, `RECORD_VERSION` 1), and the evidence weight's
+  wire form (`LADDER_VERSION` `ladder/1`, `ROB2_ALGORITHM_VERSION`, and prompt
+  versions design 1, outcome 1, RoB 2 5).
+
+### Changed — breaking
+
+Breaks recorded under *Added* and *Fixed* below, each with its argument there:
+
+- **`ALL_SOURCES` lists `europepmc`**, which fails every day it runs without
+  a `query`, so a caller passing `ALL_SOURCES` to `sync()` must configure it
+  or drop it. `sync(sources=None)` leaves it out (`SourceDescriptor.opt_in`).
+- **A count the delivery contradicts fails the day** (#795): records against
+  a count of 0, and any negative count.
+- **A caller's `pdf` source no longer ends the full-text chain** (#739): the
+  JATS tiers run after it, and a JATS result carries the PDF's `pdf_url`,
+  `file_path` and `pdf_download_failure`.
+- **Tier 1c asks PMC's Open Data bucket** (#751), so a test that scripts the
+  service's requests answers one more (the bucket's listing) wherever Europe
+  PMC and NCBI give no body, and the exhaustion report counts one more source.
+- **The Europe PMC search, NCBI's ID Converter and Unpaywall are read by
+  `strict_json_loads`** (#753): a body `serde_json` refuses is a
+  `JSONDecodeError` fault on `tier_faults`, and the tier falls through.
+- **`"http-408"` may pass** (#746), so a 408 for the PDF beside JATS is retried
+  and marks the JATS for a second look.
+- **JSON nested past Python's stack is a `JSONDecodeError`** (#758), not a
+  `RecursionError`, out of `strict_json_loads` and everything reading through
+  it.
+- **The zero-author log lines read "JATS parse of X: produced no authors…"**
+  (#782), with a colon, so a test matching the old text needs it.
+
+The entries below carry their own argument:
+
+- **`sync(sources=None)` and `ALL_SOURCES` include `biorxiv-details` and
+  `medrxiv-details`** (#341, see Added): a caller that syncs every source now
+  fetches every bioRxiv and medRxiv posting, several hundred more records and
+  about ten more pages a day. A caller listing its sources is unaffected.
+- **`canonical_from_html` caps a page's `<` count, not its length** (#656;
+  both languages). A page holding more than `HTML_MAX_TAGS` (666,666) `<` is
+  refused unparsed; a page of any length under it is parsed. `HTML_MAX_CHARS`
+  is gone; `HtmlPageTooLargeError` carries `tags` where it carried `length`
+  (Rust `HtmlError::TooLarge { tags }`), and its message names the count.
+  Until now every page longer than 2,000,000 code points was refused, and a
+  page saved with its images and fonts inline is that long without being
+  expensive: of 81 article pages saved with SingleFile from #726's DOI
+  targets, 6 (7.4%, Wilson 95% 3.4-15.2%) were refused, up to 13.3 million
+  code points, `data:` URIs a median 94% of each page. Each now converts, in at
+  most 0.16 s and 88 MB (Python) and 41 ms (Rust, a release build); the text
+  of every page that converted before is unchanged, so
+  `HTML_CANONICAL_VERSION` stays 1. The cap is the old one divided by three,
+  so the worst page measured at the old cap (`<i>` nested to its length, one
+  `<` per three code points) is at the new one and is converted or refused in
+  the time it was. The most `<` on any of the 295 real pages measured is
+  6,447. A page's length is now bounded only by the parse child's
+  `HTML_PARSE_MAX_BYTES` in Python (the longest page took 4.7 bytes per code
+  point over the interpreter's own 29 MB, so about 220 million code points of
+  such a page)
+  and is linear in memory in Rust.
+- **Rust's element budget is three per `<`, not one per code point** (#656):
+  `max_elements(tags)` is `ELEMENTS_PER_TAG` (3) per `<` plus
+  `HTML_ELEMENT_ALLOWANCE`, so padding a page with text or `data:` no longer
+  raises its budget, which with the length uncapped would have let #723's
+  page build gigabytes. Three is a bound above the most html5ever was measured
+  to imply per `<` without rebuilding a formatting element (`<col><td>`, 2.5),
+  and the tightest real page used a fifth of the budget; at the
+  cap it is the budget the old rule allowed at 2,000,000 code points.
+  `HtmlError::TooManyElements` gains `tags`. Stricter only for a page that
+  rebuilds formatting elements: `rebuilding(40)` (122 `<`, 1,684 elements) is
+  now refused by Rust, as `rebuilding(60)` was, and still converted by
+  Python; no real page built more elements than its `<` count. **For
+  StudyAnalyzer**: a struct literal `HtmlError::TooLarge { length: … }` (two
+  tests) becomes `{ tags: … }`; `MAX_HTML_BYTES`' note on bmlib's 2 million
+  code-point cap is out of date, and a saved page up to its own 22 MiB
+  `MAX_HTML_BYTES` now converts unless it holds more than `HTML_MAX_TAGS` `<`.
+
 ### Added
 
 - **A `europepmc` day-by-day sync source** (both languages; 31 shared oracle
@@ -66,285 +188,6 @@ All notable changes to bmlib are documented here. The format is based on
   the 27 links, FIFOs and files of `special_entries` (#761). The two sections
   still not run through the FFI, `folder_names` and `records`, test functions
   it does not export.
-
-### Fixed
-
-- **A save no longer forks a paper beside a folder it cannot read** (#778
-  item 1, #755 item 2 in part; both languages). A folder with a record a scan
-  cannot use is invisible to `find`: its `records/` cannot be listed or
-  examined (`unreadable_folder`), or a record cannot be read
-  (`unreadable_record`), is not downloaded (`record_not_downloaded`), is
-  misnamed (`misnamed_record`) or is newer (`newer_record`). A save under a
-  revised title or another identifier then made a second folder for the
-  paper. Now, when the save would make a new folder and such a folder's name
-  ends in one of the paper's identifiers (`(PMID 123)`, before any ` (2)`),
-  `save` raises `Io` naming the folder, or `NewerRecord` for a newer record,
-  and writes nothing. A folder the save joins, the paper's own name numbered
-  or not, is never refused. Not caught: a folder named by an identifier the
-  save does not know (`docs/DECISIONS.md`). Five `save_scenarios` cases in
-  `library_cases.json` pin it in Python, Rust and the FFI runner.
-
-- **A count the delivery contradicts fails the day** (#795; both languages).
-  `reconcile_delivery` returned clean for any `promised <= 0`, so an OpenAlex
-  day whose `meta.count` was 0 beside a page of works completed unverified,
-  and so did any negative count. Records delivered against a count of 0 now
-  fail the day as records against no count do, and a negative count fails it
-  whatever was delivered. A quiet day (nothing delivered against 0 or against
-  no count) still completes, bioRxiv's total-omitting one included; no
-  existing fixture changes verdict except the two below. `europepmc`
-  already refused both itself. New oracle cases
-  `recon/promise-negative-with-delivery`, `fetch/zero-count-with-works` and
-  `fetch/negative-count` (OpenAlex), and `fetch/zero-total-with-records` and
-  `fetch/negative-total` (bioRxiv); `recon/promise-zero-with-delivery` and
-  `recon/promise-negative` now fail.
-
-- **A file name that is not UTF-8 is a problem, not a listed file** (#796;
-  both languages). A scan reported it in `PaperFolder.files_on_disk` (and as
-  `unrecorded_file`), lossily, so a caller handing it back to `read` or
-  `remove_file` had it joined to a path: it reached nothing, or a real
-  sibling holding the lossy spelling, which `remove_file` then deleted. It is
-  now an `undecodable_name` problem (`folder`, `name`) only, to show and ask
-  the user to rename. Only Linux file systems hold one, and on Windows a name
-  holding an unpaired surrogate.
-- **A paper folder bmlib cannot name is reported** (#789; both languages and
-  bmlib-ffi). A folder whose name `component()` refuses, such as one made under
-  the device rule before #788 (`Con .x (PMID 1)`) or a user's `papers/con`,
-  was scanned with no problem, while every call addressing it raised
-  `BadName`. A scan now adds a `bad_folder_name` problem (`folder`) for it and
-  keeps it in `folders`, so `find` still sees the paper and a save of that
-  paper is refused with `BadName` instead of forking it into a second folder.
-  The user renames the folder; bmlib does not. A new `save_scenarios` case,
-  with a `scan` step and a `plant` step that now creates its folders, pins it
-  in all three runners.
-- **The library's Windows device names, whitespace and non-UTF-8 names agree
-  across the languages** (#755 items 3, 5 and part of 6; both languages). A
-  device name followed by spaces before the dot (`CON .txt`, which Windows
-  opens as the device), `COM¹`-`COM³`, `LPT¹`-`LPT³`, `CONIN$` and `CONOUT$`
-  are now refused by `component()` and get `folder_name`'s `_` prefix: the
-  device-name clause of CPython 3.13's `ntpath.isreserved`. **A folder name
-  can move**, only for a paper whose name begins with a word this rule now
-  refuses. A folder already made under the old rule is a `bad_folder_name`
-  problem (#789, above). Rust now trims identifiers and the name's author and
-  title as Python's `str.strip()` does, U+001C-U+001F included, so a PMID edged
-  by one is the same PMID in both. In Python, a non-UTF-8 name in a library
-  folder is read lossily (U+FFFD), as Rust reads it. In both languages such a
-  name is reported and never joined to a path, because a real sibling may hold
-  its lossy spelling (#788's review): in `papers/` it is a `stray_entry`, in
-  `records/` an `unreadable_record`, and beside the records an
-  `undecodable_name` (#796, below); joined to a path, a `caf\xe9` folder's lossy name reached
-  a real `caf\ufffd` beside it, scanned twice while the other was dropped
-  unreported. Python used to scan such a paper folder under a surrogate-escaped
-  name. The temporary-name check counts Rust's 42-byte token in bytes, as Rust
-  does. Pinned by 44 new cases in `tests/fixtures/library_cases.json`. A test's
-  `os.geteuid()` no longer runs at collection on Windows.
-- **`FileClash.folder` is the paper folder's bare name** (#755; both
-  languages, and bmlib-ffi). It held the folder's full path
-  (`/…/papers/<folder>`), where `Missing`, `DigestMismatch` and the record
-  errors hold the bare name, so an app comparing it with `FileRef.folder`
-  never matched. A new `save_scenarios` case in
-  `tests/fixtures/library_cases.json` pins it, with a `plant` step that
-  damages a file in the folder; the Python, Rust and FFI runners all run it.
-  The marker's clash in `open_library` is caught there and never reaches a
-  caller. The same `save`'s `NotDownloaded`, when the file already there is
-  evicted (dataless), named the full path too and now names the folder; only
-  the marker's `NotDownloaded` still names the library's full path.
-- **Rust logs an author-less article at DEBUG, as Python does** (#782). The
-  port warned on every article that parsed to no authors. It now warns only
-  where the article's contributor list names people, as Python's
-  `_report_zero_authors` does; the quiet line is in the new
-  `JatsReport::debug`. Python's two zero-author lines now read "JATS parse of
-  X: produced no authors…", with the colon every other "JATS parse of" line,
-  and every line of Rust's reader, carries; their levels are unchanged.
-- **A library save no longer repeats a JATS's parse warnings** (#780; both
-  languages). `save` and `record_use` read the identifiers of the JATS being
-  saved and of every JATS in the folder they write to, and that read logged
-  the parser's audit each time, so an article's warnings came again on every
-  save beside it. The read now skips the audit's warnings (Python
-  `JATSParser._own_identifiers`, Rust `jats_reader::parse_unwarned`, both
-  private); they are logged when the article is parsed to be shown, and the
-  library's reads add none. Its ERROR lines, which say bmlib misread the
-  document, are still logged. The identifiers are unchanged.
-- **Pinned: a library save checks only the folder it writes to** (#780; both
-  languages), not every folder of the paper's linked group, for `save` and
-  `record_use` alike.
-- **The library refuses to file anything beside another paper's JATS** (#766;
-  both languages). `Library.save` and `Library.record_use` raise the new
-  `ForeignJats` (`folder`, `name`, `field`, `theirs`, `ours`) when the folder
-  they would write to holds a JATS whose own identifiers contradict the
-  paper's, and `save` does so too when the bytes being saved are such a JATS
-  (`folder` is then `None`); nothing is written. Only `FullTextService` made
-  this check before, so an app saving a file it opened by hand filled a folder
-  that failed every later lookup. Every JATS a record in the folder lists is
-  read and checked: one only an iCloud placeholder raises `NotDownloaded`, a
-  changed one `DigestMismatch`, one that is missing (as after the manual
-  clear) is passed over, and one that does not parse names no paper and is
-  warned of. The same bytes saved as another kind are checked too. **Behaviour change for the
-  service**: a JATS the chain fetches whose own identifiers name another paper
-  is still returned but no longer kept in the library; `library_failure` says
-  why. **Downstream**: StudyAnalyzer can drop its own `foreign_jats` check
-  once it re-pins, and MedicalFactChecker need not write it; show
-  `ForeignJats` with the manual clear of `folder`, or, when `folder` is `None`,
-  as a file of another paper that is not kept. Pinned by twelve new
-  `save_scenarios` in `library_cases.json` and scenario 13 of
-  `fulltext_library_scenarios.json`; tests that need such a folder now plant
-  it by hand (`planted` in the scenarios).
-- **The shared paper library uses only real files and folders** (#761; both
-  languages). Reads followed symbolic links and opened anything, so a record
-  or source file that was a FIFO, or a link to `/dev/zero`, hung a scan or a
-  `read` or exhausted memory, and a paper folder that was a link let `save`,
-  `record_use` and `release` write outside the library and `remove_file`
-  delete there. Every library read now refuses anything but a regular file
-  (`lstat`, then `fstat` on the open file, which must be the file `lstat` saw)
-  with the reason `not a regular file`: a scan reports such a record as
-  `unreadable_record`; `read`, `record_use`, `save` and `release` fail with
-  `Io`; `open` does for the marker. Folders are judged without following
-  links: a linked paper folder is a `stray_entry`, every call addressing it
-  fails with `Io` (`not a folder`), `remove_folder` finds it `Missing`, and
-  `save` takes its name as taken and makes the next numbered folder (a plain
-  file at that name used to fail the save). A linked or dangling `records/` is
-  `unreadable_folder`. A linked `papers/` is refused by `open`, and by every
-  later call too, since it may be swapped in after opening. An entry that
-  cannot be examined (`EACCES`, `EIO`) is reported, never taken for absent.
-  The library's root may still be a link. Pinned by the new `special_entries`
-  section of `library_cases.json` (27 cases, Unix only), which both languages
-  run.
-- **JSON nested past Python's stack is a decode error** (#758, Python only).
-  `strict_json_loads` refused nesting past 127 levels only after the stdlib
-  decoder had built the value, so a body nested deep enough to exhaust the
-  stack (measured at 100,000) raised `RecursionError` from the decoder. Full
-  text recorded `RecursionError` faults where Rust records `JSONDecodeError`,
-  and a library record or marker that deep crashed a scan rather than reading
-  as unreadable. It is now a `JSONDecodeError` recorded as a refusal (`nested
-  too deeply to decode`), so `parse_json` reports it without running the
-  repair stages, as it already did for a complete reply nested 128 deep. The
-  `RecursionError` catches this made dead are removed.
-- **Rust `pdf` builds on Windows** (Rust only). `mupdf::Document::open` takes
-  a `&str` on Windows and a `&Path` elsewhere (mupdf 0.8), so the
-  `mupdf_backend` did not compile on Windows; found by BMLibrarian's Windows
-  CI. A PDF whose path is not valid Unicode is refused there as an engine
-  failure. The CI's Windows job now lints the `pdf` feature.
-
-### Changed — breaking
-
-- **`sync(sources=None)` and `ALL_SOURCES` include `biorxiv-details` and
-  `medrxiv-details`** (#341, see Added): a caller that syncs every source now
-  fetches every bioRxiv and medRxiv posting, several hundred more records and
-  about ten more pages a day. A caller listing its sources is unaffected.
-- **`canonical_from_html` caps a page's `<` count, not its length** (#656;
-  both languages). A page holding more than `HTML_MAX_TAGS` (666,666) `<` is
-  refused unparsed; a page of any length under it is parsed. `HTML_MAX_CHARS`
-  is gone; `HtmlPageTooLargeError` carries `tags` where it carried `length`
-  (Rust `HtmlError::TooLarge { tags }`), and its message names the count.
-  Until now every page longer than 2,000,000 code points was refused, and a
-  page saved with its images and fonts inline is that long without being
-  expensive: of 81 article pages saved with SingleFile from #726's DOI
-  targets, 6 (7.4%, Wilson 95% 3.4-15.2%) were refused, up to 13.3 million
-  code points, `data:` URIs a median 94% of each page. Each now converts, in at
-  most 0.16 s and 88 MB (Python) and 41 ms (Rust, a release build); the text
-  of every page that converted before is unchanged, so
-  `HTML_CANONICAL_VERSION` stays 1. The cap is the old one divided by three,
-  so the worst page measured at the old cap (`<i>` nested to its length, one
-  `<` per three code points) is at the new one and is converted or refused in
-  the time it was. The most `<` on any of the 295 real pages measured is
-  6,447. A page's length is now bounded only by the parse child's
-  `HTML_PARSE_MAX_BYTES` in Python (the longest page took 4.7 bytes per code
-  point over the interpreter's own 29 MB, so about 220 million code points of
-  such a page)
-  and is linear in memory in Rust.
-- **Rust's element budget is three per `<`, not one per code point** (#656):
-  `max_elements(tags)` is `ELEMENTS_PER_TAG` (3) per `<` plus
-  `HTML_ELEMENT_ALLOWANCE`, so padding a page with text or `data:` no longer
-  raises its budget, which with the length uncapped would have let #723's
-  page build gigabytes. Three is a bound above the most html5ever was measured
-  to imply per `<` without rebuilding a formatting element (`<col><td>`, 2.5),
-  and the tightest real page used a fifth of the budget; at the
-  cap it is the budget the old rule allowed at 2,000,000 code points.
-  `HtmlError::TooManyElements` gains `tags`. Stricter only for a page that
-  rebuilds formatting elements: `rebuilding(40)` (122 `<`, 1,684 elements) is
-  now refused by Rust, as `rebuilding(60)` was, and still converted by
-  Python; no real page built more elements than its `<` count. **For
-  StudyAnalyzer**: a struct literal `HtmlError::TooLarge { length: … }` (two
-  tests) becomes `{ tags: … }`; `MAX_HTML_BYTES`' note on bmlib's 2 million
-  code-point cap is out of date, and a saved page up to its own 22 MiB
-  `MAX_HTML_BYTES` now converts unless it holds more than `HTML_MAX_TAGS` `<`.
-
-### Fixed
-
-- **The shared paper library never downloads an evicted file to read it**
-  (#769; both languages). macOS 14 and later, and iOS, evict a file from
-  iCloud Drive (and Dropbox or OneDrive through File Provider) to a *dataless*
-  file under its real name, not an `.icloud` placeholder, and a plain read
-  blocks until it is downloaded, perhaps forever offline. Every library read
-  now turns the calling thread's materialisation off
-  (`setiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD,
-  OFF)`, the previous policy restored after) and maps the `EDEADLK` it fails
-  with to what a placeholder gives: `NotDownloaded` from `read`, `save` and
-  `release`, `record_not_downloaded` (`RecordNotDownloaded`) in a scan. A
-  dataless file met elsewhere (the marker) is `NotDownloaded` naming its full
-  folder (`save`'s comparison did too, until #755). On a device (macOS 27.2, iCloud
-  Drive, evicted by `brctl evict`) the read fails at once and the file stays
-  evicted; the opt-in tests `tests/test_library_dataless.py` and
-  `rust/bmlib/tests/library_dataless.rs` repeat that with `BMLIB_ICLOUD_DIR`
-  set. If the policy cannot be set, a warning is logged and the read goes
-  ahead as before.
-
-- **`FullTextService` reads its three remaining JSON bodies as the Rust port
-  does** (#753). The Europe PMC search, NCBI's ID Converter and Unpaywall were
-  decoded by httpx's `json()`, which accepts a UTF-8 BOM, `NaN`/`Infinity`, a
-  number past the largest float, a lone surrogate escape and nesting past 127
-  levels; `serde_json` refuses each, so one body was an answer in Python and
-  a fault in Rust. They now go through `strict_json_loads`, as PMC Open Data's
-  record has since #752. A refused body is a `JSONDecodeError` fault in
-  `tier_faults` in both languages, and the tier falls through; a body that is
-  not UTF-8 is a `UnicodeDecodeError` fault in both, where Rust had named it
-  `TransportError`. A parity fix: no such body has been seen from these
-  services. Nesting past Python's recursion limit still differs (#758).
-- **The PDF beside JATS reports the failure a later try may cure, and a 408
-  may pass** (#746), in Python and the Rust port alike. With no PDF saved,
-  the result carried the first failure, so a 403 from one source then a 503
-  from another read `pdf_failure_may_pass` false while the cache marked the
-  JATS for a second look. It now carries the first failure that may pass,
-  else `"search-failed"` when the search failed, else the first failure, so
-  the mark is kept exactly when the result's failure may pass, bar the seek
-  limit. A `"search-failed"` that outranks a final download keeps that
-  download's `pdf_url`, and its cause is in the INFO line. `"http-408"`
-  (Request Timeout) now counts as one that may pass, as it does in bmlib's
-  own LLM retries, so a 408 is now retried within the run and marks the JATS
-  for a second look; the fixture row is flipped.
-- **The PDF sought beside JATS is retried, sought again on a later hit, and a
-  failed search for it is said** (#744), in Python and the Rust port alike,
-  with `fetch_pdf_with_jats` on. A download that failed for a cause that may
-  pass (a download's are `request-failed`, `http-429` and any `http-5xx`) was
-  tried once and the
-  JATS cached, and a cache hit served it as it was, so a brief outage lost the
-  PDF for that paper for good; it is now tried up to
-  `PDF_BESIDE_JATS_ATTEMPTS` (3) times, waiting `PDF_RETRY_DELAY` (1 s), then
-  twice that. When no PDF is saved and any failure may pass, the cache marks
-  the JATS (`jats/<key>.pdf-retry`, holding the PMC ID it came from and a
-  count), and a hit carrying the mark seeks the PDF again, one try per
-  candidate, at most `PDF_SEEK_AGAIN_LIMIT` (3) hits, so a cause that never
-  passes (a bot wall's 503) costs a bounded number of lookups. A hit counts
-  itself in the mark before it seeks, and seeks only if that write succeeds,
-  so a mark that cannot be updated still bounds them; a saved PDF or
-  failures that are all final unmark it, as does a search that answered with
-  nothing to download, and a hit without the mark makes no request. A fault in Europe PMC's search or in Unpaywall's lookup was only on
-  `tier_faults`, so no PDF read as none existing; when it left no download to
-  try, `pdf_download_failure` is now `"search-failed"` (`PDF_SEARCH_FAILED`),
-  and a JATS found through the ID Converter after the search failed asks the
-  search again for its PDF. A search fails only when it raised: one that
-  answered with an unusable field is neither sent again nor called failed. A
-  mark that cannot be written or removed is warned about once under its own
-  key (`pdf-mark-write:<cause>`, or one beginning `pdf-mark-delete`), not as an
-  unwritable cache.
-  `FullTextResult.pdf_failure_may_pass` says which causes a later try may
-  cure, shared with Rust by `tests/fixtures/pdf_failure_may_pass.json`;
-  `fulltext_source.json` gains five cases. A retried download reports its last
-  try's cause. Not covered: a JATS cached while the option was off carries no
-  mark and is still served as it is (a `shortcut:`), and a failed Tier 0 PDF
-  is not retried in the run, only on a later marked hit.
-- **A caller's `pdf` source no longer ends the full-text chain, and a JATS result carries it** (#739), in Python and the Rust port alike. Tier 0 returned a `pdf` entry at once, downloaded or not, so the Europe PMC and PMC tiers never ran: JATS, the better text to process, was never sought once a PDF was found, and a failed download hid it outright. Seen in StudyAnalyzer with DOI 10.3390/ijms262110631: mdpi.com answered the PDF link OpenAlex gives with HTTP 403, and the user was told to download it by hand while Europe PMC serves the article's full JATS (PMC12609458). The PDF is now saved and the JATS tiers still run. JATS they find is returned with the PDF's `pdf_url`, `file_path` and any `pdf_download_failure`, so an app can process the JATS and show the PDF. A saved PDF with no JATS is returned before Tiers 1d and 2, which would only fetch another, and a failed one only once Tiers 1a to 2 have found nothing, ahead of Tier 3's link: a Tier 1d or Unpaywall PDF that also failed gives way to it rather than replacing the caller's URL and cause, and the *No full text found* WARNING names the cause (#67). A cached JATS hit now carries a PDF cached beside it as `file_path`; one that cannot be opened is reported, moved aside so the warning is not repeated on every lookup, and the hit served without it.
-
-### Added
 
 - **`bmlib.fulltext.meca`: MECA bulk archives over requester-pays S3** (both
   languages; Rust feature `meca`, Python extra `meca`). medRxiv's and
@@ -772,6 +615,236 @@ All notable changes to bmlib are documented here. The format is based on
   answered a RoB 2 domain with `[1.1]`). Rust's `ChatJsonError::WrongShape` gains
   `short_reply: Option<String>`.
 
+### Fixed
+
+- **A save no longer forks a paper beside a folder it cannot read** (#778
+  item 1, #755 item 2 in part; both languages). A folder with a record a scan
+  cannot use is invisible to `find`: its `records/` cannot be listed or
+  examined (`unreadable_folder`), or a record cannot be read
+  (`unreadable_record`), is not downloaded (`record_not_downloaded`), is
+  misnamed (`misnamed_record`) or is newer (`newer_record`). A save under a
+  revised title or another identifier then made a second folder for the
+  paper. Now, when the save would make a new folder and such a folder's name
+  ends in one of the paper's identifiers (`(PMID 123)`, before any ` (2)`),
+  `save` raises `Io` naming the folder, or `NewerRecord` for a newer record,
+  and writes nothing. A folder the save joins, the paper's own name numbered
+  or not, is never refused. Not caught: a folder named by an identifier the
+  save does not know (`docs/DECISIONS.md`). Five `save_scenarios` cases in
+  `library_cases.json` pin it in Python, Rust and the FFI runner.
+
+- **A count the delivery contradicts fails the day** (#795; both languages).
+  `reconcile_delivery` returned clean for any `promised <= 0`, so an OpenAlex
+  day whose `meta.count` was 0 beside a page of works completed unverified,
+  and so did any negative count. Records delivered against a count of 0 now
+  fail the day as records against no count do, and a negative count fails it
+  whatever was delivered. A quiet day (nothing delivered against 0 or against
+  no count) still completes, bioRxiv's total-omitting one included; no
+  existing fixture changes verdict except the two below. `europepmc`
+  already refused both itself. New oracle cases
+  `recon/promise-negative-with-delivery`, `fetch/zero-count-with-works` and
+  `fetch/negative-count` (OpenAlex), and `fetch/zero-total-with-records` and
+  `fetch/negative-total` (bioRxiv); `recon/promise-zero-with-delivery` and
+  `recon/promise-negative` now fail.
+
+- **A file name that is not UTF-8 is a problem, not a listed file** (#796;
+  both languages). A scan reported it in `PaperFolder.files_on_disk` (and as
+  `unrecorded_file`), lossily, so a caller handing it back to `read` or
+  `remove_file` had it joined to a path: it reached nothing, or a real
+  sibling holding the lossy spelling, which `remove_file` then deleted. It is
+  now an `undecodable_name` problem (`folder`, `name`) only, to show and ask
+  the user to rename. Only Linux file systems hold one, and on Windows a name
+  holding an unpaired surrogate.
+- **A paper folder bmlib cannot name is reported** (#789; both languages and
+  bmlib-ffi). A folder whose name `component()` refuses, such as one made under
+  the device rule before #788 (`Con .x (PMID 1)`) or a user's `papers/con`,
+  was scanned with no problem, while every call addressing it raised
+  `BadName`. A scan now adds a `bad_folder_name` problem (`folder`) for it and
+  keeps it in `folders`, so `find` still sees the paper and a save of that
+  paper is refused with `BadName` instead of forking it into a second folder.
+  The user renames the folder; bmlib does not. A new `save_scenarios` case,
+  with a `scan` step and a `plant` step that now creates its folders, pins it
+  in all three runners.
+- **The library's Windows device names, whitespace and non-UTF-8 names agree
+  across the languages** (#755 items 3, 5 and part of 6; both languages). A
+  device name followed by spaces before the dot (`CON .txt`, which Windows
+  opens as the device), `COM¹`-`COM³`, `LPT¹`-`LPT³`, `CONIN$` and `CONOUT$`
+  are now refused by `component()` and get `folder_name`'s `_` prefix: the
+  device-name clause of CPython 3.13's `ntpath.isreserved`. **A folder name
+  can move**, only for a paper whose name begins with a word this rule now
+  refuses. A folder already made under the old rule is a `bad_folder_name`
+  problem (#789, above). Rust now trims identifiers and the name's author and
+  title as Python's `str.strip()` does, U+001C-U+001F included, so a PMID edged
+  by one is the same PMID in both. In Python, a non-UTF-8 name in a library
+  folder is read lossily (U+FFFD), as Rust reads it. In both languages such a
+  name is reported and never joined to a path, because a real sibling may hold
+  its lossy spelling (#788's review): in `papers/` it is a `stray_entry`, in
+  `records/` an `unreadable_record`, and beside the records an
+  `undecodable_name` (#796, below); joined to a path, a `caf\xe9` folder's lossy name reached
+  a real `caf\ufffd` beside it, scanned twice while the other was dropped
+  unreported. Python used to scan such a paper folder under a surrogate-escaped
+  name. The temporary-name check counts Rust's 42-byte token in bytes, as Rust
+  does. Pinned by 44 new cases in `tests/fixtures/library_cases.json`. A test's
+  `os.geteuid()` no longer runs at collection on Windows.
+- **`FileClash.folder` is the paper folder's bare name** (#755; both
+  languages, and bmlib-ffi). It held the folder's full path
+  (`/…/papers/<folder>`), where `Missing`, `DigestMismatch` and the record
+  errors hold the bare name, so an app comparing it with `FileRef.folder`
+  never matched. A new `save_scenarios` case in
+  `tests/fixtures/library_cases.json` pins it, with a `plant` step that
+  damages a file in the folder; the Python, Rust and FFI runners all run it.
+  The marker's clash in `open_library` is caught there and never reaches a
+  caller. The same `save`'s `NotDownloaded`, when the file already there is
+  evicted (dataless), named the full path too and now names the folder; only
+  the marker's `NotDownloaded` still names the library's full path.
+- **Rust logs an author-less article at DEBUG, as Python does** (#782). The
+  port warned on every article that parsed to no authors. It now warns only
+  where the article's contributor list names people, as Python's
+  `_report_zero_authors` does; the quiet line is in the new
+  `JatsReport::debug`. Python's two zero-author lines now read "JATS parse of
+  X: produced no authors…", with the colon every other "JATS parse of" line,
+  and every line of Rust's reader, carries; their levels are unchanged.
+- **A library save no longer repeats a JATS's parse warnings** (#780; both
+  languages). `save` and `record_use` read the identifiers of the JATS being
+  saved and of every JATS in the folder they write to, and that read logged
+  the parser's audit each time, so an article's warnings came again on every
+  save beside it. The read now skips the audit's warnings (Python
+  `JATSParser._own_identifiers`, Rust `jats_reader::parse_unwarned`, both
+  private); they are logged when the article is parsed to be shown, and the
+  library's reads add none. Its ERROR lines, which say bmlib misread the
+  document, are still logged. The identifiers are unchanged.
+- **Pinned: a library save checks only the folder it writes to** (#780; both
+  languages), not every folder of the paper's linked group, for `save` and
+  `record_use` alike.
+- **The library refuses to file anything beside another paper's JATS** (#766;
+  both languages). `Library.save` and `Library.record_use` raise the new
+  `ForeignJats` (`folder`, `name`, `field`, `theirs`, `ours`) when the folder
+  they would write to holds a JATS whose own identifiers contradict the
+  paper's, and `save` does so too when the bytes being saved are such a JATS
+  (`folder` is then `None`); nothing is written. Only `FullTextService` made
+  this check before, so an app saving a file it opened by hand filled a folder
+  that failed every later lookup. Every JATS a record in the folder lists is
+  read and checked: one only an iCloud placeholder raises `NotDownloaded`, a
+  changed one `DigestMismatch`, one that is missing (as after the manual
+  clear) is passed over, and one that does not parse names no paper and is
+  warned of. The same bytes saved as another kind are checked too. **Behaviour change for the
+  service**: a JATS the chain fetches whose own identifiers name another paper
+  is still returned but no longer kept in the library; `library_failure` says
+  why. **Downstream**: StudyAnalyzer can drop its own `foreign_jats` check
+  once it re-pins, and MedicalFactChecker need not write it; show
+  `ForeignJats` with the manual clear of `folder`, or, when `folder` is `None`,
+  as a file of another paper that is not kept. Pinned by twelve new
+  `save_scenarios` in `library_cases.json` and scenario 13 of
+  `fulltext_library_scenarios.json`; tests that need such a folder now plant
+  it by hand (`planted` in the scenarios).
+- **The shared paper library uses only real files and folders** (#761; both
+  languages). Reads followed symbolic links and opened anything, so a record
+  or source file that was a FIFO, or a link to `/dev/zero`, hung a scan or a
+  `read` or exhausted memory, and a paper folder that was a link let `save`,
+  `record_use` and `release` write outside the library and `remove_file`
+  delete there. Every library read now refuses anything but a regular file
+  (`lstat`, then `fstat` on the open file, which must be the file `lstat` saw)
+  with the reason `not a regular file`: a scan reports such a record as
+  `unreadable_record`; `read`, `record_use`, `save` and `release` fail with
+  `Io`; `open` does for the marker. Folders are judged without following
+  links: a linked paper folder is a `stray_entry`, every call addressing it
+  fails with `Io` (`not a folder`), `remove_folder` finds it `Missing`, and
+  `save` takes its name as taken and makes the next numbered folder (a plain
+  file at that name used to fail the save). A linked or dangling `records/` is
+  `unreadable_folder`. A linked `papers/` is refused by `open`, and by every
+  later call too, since it may be swapped in after opening. An entry that
+  cannot be examined (`EACCES`, `EIO`) is reported, never taken for absent.
+  The library's root may still be a link. Pinned by the new `special_entries`
+  section of `library_cases.json` (27 cases, Unix only), which both languages
+  run.
+- **JSON nested past Python's stack is a decode error** (#758, Python only).
+  `strict_json_loads` refused nesting past 127 levels only after the stdlib
+  decoder had built the value, so a body nested deep enough to exhaust the
+  stack (measured at 100,000) raised `RecursionError` from the decoder. Full
+  text recorded `RecursionError` faults where Rust records `JSONDecodeError`,
+  and a library record or marker that deep crashed a scan rather than reading
+  as unreadable. It is now a `JSONDecodeError` recorded as a refusal (`nested
+  too deeply to decode`), so `parse_json` reports it without running the
+  repair stages, as it already did for a complete reply nested 128 deep. The
+  `RecursionError` catches this made dead are removed.
+- **Rust `pdf` builds on Windows** (Rust only). `mupdf::Document::open` takes
+  a `&str` on Windows and a `&Path` elsewhere (mupdf 0.8), so the
+  `mupdf_backend` did not compile on Windows; found by BMLibrarian's Windows
+  CI. A PDF whose path is not valid Unicode is refused there as an engine
+  failure. The CI's Windows job now lints the `pdf` feature.
+
+- **The shared paper library never downloads an evicted file to read it**
+  (#769; both languages). macOS 14 and later, and iOS, evict a file from
+  iCloud Drive (and Dropbox or OneDrive through File Provider) to a *dataless*
+  file under its real name, not an `.icloud` placeholder, and a plain read
+  blocks until it is downloaded, perhaps forever offline. Every library read
+  now turns the calling thread's materialisation off
+  (`setiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD,
+  OFF)`, the previous policy restored after) and maps the `EDEADLK` it fails
+  with to what a placeholder gives: `NotDownloaded` from `read`, `save` and
+  `release`, `record_not_downloaded` (`RecordNotDownloaded`) in a scan. A
+  dataless file met elsewhere (the marker) is `NotDownloaded` naming its full
+  folder (`save`'s comparison did too, until #755). On a device (macOS 27.2, iCloud
+  Drive, evicted by `brctl evict`) the read fails at once and the file stays
+  evicted; the opt-in tests `tests/test_library_dataless.py` and
+  `rust/bmlib/tests/library_dataless.rs` repeat that with `BMLIB_ICLOUD_DIR`
+  set. If the policy cannot be set, a warning is logged and the read goes
+  ahead as before.
+
+- **`FullTextService` reads its three remaining JSON bodies as the Rust port
+  does** (#753). The Europe PMC search, NCBI's ID Converter and Unpaywall were
+  decoded by httpx's `json()`, which accepts a UTF-8 BOM, `NaN`/`Infinity`, a
+  number past the largest float, a lone surrogate escape and nesting past 127
+  levels; `serde_json` refuses each, so one body was an answer in Python and
+  a fault in Rust. They now go through `strict_json_loads`, as PMC Open Data's
+  record has since #752. A refused body is a `JSONDecodeError` fault in
+  `tier_faults` in both languages, and the tier falls through; a body that is
+  not UTF-8 is a `UnicodeDecodeError` fault in both, where Rust had named it
+  `TransportError`. A parity fix: no such body has been seen from these
+  services. Nesting past Python's recursion limit still differs (#758).
+- **The PDF beside JATS reports the failure a later try may cure, and a 408
+  may pass** (#746), in Python and the Rust port alike. With no PDF saved,
+  the result carried the first failure, so a 403 from one source then a 503
+  from another read `pdf_failure_may_pass` false while the cache marked the
+  JATS for a second look. It now carries the first failure that may pass,
+  else `"search-failed"` when the search failed, else the first failure, so
+  the mark is kept exactly when the result's failure may pass, bar the seek
+  limit. A `"search-failed"` that outranks a final download keeps that
+  download's `pdf_url`, and its cause is in the INFO line. `"http-408"`
+  (Request Timeout) now counts as one that may pass, as it does in bmlib's
+  own LLM retries, so a 408 is now retried within the run and marks the JATS
+  for a second look; the fixture row is flipped.
+- **The PDF sought beside JATS is retried, sought again on a later hit, and a
+  failed search for it is said** (#744), in Python and the Rust port alike,
+  with `fetch_pdf_with_jats` on. A download that failed for a cause that may
+  pass (a download's are `request-failed`, `http-429` and any `http-5xx`) was
+  tried once and the
+  JATS cached, and a cache hit served it as it was, so a brief outage lost the
+  PDF for that paper for good; it is now tried up to
+  `PDF_BESIDE_JATS_ATTEMPTS` (3) times, waiting `PDF_RETRY_DELAY` (1 s), then
+  twice that. When no PDF is saved and any failure may pass, the cache marks
+  the JATS (`jats/<key>.pdf-retry`, holding the PMC ID it came from and a
+  count), and a hit carrying the mark seeks the PDF again, one try per
+  candidate, at most `PDF_SEEK_AGAIN_LIMIT` (3) hits, so a cause that never
+  passes (a bot wall's 503) costs a bounded number of lookups. A hit counts
+  itself in the mark before it seeks, and seeks only if that write succeeds,
+  so a mark that cannot be updated still bounds them; a saved PDF or
+  failures that are all final unmark it, as does a search that answered with
+  nothing to download, and a hit without the mark makes no request. A fault in Europe PMC's search or in Unpaywall's lookup was only on
+  `tier_faults`, so no PDF read as none existing; when it left no download to
+  try, `pdf_download_failure` is now `"search-failed"` (`PDF_SEARCH_FAILED`),
+  and a JATS found through the ID Converter after the search failed asks the
+  search again for its PDF. A search fails only when it raised: one that
+  answered with an unusable field is neither sent again nor called failed. A
+  mark that cannot be written or removed is warned about once under its own
+  key (`pdf-mark-write:<cause>`, or one beginning `pdf-mark-delete`), not as an
+  unwritable cache.
+  `FullTextResult.pdf_failure_may_pass` says which causes a later try may
+  cure, shared with Rust by `tests/fixtures/pdf_failure_may_pass.json`;
+  `fulltext_source.json` gains five cases. A retried download reports its last
+  try's cause. Not covered: a JATS cached while the option was off carries no
+  mark and is still served as it is (a `shortcut:`), and a failed Tier 0 PDF
+  is not retried in the run, only on a later marked hit.
+- **A caller's `pdf` source no longer ends the full-text chain, and a JATS result carries it** (#739), in Python and the Rust port alike. Tier 0 returned a `pdf` entry at once, downloaded or not, so the Europe PMC and PMC tiers never ran: JATS, the better text to process, was never sought once a PDF was found, and a failed download hid it outright. Seen in StudyAnalyzer with DOI 10.3390/ijms262110631: mdpi.com answered the PDF link OpenAlex gives with HTTP 403, and the user was told to download it by hand while Europe PMC serves the article's full JATS (PMC12609458). The PDF is now saved and the JATS tiers still run. JATS they find is returned with the PDF's `pdf_url`, `file_path` and any `pdf_download_failure`, so an app can process the JATS and show the PDF. A saved PDF with no JATS is returned before Tiers 1d and 2, which would only fetch another, and a failed one only once Tiers 1a to 2 have found nothing, ahead of Tier 3's link: a Tier 1d or Unpaywall PDF that also failed gives way to it rather than replacing the caller's URL and cause, and the *No full text found* WARNING names the cause (#67). A cached JATS hit now carries a PDF cached beside it as `file_path`; one that cannot be opened is reported, moved aside so the warning is not repeated on every lookup, and the hit served without it.
 
 ## [0.13.0] — 2026-11-10
 

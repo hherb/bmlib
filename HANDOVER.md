@@ -1,132 +1,83 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-17 (**PR #799's review follow-up, on
-`fix/library-undecodable-name-followup`**). Merged since the last update: PR
-#799 (#796), below.
-**0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge of #736) and
-**the Rust crate 0.4.0 on crates.io** from the same commit; everything since
-is under Unreleased. **Next: release 0.14.0 / crate 0.5.0** (the maintainer's
-call, 2026-11-17; BMLibrarian Lite's desktop needs `bmlib.library` from
-PyPI). bmlibrarian_lite's Python suite passed against `main` at `525ea8c1`
-(9,201 tests), so the release does not break it._
+_Last updated: 2026-11-17 (**release 0.14.0 / Rust crate 0.5.0, the PR on
+`release/0.14.0`**). **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`) and
+**the crate 0.4.0 on crates.io** from the same commit. This PR makes
+`[Unreleased]` 0.14.0 / 0.5.0 (the maintainer's call, 2026-11-17: BMLibrarian
+Lite's desktop needs `bmlib.library` from PyPI). bmlibrarian_lite's Python
+suite passed against `main` at `525ea8c1` (9,201 tests), so the release does
+not break it._
 
-## This session: PR #799's review follow-up (tests and docs only)
+## This session: release 0.14.0 / Rust crate 0.5.0 (PR open)
 
-- PR #799 merged before its `/finalcheck` review finished, so the findings
-  land here. No code changed: the review found the two languages agree on
-  the name, the problem order and `files_on_disk`, and nothing now skips a
-  file it used to see (`remove_folder` never reads the listing).
-- **The data-loss path is pinned**: both Linux tests now `read` and
-  `remove_file` the real `x\ufffd.pdf` and check the undecodable look-alikes
-  are left on disk with their bytes. They run only in CI (ubuntu).
-- **Docs**: two Unreleased CHANGELOG entries (#788's review, both languages)
-  still called such a name an `unrecorded_file`; the FFI's `files_on_disk`
-  and `remove_folder` now say such files are unlisted yet deleted with the
-  folder; "the entry's name", since it can be a folder; DECISIONS and the
-  CHANGELOG agree that Linux, and Windows for a name holding an unpaired
-  surrogate, are where such names occur; ROADMAP gains #796's row.
+- **Housekeeping only; no library code changes.** Both CHANGELOGs are promoted,
+  dated 2026-11-17 (re-date them if the merge slips). A script merged the
+  repeated sub-headings and checked every line survives: Python *Added* ×2 and
+  *Fixed* ×2, Rust *Added* ×2. Each section has a summary and the data
+  answer. Python's *Changed — breaking* gathers the eight breaks recorded
+  under other headings. The Rust section lists the changes the root
+  CHANGELOG alone records, `ChatJsonError::WrongShape`'s new `short_reply`
+  among them (a break the crate's notes missed).
+- **Versions**: 0.14.0 in Python's five places; the workspace at 0.5.0
+  (`Cargo.toml`, `Cargo.lock`, the FFI README, `bmlib_version()`'s doc, the
+  crate manual). `BMLIB_VERSION` is `"0.14.0"`, and the oracle was regenerated.
+  Only the analyzer's `User-Agent` moved; the oracle is 45 of 45 clean.
+- **Docs**: 76 `unreleased` markers promoted (`docs/manual/` and ROADMAP to
+  0.14.0, the crate manual to 0.5.0), plus the crate manual's one
+  `#fetch_europepmc-unreleased` anchor. README's *Upgrading to 0.14* and
+  ROADMAP's release row are written.
+- **#792 reopened**: commit `2678b89a`'s "Filed, not fixed: #792" closed it,
+  since GitHub reads "fixed:" before an issue number as a closing keyword.
+- **After the merge**: tag `main`'s tip `v0.14.0` (recipe below), then create
+  the GitHub release. `release.yml` then waits at the `pypi` gate, **which is
+  the maintainer's to approve**. Then publish crate 0.5.0 from a clean
+  worktree of the merge commit (`HANDOVER_RUST.md`, *Publishing to
+  crates.io*: remake the token link first, remove it after).
 
-## Merged: a name that is not UTF-8 is a problem, not a file (#796, PR #799)
+## What 0.14.0 costs StudyAnalyzer (and any downstream)
 
-- A scan listed a paper folder's non-UTF-8 entry names lossily in
-  `files_on_disk` (and as `unrecorded_file`), so a caller handing one back
-  to `read` or `remove_file` had it joined: `Missing`, or a real sibling
-  holding the lossy spelling, which `remove_file` deleted. Now each is a
-  `Problem::UndecodableName { folder, name }` (`undecodable_name`), and
-  `files_on_disk` holds only UTF-8 names, so every listed name is safe to
-  join and `read` / `remove_file` need no refusal of their own.
-- **Breaks Rust and FFI callers** (`LibraryProblem::UndecodableName`: an
-  exhaustive `match`, Swift `switch` or Kotlin `when` needs the case).
-  StudyAnalyzer's clear refuses any listed name holding U+FFFD meanwhile
-  (its #141); after a re-pin it can drop that and show the problem instead.
-- Pinned by each language's own Linux test (a real `x\ufffd.pdf` beside
-  `x\xe9.pdf`: one listed file, one `undecodable_name`; Rust's also holds a
-  second lookalike and a non-UTF-8 record) and Python's faked-listing test;
-  macOS cannot hold such names, so the Linux ones run only in CI.
+Read the CHANGELOG's `[0.14.0]` summary and *Changed — breaking*, and the
+crate's `[0.5.0]`. **Nothing stored goes stale.** The points an app must act
+on:
 
-## Merged: a save does not fork a paper beside a folder it cannot read (#778 item 1, #755 item 2, PR #798)
+- **Rust struct literals and exhaustive matches**: `SourceDescriptor` names
+  `opt_in`; `JatsReport` names `debug` (#782), as does bmlib-ffi's
+  `JatsParseReport`; `HttpPageSource` and `BiorxivFetcher` name `endpoint`;
+  `HtmlError::TooLarge { tags }` replaces `{ length }` (two StudyAnalyzer
+  tests); `TooManyElements` gains `tags`; `ChatJsonError::WrongShape` gains
+  `short_reply`.
+- **The library** is new since 0.13.0. A `match` / `switch` / `when` on
+  `Problem` / `LibraryProblem` needs `BadFolderName` and `UndecodableName`, and
+  one on `LibraryError` needs `ForeignJats`. Once StudyAnalyzer re-pins, it can
+  drop its `foreign_jats` check, its `stored_name` shortcut and its U+FFFD
+  refusal (its #141). MedicalFactChecker re-pins the xcframework (step 3).
+- **Python**: `ALL_SOURCES` lists the opt-in `europepmc`, which fails without
+  a `query`; `sync(sources=None)` fetches `*-details`; a caller's `pdf` source
+  no longer ends the full-text chain; Tier 1c adds one scripted request.
+- **BMLibrarian** bumps its pin for `/details`; MECA bulk is its expected
+  next request (#776).
 
-- **The maintainer's pick (2026-11-17)**: when the save would make a new
-  folder and a folder with a record the scan cannot use (`unreadable_folder`,
-  `unreadable_record`, `record_not_downloaded`, `misnamed_record`,
-  `newer_record`) has a name ending in one of the paper's identifiers
-  (`names.may_name`: `(PMID 123)`, before any ` (2)`, NFC and lowercased),
-  `save` raises `Io` naming it (`NewerRecord` for a newer record) and writes
-  nothing. Only `_claim_folder`'s create step asks, so a folder the save joins
-  (the paper's own name, numbered or not) is never refused. Both languages
-  (`_refuse_hidden_folder`, `refuse_hidden_folder`), reasoning in
-  `docs/DECISIONS.md` (*library*).
-- **Widened by `/finalcheck`'s review**: the first cut covered two problem
-  kinds and exempted only the plain own name. A corrupt, misnamed or newer
-  record forked the paper the same way, and a paper whose own folder was
-  `… (2)` (a file at the plain name, #761) was refused a save that joined it on
-  `main`. Python's ` (n)` read `\d` (any Unicode digit) and stopped at a
-  newline; it now reads `[0-9]` with `re.DOTALL`, as Rust does.
-- **Why the name**: measured first, a save under the same name already joined
-  the folder (or failed writing there); it forked only under a revised title
-  or another identifier. **Known miss**: a DOI-only save beside a PMID-named
-  folder still forks, as do renamed and cut-short names.
-- **Pinned**: five `save_scenarios` cases in Python, Rust and the FFI runner:
-  an evicted record (refused, the own name joins, the refusal lifts once a
-  readable record names the paper, another paper saves), a corrupt, a
-  misnamed and a newer record, and the paper's own numbered folder. The
-  runners gained `io` (`path` relative to the root, reason not compared) and
-  `newer_record` step errors. The four review cases fail on the first cut in
-  Python and Rust. Unreadable
-  `records/` (chmod) and `may_name`'s table are tested in each language.
-- **Still open**: #778 items 2-4, #755 items 1 and 4 (after 0.14, the
-  maintainer's call), item 2's own example (a DOI-only save beside a
-  PMID-named folder, the known miss) and 6's noise.
+## Open since the merges of 2026-11-14 to 11-17 (#778, #789, #790, #795, #796)
 
-## Merged: a count the delivery contradicts fails the day (#795, PR #797)
+Each is a CHANGELOG entry and a PR body; the library's reasoning is in
+`docs/DECISIONS.md` (*library*). What is still open:
 
-`reconcile_delivery` now fails records against a count of 0 and any negative
-count; the quiet day still completes. Reaches OpenAlex's `meta.count` 0 beside
-works. Detail in the CHANGELOG and DECISIONS.
-
-## Merged: a paper folder bmlib cannot name is reported (#789, PR #791)
-
-A scan reports a folder whose name `component()` refuses as
-`bad_folder_name` and **keeps it in `folders`**, so `find` sees the paper and
-a save raises `BadName` rather than forking it; the user renames it. **Breaks
-Rust and FFI callers** (`Problem::BadFolderName`,
-`LibraryProblem::BadFolderName`: an exhaustive `match`, Swift `switch` or
-Kotlin `when` needs the case). `save_scenarios` gained `scan` and `bad_name`
-steps in all three runners. Reasoning in `docs/DECISIONS.md` (*library*).
-
-## Merged: an opt-in Europe PMC sync source (PR #790)
-
-- `europepmc` walks a caller's search one **first-index day** at a time,
-  `(<query>) AND FIRST_IDATE:[<day> TO <day>]`, `query` required, `email`
-  optional; records go through `normalize_europepmc`. **Opt-in**
-  (`SourceDescriptor.opt_in`): `sync(sources=None)` leaves it out.
-  `ALL_SOURCES` still lists all seven built-ins. **The Rust field breaks a
-  `SourceDescriptor` struct literal.**
-- Any walk short of the first page's `hitCount` fails the day (no floor); a
-  hit not first indexed on the day fails it; an empty day completes only once
-  the query without the date clause is seen to match something.
-  **`EUROPEPMC_SETTLE_DAYS` = 3 is fixed before measurement**; do not cite it,
-  or `hitCount`'s exactness, as measured.
-- **Filed from its review, open**: **#792** (a record that starts matching
-  after its index day settled is never fetched; and measure the settle
-  period), **#793** (the day ledger ignores the query), **#794** (a record
-  with neither DOI nor PMID is stored again on every re-fetch). #795 was fixed
-  by PR #797.
-
-## Earlier library and FFI merges (PRs #771-#788)
-
-Each is a CHANGELOG entry and a PR body (#788: the names agree across
-languages, #755 items 3, 5, 6). What a caller must still act on:
-**a Rust struct literal or exhaustive destructuring of `JatsReport` must name
-`debug`** (#782); **a `match` on `LibraryError` needs `ForeignJats`** (#766:
-`save` and `record_use` refuse a JATS whose own identifiers name another
-paper); bmlib-ffi exposes `newest_source`, `lists_use`, `library_ids` and
-`paper_ids_contradiction` (#784). MECA over requester-pays S3 (#775) reads no
-`.meca` package yet (the IAM user gets `AccessDenied` on both buckets):
-**#776**. #761's deferrals are **#778**. StudyAnalyzer can drop its
-`stored_name` shortcut once it re-pins; a dataless *folder* is unmeasured.
-#787's `NotDownloaded` half is pinned in Rust only by the opt-in iCloud test,
-which was not run.
+- **Europe PMC** (PR #790): **#792** (a record that starts matching after its
+  index day settled is never fetched; and measure the settle period:
+  `EUROPEPMC_SETTLE_DAYS` = 3 is fixed before measurement, as is
+  `hitCount`'s exactness, so cite neither as measured), **#793** (the day
+  ledger ignores the query) and **#794** (a record with neither DOI nor PMID is
+  stored again on every re-fetch).
+- **The library's save-fork guard** (#778 item 1, PR #798) has a **known miss**:
+  a DOI-only save beside a PMID-named folder still forks, as do renamed and
+  cut-short names. #778 items 2-4 and #755 items 1 and 4 come after 0.14
+  (the maintainer's call), with #755 item 2's own example and item 6's noise.
+- **Linux-only pins**: #796's data-loss tests (a real `x\ufffd.pdf`) run only
+  in CI (ubuntu); macOS cannot hold such names. #787's `NotDownloaded` half is
+  pinned in Rust only by the opt-in iCloud test, which was not run. A dataless
+  *folder* is unmeasured.
+- MECA over requester-pays S3 (#775) reads no `.meca` package yet (the IAM user
+  gets `AccessDenied` on both buckets): **#776**.
 
 ## The shared paper library (1a #754, 1b #763, 1c #764, all merged)
 
@@ -296,7 +247,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ## Current state
 
-- **Version 0.13.0, released 2026-11-10** (on PyPI; 0.12.0 released 2026-10-31). The version lives
+- **Version 0.14.0 on `release/0.14.0`, not yet released**; 0.13.0 is on PyPI (released
+  2026-11-10; 0.12.0 on 2026-10-31). The version lives
   in **five** places — `pyproject.toml`, `bmlib/__init__.py`, the README
   version line, `CLAUDE.md`'s header, `docs/manual/index.md`'s header line —
   and all five agree; only `bmlib/__init__.py` is guarded by anything but this
@@ -305,15 +257,18 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   here. 0.6.0, 0.7.0 and 0.8.0 each moved stored values, none behind a flag;
   **0.9.0 moves nothing stored**; **0.9.1 moves stored full text** (#79);
   **0.10.0 moves nothing stored but re-fetches the whole sync window once**
-  (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache. The two questions are independent, and a downstream reading only the
+  (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache; **0.14.0 makes nothing stored stale** and labels bioRxiv and
+  medRxiv full-text sources with their version on a re-fetch. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests on `fix/library-undecodable-name-followup`** (2026-11-17, PostgreSQL
-  18 DSN on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,162 passed +
-  23 skipped (11,185 collected); ruff 0.15.20 and mypy clean. Rust
-  `cargo test -p bmlib -p bmlib-ffi` 1,887 passed on macOS, and
-  `-p bmlib --no-default-features` 1,464; `cargo clippy -p bmlib
-  --all-targets` and `-p bmlib-ffi` with `http-sketch,bindgen`, and
-  `cargo fmt --check` clean; the Rust oracle 45 clean. Other recipes: `postgres_live.rs` with
+- **Tests on `release/0.14.0`** (2026-11-17, PostgreSQL 18 DSN on port 5532,
+  `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,162 passed + 23 skipped (11,185
+  collected); ruff 0.15.20 and mypy clean. Rust `cargo test -p bmlib -p
+  bmlib-ffi` 1,887 passed on macOS and `cargo fmt --check` clean; the Rust
+  oracle 45 clean. The release gates were rehearsed: `uv build`, `twine check
+  --strict`, `py.typed` in the wheel, and 126 of 126 modules imported, one fresh
+  interpreter each, in a core-only venv. On `main` before this PR, `-p bmlib
+  --no-default-features` passed 1,464 and clippy was clean; this branch
+  changes no Rust code but a version literal. Other recipes: `postgres_live.rs` with
   `BMLIB_PG_TESTS=1 BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`; `--features embed` and the
   embedder's live tests need `BMLIB_EMBED_MODEL` (the GGUFs are in
   `~/.cache/bmlib/models/`; the Python live tests need `.[all,dev,embed]`).
@@ -327,7 +282,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   dbname=bmlib_test user=postgres"` and `BMLIB_REQUIRE_POSTGRESQL=1`.
 - **Documentation is kept current; treat drift as a regression.** The
   `unreleased` markers in `docs/manual/` and `ROADMAP.md` are promoted at
-  release; 0.11.0 promoted all 354 and 0.12.0 all 189 (rewriting the `#…-unreleased` anchor links to `#…-0120` with them), and new ones are written bare again
+  release; 0.11.0 promoted all 354, 0.12.0 all 189, 0.13.0 206 and 0.14.0 76 (rewriting the `#…-unreleased` anchor links to `#…-0120` with them), and new ones are written bare again
   (`*(unreleased)*`). Grep case-insensitively for the bare word, since the markers take
   several spellings, and reword a *prose* use ("is itself unreleased") rather
   than promote it. Write the marker bare, never with a guessed version, and leave the ones in
@@ -341,14 +296,14 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**124 open once this PR is merged and #795 shut** (2026-11-16; #755 stays
-open, for its decisions): Europe PMC's **#792**-**#794** (PR #790's review,
+**123 open, #792 among them** (reopened 2026-11-17; #755 stays open, for its
+decisions): Europe PMC's **#792**-**#794** (PR #790's review,
 above), the library's #755, #762 and **#778** (PR #777's review follow-ups,
 above), **#776** (PR #775's
 MECA follow-ups) and **#759** (measure the `/details` settle period) are the
 newest; #734, #733, #731, #730, #726, #725, #722, #718, #716 and #694 come
 before them; #577 stays open for its point 3, which PR #696 left open
-(`gh issue list --state open --limit 300 --json number`, 2026-11-16). #651
+(`gh issue list --state open --limit 400 --json number`, 2026-11-17). #651
 is #632's residual; #556–#734 are not yet sorted into the lists below. **PR
 #615's review filed** **#617** (both halves done, PRs #620 and #692) and #618
 (a part not reported may now have a blank description; fixed with #577 in PR
