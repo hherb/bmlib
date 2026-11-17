@@ -356,7 +356,8 @@ fn uncounted_record(p: &lib::Problem) -> Option<&str> {
         | P::ConflictingIds { .. }
         | P::UnrecordedFile { .. }
         | P::StrayEntry { .. }
-        | P::BadFolderName { .. } => None,
+        | P::BadFolderName { .. }
+        | P::UndecodableName { .. } => None,
     }
 }
 
@@ -454,6 +455,15 @@ pub enum LibraryProblem {
         /// The paper's folder.
         folder: String,
     },
+    /// A file or folder in a paper folder whose name is not UTF-8, shown
+    /// lossily. It is not among the folder's files: only show it, never pass
+    /// it back as a file name; ask the user to rename it (#796).
+    UndecodableName {
+        /// The paper's folder.
+        folder: String,
+        /// The file's name, lossily.
+        name: String,
+    },
 }
 
 impl From<&lib::Problem> for LibraryProblem {
@@ -489,6 +499,7 @@ impl From<&lib::Problem> for LibraryProblem {
             P::UnrecordedFile { folder, name } => Self::UnrecordedFile { folder, name },
             P::StrayEntry { name } => Self::StrayEntry { name },
             P::BadFolderName { folder } => Self::BadFolderName { folder },
+            P::UndecodableName { folder, name } => Self::UndecodableName { folder, name },
         }
     }
 }

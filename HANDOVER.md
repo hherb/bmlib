@@ -1,15 +1,33 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-17 (**#778 item 1 and #755 item 2, on
-`fix/library-unreadable-folder-778`**). Merged since the last update: PR #797
-(#795), below. **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge
-of #736) and **the Rust crate 0.4.0 on crates.io** from the same commit;
-everything since is under Unreleased. **Next: release 0.14.0 / crate 0.5.0**
-(the maintainer's call, 2026-11-17; BMLibrarian Lite's desktop needs
-`bmlib.library` from PyPI). bmlibrarian_lite's Python suite passed against
-`main` at `525ea8c1` (9,201 tests), so the release does not break it._
+_Last updated: 2026-11-17 (**#796, on `fix/library-undecodable-name-796`**).
+Merged since the last update: PR #798 (#778 item 1, #755 item 2), below.
+**0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge of #736) and
+**the Rust crate 0.4.0 on crates.io** from the same commit; everything since
+is under Unreleased. **Next: release 0.14.0 / crate 0.5.0** (the maintainer's
+call, 2026-11-17; BMLibrarian Lite's desktop needs `bmlib.library` from
+PyPI). bmlibrarian_lite's Python suite passed against `main` at `525ea8c1`
+(9,201 tests), so the release does not break it._
 
-## This session: a save does not fork a paper beside a folder it cannot read
+## This session: a name that is not UTF-8 is a problem, not a file (#796)
+
+- A scan listed a paper folder's non-UTF-8 entry names lossily in
+  `files_on_disk` (and as `unrecorded_file`), so a caller handing one back
+  to `read` or `remove_file` had it joined: `Missing`, or a real sibling
+  holding the lossy spelling, which `remove_file` deleted. Now each is a
+  `Problem::UndecodableName { folder, name }` (`undecodable_name`), and
+  `files_on_disk` holds only UTF-8 names, so every listed name is safe to
+  join and `read` / `remove_file` need no refusal of their own.
+- **Breaks Rust and FFI callers** (`LibraryProblem::UndecodableName`: an
+  exhaustive `match`, Swift `switch` or Kotlin `when` needs the case).
+  StudyAnalyzer's clear refuses any listed name holding U+FFFD meanwhile
+  (its #141); after a re-pin it can drop that and show the problem instead.
+- Pinned by each language's own Linux test (a real `x\ufffd.pdf` beside
+  `x\xe9.pdf`: one listed file, one `undecodable_name`; Rust's also holds a
+  second lookalike and a non-UTF-8 record) and Python's faked-listing test;
+  macOS cannot hold such names, so the Linux ones run only in CI.
+
+## Merged: a save does not fork a paper beside a folder it cannot read (#778 item 1, #755 item 2, PR #798)
 
 - **The maintainer's pick (2026-11-17)**: when the save would make a new
   folder and a folder with a record the scan cannot use (`unreadable_folder`,

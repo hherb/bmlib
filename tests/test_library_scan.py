@@ -191,8 +191,9 @@ def test_a_non_utf8_folder_on_disk_is_reported_not_scanned(tmp_path: Path) -> No
 def test_non_utf8_names_inside_a_folder_are_each_reported(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Two names that are not UTF-8 read alike lossily; both are reported, neither is probed, and
-    # a record whose name is not UTF-8 is unreadable rather than looked up by its lossy name.
+    # Two names that are not UTF-8 read alike lossily; both are reported, neither is probed nor
+    # listed as a file (#796), and a record whose name is not UTF-8 is unreadable rather than
+    # looked up by its lossy name.
     from bmlib.library import files
 
     (tmp_path / "lib").mkdir()
@@ -213,9 +214,28 @@ def test_non_utf8_names_inside_a_folder_are_each_reported(
         ),
     )
     scan = lib.scan()
-    assert scan.folders[0].files_on_disk == ("x\ufffd", "x\ufffd")
-    assert [(p.kind, p.name or p.file) for p in scan.problems] == [
-        ("unreadable_record", "r\ufffd.json"),
-        ("unrecorded_file", "x\ufffd"),
-        ("unrecorded_file", "x\ufffd"),
+    assert scan.folders[0].files_on_disk == ()
+    assert [(p.kind, p.folder, p.name or p.file) for p in scan.problems] == [
+        ("unreadable_record", "p", "r\ufffd.json"),
+        ("undecodable_name", "p", "x\ufffd"),
+        ("undecodable_name", "p", "x\ufffd"),
+    ]
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="only Linux allows such names")
+def test_a_non_utf8_file_is_not_listed_beside_one_with_its_lossy_name(tmp_path: Path) -> None:
+    # #796: the lossy name of b"x\xe9.pdf" is a real sibling's "x\ufffd.pdf". Listed as a file,
+    # it would be handed back to remove_file, which would delete the sibling instead.
+    (tmp_path / "lib").mkdir()
+    lib = open_library(tmp_path / "lib")
+    folder = os.fsencode(lib.root / "papers" / "p")
+    os.makedirs(folder)
+    for name in (b"x\xe9.pdf", "x\ufffd.pdf".encode()):
+        with open(folder + b"/" + name, "wb") as f:
+            f.write(name)
+    scan = lib.scan()
+    assert scan.folders[0].files_on_disk == ("x\ufffd.pdf",)
+    assert [(p.kind, p.name) for p in scan.problems] == [
+        ("undecodable_name", "x\ufffd.pdf"),
+        ("unrecorded_file", "x\ufffd.pdf"),
     ]

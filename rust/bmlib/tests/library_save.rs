@@ -915,6 +915,52 @@ fn a_non_utf8_folder_is_reported_beside_one_with_its_lossy_name() {
     fs::remove_dir_all(dir).unwrap();
 }
 
+/// #796: a file whose name is not UTF-8 is an `UndecodableName` problem, not
+/// one of the folder's files, so its lossy name, which a real sibling holds
+/// here, is never handed back to be joined. Two such names that read alike
+/// are each reported, and a record whose name is not UTF-8 is unreadable, as
+/// in Python's faked-listing test. Linux only, as above.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_non_utf8_file_is_not_listed_beside_one_with_its_lossy_name() {
+    use bmlib::library::Problem;
+    use std::os::unix::ffi::OsStrExt;
+    let (dir, lib) = scratch("lossy-file");
+    let folder = dir.join("papers").join("p");
+    fs::create_dir_all(folder.join("records")).unwrap();
+    for name in [&b"x\xe9.pdf"[..], b"x\xea.pdf", "x\u{fffd}.pdf".as_bytes()] {
+        fs::write(folder.join(std::ffi::OsStr::from_bytes(name)), name).unwrap();
+    }
+    let record = folder
+        .join("records")
+        .join(std::ffi::OsStr::from_bytes(b"r\xe9.json"));
+    fs::write(record, b"{}").unwrap();
+    let scan = lib.scan().unwrap();
+    assert_eq!(scan.folders[0].files_on_disk, ["x\u{fffd}.pdf"]);
+    let (folder, name) = ("p".to_owned(), "x\u{fffd}.pdf".to_owned());
+    let lossy = || Problem::UndecodableName {
+        folder: folder.clone(),
+        name: name.clone(),
+    };
+    assert_eq!(
+        scan.problems,
+        [
+            Problem::UnreadableRecord {
+                folder: folder.clone(),
+                file: "r\u{fffd}.json".to_owned(),
+                reason: "the name is not UTF-8".to_owned(),
+            },
+            lossy(),
+            lossy(),
+            Problem::UnrecordedFile {
+                folder: folder.clone(),
+                name: name.clone(),
+            },
+        ]
+    );
+    fs::remove_dir_all(dir).unwrap();
+}
+
 /// A corrupt record is kept aside beside itself under a library root whose
 /// path is not UTF-8: the path is built from the OS string, not a lossy
 /// display. Linux only, as above.

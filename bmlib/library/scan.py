@@ -51,7 +51,8 @@ class PaperFolder:
     """One paper's folder as found on disk.
 
     ``records`` are the valid, correctly named records (by file name, bytes); ``files_on_disk``
-    the source files present (placeholders and ``records/`` left out).
+    the source files present (placeholders, ``records/`` and names that are not UTF-8, each an
+    ``undecodable_name`` problem, left out).
     """
 
     folder: str
@@ -107,7 +108,12 @@ class Problem:
       component, such as ``con`` or ``Con .x (PMID 1)`` (made under the device rule before
       #788), both of which a Windows file system reads as a device. It is still scanned and in
       ``folders``, so :func:`find` sees the paper, but every call naming it raises
-      :class:`BadName` until the user renames it (#789).
+      :class:`BadName` until the user renames it (#789);
+    - ``undecodable_name`` (``folder``, ``name``): a file or folder in a paper folder whose name
+      is not UTF-8, shown lossily (with U+FFFD). It is not in ``files_on_disk``: the lossy name
+      may be a real sibling's spelling, which :meth:`Library.read` or
+      :meth:`Library.remove_file` would reach instead, so it is only ever shown (#796). Ask the
+      user to rename it.
 
     Fields a kind does not use are ``None``.
     """
@@ -218,8 +224,10 @@ def _scan_folder(directory: Path, folder: str, problems: list[Problem]) -> Paper
     try:
         here = listing(directory)
         problems.extend(Problem("leftover_temp", folder=folder, name=t) for t in here.temps)
+        problems.extend(
+            Problem("undecodable_name", folder=folder, name=n) for n in here.undecodable
+        )
         on_disk = [n for n in here.names if n != RECORDS_DIR and not _listed_dir(directory / n)]
-        on_disk += here.undecodable
     except OSError as e:
         on_disk = []
         problems.append(Problem("unreadable_folder", folder=folder, reason=str(e)))
