@@ -6600,9 +6600,9 @@ undo.
   `undecodable_name` beside them, kept out of `files_on_disk` so a caller
   cannot hand it back to `read` or `remove_file` (#796; it was an
   `unrecorded_file` listed among the files), and `save`'s name-clash check
-  skips it (its bytes cannot equal a UTF-8 name's). Pinned by each language's own tests,
-  since only Linux file systems hold such names and the fixture runs
-  everywhere.
+  skips it (its bytes cannot equal a UTF-8 name's). Pinned by each language's
+  own tests, since only Linux file systems hold such names and the fixture
+  runs everywhere.
 - **An iCloud placeholder (`.name.icloud`) is a user's file when opening.** A
   folder holding only placeholders is not empty, so a library is never started
   inside someone's papers; it costs a refusal where the user must pick another

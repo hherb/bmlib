@@ -109,10 +109,11 @@ class Problem:
       #788), both of which a Windows file system reads as a device. It is still scanned and in
       ``folders``, so :func:`find` sees the paper, but every call naming it raises
       :class:`BadName` until the user renames it (#789);
-    - ``undecodable_name`` (``folder``, ``name``): a file in a paper folder whose name is not
-      UTF-8, shown lossily (with U+FFFD). It is not in ``files_on_disk``: the lossy name may be
-      a real sibling's spelling, which :meth:`Library.read` or :meth:`Library.remove_file`
-      would reach instead, so it is only ever shown (#796). Ask the user to rename it.
+    - ``undecodable_name`` (``folder``, ``name``): a file or folder in a paper folder whose name
+      is not UTF-8, shown lossily (with U+FFFD). It is not in ``files_on_disk``: the lossy name
+      may be a real sibling's spelling, which :meth:`Library.read` or
+      :meth:`Library.remove_file` would reach instead, so it is only ever shown (#796). Ask the
+      user to rename it.
 
     Fields a kind does not use are ``None``.
     """

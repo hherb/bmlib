@@ -174,9 +174,9 @@ pub enum Problem {
         /// The paper's folder.
         folder: String,
     },
-    /// A file in a paper folder whose name is not UTF-8, shown lossily (with
-    /// U+FFFD). It is not in [`PaperFolder::files_on_disk`]: the lossy name may
-    /// be a real sibling's spelling, which [`Library::read`] or
+    /// A file or folder in a paper folder whose name is not UTF-8, shown
+    /// lossily (with U+FFFD). It is not in [`PaperFolder::files_on_disk`]: the
+    /// lossy name may be a real sibling's spelling, which [`Library::read`] or
     /// [`Library::remove_file`] would reach instead, so it is only ever shown
     /// (#796). Ask the user to rename it.
     UndecodableName {

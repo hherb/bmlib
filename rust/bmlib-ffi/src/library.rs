@@ -455,9 +455,9 @@ pub enum LibraryProblem {
         /// The paper's folder.
         folder: String,
     },
-    /// A file in a paper folder whose name is not UTF-8, shown lossily. It is
-    /// not among the folder's files: only show it, never pass it back as a
-    /// file name; ask the user to rename it (#796).
+    /// A file or folder in a paper folder whose name is not UTF-8, shown
+    /// lossily. It is not among the folder's files: only show it, never pass
+    /// it back as a file name; ask the user to rename it (#796).
     UndecodableName {
         /// The paper's folder.
         folder: String,
