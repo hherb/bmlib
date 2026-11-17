@@ -23,6 +23,8 @@ use bmlib::library::{
     sha256_hex, FileRef, Installation, Library, LibraryError, PaperIds, PaperInfo, Problem,
     RecordProblem, SourceKind, CORRUPT_SUFFIX, MAX_FOLDER_NAME_BYTES,
 };
+use std::path::Path;
+
 use serde_json::Value;
 
 const FIXTURE: &str = include_str!("../../../tests/fixtures/library_cases.json");
@@ -525,7 +527,9 @@ fn is_saved_at(s: &str) -> bool {
 }
 
 /// `got`'s value, or, when `step` expects an error, the check that it is that one.
-fn refused<T>(name: &str, step: &Value, got: Result<T, LibraryError>) -> Option<T> {
+/// An `io` error names its `path` relative to the library `root`; its reason is
+/// not compared.
+fn refused<T>(name: &str, step: &Value, root: &Path, got: Result<T, LibraryError>) -> Option<T> {
     let want = &step["expect"];
     if !want.is_object() {
         return Some(got.unwrap_or_else(|e| panic!("{name}: {e}")));
@@ -546,6 +550,17 @@ fn refused<T>(name: &str, step: &Value, got: Result<T, LibraryError>) -> Option<
         }
         Err(LibraryError::BadName { name: refused }) => {
             serde_json::json!({"error": "bad_name", "name": refused})
+        }
+        Err(LibraryError::NewerRecord {
+            folder,
+            file,
+            version,
+        }) => {
+            serde_json::json!({"error": "newer_record", "folder": folder, "file": file, "version": version})
+        }
+        Err(LibraryError::Io { path, .. }) => {
+            let rel = path.strip_prefix(root).unwrap_or(&path);
+            serde_json::json!({"error": "io", "path": rel.to_string_lossy().replace('\\', "/")})
         }
         Err(e) => panic!("{name}: {e}"),
         Ok(_) => panic!("{name}: not refused"),
@@ -575,6 +590,7 @@ fn save_scenarios_match_the_fixture() {
                     made = refused(
                         name,
                         step,
+                        lib.root(),
                         lib.save(
                             &installation(step),
                             &paper_info(&step["paper"]),
@@ -605,7 +621,7 @@ fn save_scenarios_match_the_fixture() {
                 "record_use" => {
                     let got =
                         lib.record_use(&installation(step), &paper_info(&step["paper"]), &of(step));
-                    refused(name, step, got);
+                    refused(name, step, lib.root(), got);
                 }
                 "remove_file" => {
                     let got = lib.remove_file(&of(step));

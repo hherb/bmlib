@@ -1,30 +1,53 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-16 (**#795, on `fix/reconcile-nonpositive-count-795`**).
-Merged since the last update: PR #790 (the `europepmc` sync source) and PR
-#791 (#789), below. **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the
-merge of #736) and **the Rust crate 0.4.0 on crates.io** from the same commit;
-everything since is under Unreleased._
+_Last updated: 2026-11-17 (**#778 item 1 and #755 item 2, on
+`fix/library-unreadable-folder-778`**). Merged since the last update: PR #797
+(#795), below. **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`, the merge
+of #736) and **the Rust crate 0.4.0 on crates.io** from the same commit;
+everything since is under Unreleased. **Next: release 0.14.0 / crate 0.5.0**
+(the maintainer's call, 2026-11-17; BMLibrarian Lite's desktop needs
+`bmlib.library` from PyPI). bmlibrarian_lite's Python suite passed against
+`main` at `525ea8c1` (9,201 tests), so the release does not break it._
 
-## This session: a count the delivery contradicts fails the day (#795)
+## This session: a save does not fork a paper beside a folder it cannot read
 
-- `reconcile_delivery` (Python `_reconcile.py`, Rust `reconcile.rs`) returned
-  clean for any `promised <= 0`. Now records against a count of 0 fail the day
-  as records against no count do, and a negative count fails it whatever was
-  delivered. The quiet day (nothing against 0 or `None`) still completes.
-- **Who it reaches**: OpenAlex (`meta.count` 0 beside works; pinned end to end
-  by `test_a_count_of_zero_with_works_fails_the_day` and the oracle case
-  `fetch/zero-count-with-works`). bioRxiv sends `None` for a missing total, so
-  its quiet day is untouched. PubMed never reaches the rule with a count
-  below 1 (a zero day returns earlier; parts promise at least 1; the
-  partitioned path needs a day over the cap). `europepmc` refused both itself.
-- `None` and `0` now reach one verdict and differ only in the message, so
-  DECISIONS' *An absent count is `None`, never `0`* and both manuals say so.
-  The Rust test that recorded the `promised <= 0` guard as "subsumed" pinned
-  the defect; it is replaced by one holding the new rule over the same grid.
-- Oracle: `recon/promise-negative-with-delivery` is new;
-  `recon/promise-zero-with-delivery` and `recon/promise-negative` now fail.
-  The new tests fail against `main`'s rule (checked by swapping the file).
+- **The maintainer's pick (2026-11-17)**: when the save would make a new
+  folder and a folder with a record the scan cannot use (`unreadable_folder`,
+  `unreadable_record`, `record_not_downloaded`, `misnamed_record`,
+  `newer_record`) has a name ending in one of the paper's identifiers
+  (`names.may_name`: `(PMID 123)`, before any ` (2)`, NFC and lowercased),
+  `save` raises `Io` naming it (`NewerRecord` for a newer record) and writes
+  nothing. Only `_claim_folder`'s create step asks, so a folder the save joins
+  (the paper's own name, numbered or not) is never refused. Both languages
+  (`_refuse_hidden_folder`, `refuse_hidden_folder`), reasoning in
+  `docs/DECISIONS.md` (*library*).
+- **Widened by `/finalcheck`'s review**: the first cut covered two problem
+  kinds and exempted only the plain own name. A corrupt, misnamed or newer
+  record forked the paper the same way, and a paper whose own folder was
+  `… (2)` (a file at the plain name, #761) was refused a save that joined it on
+  `main`. Python's ` (n)` read `\d` (any Unicode digit) and stopped at a
+  newline; it now reads `[0-9]` with `re.DOTALL`, as Rust does.
+- **Why the name**: measured first, a save under the same name already joined
+  the folder (or failed writing there); it forked only under a revised title
+  or another identifier. **Known miss**: a DOI-only save beside a PMID-named
+  folder still forks, as do renamed and cut-short names.
+- **Pinned**: five `save_scenarios` cases in Python, Rust and the FFI runner:
+  an evicted record (refused, the own name joins, the refusal lifts once a
+  readable record names the paper, another paper saves), a corrupt, a
+  misnamed and a newer record, and the paper's own numbered folder. The
+  runners gained `io` (`path` relative to the root, reason not compared) and
+  `newer_record` step errors. The four review cases fail on the first cut in
+  Python and Rust. Unreadable
+  `records/` (chmod) and `may_name`'s table are tested in each language.
+- **Still open**: #778 items 2-4, #755 items 1 and 4 (after 0.14, the
+  maintainer's call), item 2's own example (a DOI-only save beside a
+  PMID-named folder, the known miss) and 6's noise.
+
+## Merged: a count the delivery contradicts fails the day (#795, PR #797)
+
+`reconcile_delivery` now fails records against a count of 0 and any negative
+count; the quiet day still completes. Reaches OpenAlex's `meta.count` 0 beside
+works. Detail in the CHANGELOG and DECISIONS.
 
 ## Merged: a paper folder bmlib cannot name is reported (#789, PR #791)
 
@@ -55,22 +78,10 @@ steps in all three runners. Reasoning in `docs/DECISIONS.md` (*library*).
   with neither DOI nor PMID is stored again on every re-fetch). #795 is this
   session's.
 
-## Merged: the library's names agree across languages (#755 items 3, 5, 6, PR #788)
+## Earlier library and FFI merges (PRs #771-#788)
 
-CPython 3.13's device-name rule in both languages (`CON .txt`, `COM¹`,
-`CONIN$`), Python's `str.strip()` in Rust's library and shared normalisers,
-and non-UTF-8 names read lossily and reported, never joined to a path
-(`Listing.undecodable`). Detail in the CHANGELOG and DECISIONS. **#755 stays
-open for its decisions**: item 1 (`record_use` trusting the caller's
-`paper`), item 2 (a folder whose only record is evicted is invisible to
-`find`, so a save forks the paper), item 4 (bidi/control characters in
-`origin`, `title`, `first_author`) and item 6's noise (a `.corrupt` record
-reported on every scan, a `LeftoverTemp` that may be in flight,
-`Library(root)` bypassing `open_library`).
-
-## Earlier library and FFI merges (PRs #771-#787)
-
-Each is a CHANGELOG entry and a PR body. What a caller must still act on:
+Each is a CHANGELOG entry and a PR body (#788: the names agree across
+languages, #755 items 3, 5, 6). What a caller must still act on:
 **a Rust struct literal or exhaustive destructuring of `JatsReport` must name
 `debug`** (#782); **a `match` on `LibraryError` needs `ForeignJats`** (#766:
 `save` and `record_use` refuse a JATS whose own identifiers name another
@@ -127,12 +138,17 @@ MedicalFactChecker's step 3 (re-pin the xcframework). Unreleased.
   `x`; judge the name before the path there, and plant #789's
   `save_scenarios` case under another refused name (PR #791's review).
 - **Owed by Android (phase 4)**: the file operations are free functions on
-  `&Path` in `files.rs`; Kotlin's storage access needs them behind a trait
-  passed into `Library`.
-- **Open library issues**: #778 (PR #777's deferrals; item 1, a save beside
-  an unreadable folder, needs the maintainer's pick of three fixes), #762 (a
-  non-UTF-8 library JATS, Python serves it, Rust refuses; the #766 check
-  inherits the gap), #755 (items 1, 2, 4 and 6's noise, all decisions).
+  `&Path` in `files.rs` (and a few in `scan.rs`); Kotlin's storage access needs
+  them behind a trait passed into `Library`. Measured by bmlibrarian_lite's
+  spike (`doc/cross_platform/library_android_spike.md`, API 36): a picked
+  folder gives no path access to another app's files, and the provider's
+  rename onto an existing name suffixes it (`rec (1).json`) instead of
+  replacing, so `atomic_write` has no equivalent there. Record replacement
+  is a decision owed before the trait is designed.
+- **Open library issues**: #778 (PR #777's deferrals; items 2-4 left, item 1
+  fixed above), #762 (a non-UTF-8 library JATS, Python serves it, Rust
+  refuses; the #766 check inherits the gap), #755 (items 1, 4 and 6's noise;
+  item 2 fixed above except its DOI-only example, the known miss).
 - **Left open on purpose**: separate processes of one installation writing one
   record (out of scope; an app has one process per installation).
 

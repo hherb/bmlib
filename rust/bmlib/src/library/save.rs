@@ -32,7 +32,8 @@ use super::files::{
     is_not_downloaded, list_names, paper_dir, read_bytes, remove_dir_all, remove_file, rename,
     sha256_hex, sync_name, write_once, write_replace,
 };
-use super::scan::{scan_folder, PaperFolder, Problem};
+use super::names::may_name;
+use super::scan::{scan_folder, PaperFolder, Problem, Scan};
 use super::{
     find, find_digest, folder_name, folder_name_numbered, parse_record, render_record, FileEntry,
     FileRef, Installation, Library, LibraryError, PaperIds, PaperInfo, Record, RecordProblem,
@@ -100,9 +101,72 @@ fn belongs_to(papers: &Path, name: &str, paper: &PaperInfo) -> Result<bool, Libr
     Ok(found.shares_any(&paper.ids))
 }
 
+/// Refuse to make a new folder while one with a record the scan could not use
+/// may hold the paper.
+///
+/// A record that cannot be listed, read or downloaded, is newer than this
+/// code, or is misnamed is invisible to `find`. A save under a revised title or
+/// another identifier would then fork the paper into a second folder. The
+/// folder's name is the only evidence left, so a name ending in one of the
+/// paper's identifiers refuses ([`may_name`]; #778, #755):
+/// [`LibraryError::NewerRecord`] for a newer record, [`LibraryError::Io`]
+/// naming the folder otherwise. Only `claim_folder`'s create step asks, so a
+/// folder it joins (the paper's own name, numbered or not) is never refused.
+/// Nothing is written. Python's `save._refuse_hidden_folder` is the twin.
+fn refuse_hidden_folder(scan: &Scan, papers: &Path, paper: &PaperInfo) -> Result<(), LibraryError> {
+    for p in &scan.problems {
+        let (folder, why) = match p {
+            Problem::UnreadableFolder { folder, reason } => {
+                (folder, format!("its records cannot be read ({reason})"))
+            }
+            Problem::UnreadableRecord {
+                folder,
+                file,
+                reason,
+            } => (
+                folder,
+                format!("its record {file} cannot be read ({reason})"),
+            ),
+            Problem::RecordNotDownloaded { folder, file } => {
+                (folder, format!("its record {file} is not downloaded"))
+            }
+            Problem::MisnamedRecord { folder, file } => (
+                folder,
+                format!("its record {file} is not named for its installation"),
+            ),
+            Problem::NewerRecord {
+                folder,
+                file,
+                version,
+            } => {
+                if may_name(folder, &paper.ids) {
+                    return Err(LibraryError::NewerRecord {
+                        folder: folder.clone(),
+                        file: file.clone(),
+                        version: *version,
+                    });
+                }
+                continue;
+            }
+            _ => continue,
+        };
+        if may_name(folder, &paper.ids) {
+            return Err(LibraryError::Io {
+                path: papers.join(folder),
+                reason: format!(
+                    "{why}, and its name says it may hold this paper; nothing was written"
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
 /// The folder `paper` goes in when no folder holds it yet: a new one, or one a
-/// concurrent writer of the same paper just made.
-fn claim_folder(papers: &Path, paper: &PaperInfo) -> Result<String, LibraryError> {
+/// concurrent writer of the same paper just made. Before making one,
+/// `refuse_hidden_folder` asks `scan` whether a folder it could not read may
+/// hold the paper.
+fn claim_folder(papers: &Path, paper: &PaperInfo, scan: &Scan) -> Result<String, LibraryError> {
     let base = folder_name(paper);
     for n in 1..=MAX_NAME_SUFFIX {
         let candidate = folder_name_numbered(paper, n);
@@ -127,6 +191,7 @@ fn claim_folder(papers: &Path, paper: &PaperInfo) -> Result<String, LibraryError
                 }
                 break;
             }
+            refuse_hidden_folder(scan, papers, paper)?;
             let dir = papers.join(&candidate);
             if create_dir_new(&dir).map_err(|e| io_error(&dir, &e, true))? {
                 return Ok(candidate);
@@ -471,13 +536,18 @@ impl Library {
     /// a `who` or `paper.ids` the validating constructors would refuse (nothing
     /// is written); [`LibraryError::FileClash`] when a file of that name holds
     /// other bytes (nothing is overwritten); [`LibraryError::NewerRecord`] when
-    /// `who`'s record, or every record of the folder the paper would go in, is
-    /// from a newer layout (no second folder is made);
+    /// `who`'s record, or every record of the folder the paper would go in, or a
+    /// record of another folder named for it (#778), is from a newer layout (no
+    /// second folder is made);
     /// [`LibraryError::NotDownloaded`] when `who`'s record is only an iCloud
     /// placeholder (nothing is written); [`LibraryError::ForeignJats`] when
     /// `bytes` are a JATS naming another paper or the folder holds one, and
     /// [`LibraryError::NotDownloaded`] or [`LibraryError::DigestMismatch`] when
     /// a JATS there cannot be checked (nothing is written);
+    /// [`LibraryError::Io`] when no folder holds the paper, and a new one would
+    /// be made while one named for one of its identifiers has a record that
+    /// cannot be listed, read or downloaded, or is misnamed (#778, #755; nothing
+    /// is written);
     /// [`LibraryError::ReadOnly`]; [`LibraryError::Io`].
     pub fn save(
         &self,
@@ -522,7 +592,7 @@ impl Library {
             .or_else(|| find(&scan, &paper.ids).first().map(|f| f.folder.clone()));
         let folder = match existing {
             Some(f) => f,
-            None => claim_folder(&papers, paper)?,
+            None => claim_folder(&papers, paper, &scan)?,
         };
         let dir = papers.join(component(&folder)?);
         let found = scan_folder(&dir, &folder, &mut Vec::new());

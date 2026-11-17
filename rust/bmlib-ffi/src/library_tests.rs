@@ -922,7 +922,14 @@ fn step_who(step: &Value) -> Installation {
 }
 
 /// `got`'s value, or, when `step` expects an error, the check that it is that one.
-fn step_refused<T>(name: &str, step: &Value, got: Result<T, LibraryError>) -> Option<T> {
+/// An `io` error names its `path` relative to the library `root`; its reason is
+/// not compared.
+fn step_refused<T>(
+    name: &str,
+    step: &Value,
+    root: &str,
+    got: Result<T, LibraryError>,
+) -> Option<T> {
     let want = &step["expect"];
     if !want.is_object() {
         assert!(want.is_null(), "{name}: unknown expect {want}");
@@ -944,6 +951,17 @@ fn step_refused<T>(name: &str, step: &Value, got: Result<T, LibraryError>) -> Op
         }
         Err(LibraryError::BadName { name: refused }) => {
             json!({"error": "bad_name", "name": refused})
+        }
+        Err(LibraryError::NewerRecord {
+            folder,
+            file,
+            version,
+        }) => json!({"error": "newer_record", "folder": folder, "file": file, "version": version}),
+        Err(LibraryError::Io { path, .. }) => {
+            let rel = Path::new(&path)
+                .strip_prefix(root)
+                .unwrap_or(Path::new(&path));
+            json!({"error": "io", "path": rel.to_string_lossy().replace('\\', "/")})
         }
         Err(e) => panic!("{name}: {e}"),
         Ok(_) => panic!("{name}: not refused"),
@@ -974,6 +992,7 @@ fn save_scenarios_match_the_fixture() {
                     made = step_refused(
                         name,
                         step,
+                        &library.root(),
                         library.save(
                             step_who(step),
                             step_paper(&step["paper"]),
@@ -1000,7 +1019,7 @@ fn save_scenarios_match_the_fixture() {
                 "record_use" => {
                     let got =
                         library.record_use(step_who(step), step_paper(&step["paper"]), of(step));
-                    step_refused(name, step, got);
+                    step_refused(name, step, &library.root(), got);
                 }
                 "remove_file" => {
                     let got = library.remove_file(of(step));

@@ -57,6 +57,7 @@ from bmlib.library import (
     parse_record,
     sha256_hex,
 )
+from bmlib.library.names import may_name
 
 _PAPER = PaperInfo(canonical_ids("111", None, None), "Metformin", 2024, "Smith")
 _BYTES = b"%PDF a paper"
@@ -500,6 +501,56 @@ def test_a_taken_name_that_cannot_be_examined_fails_the_save(lib: Library) -> No
         lib.save(_ME, _PAPER, b"%PDF other bytes", SourceKind.PDF, "t")
     assert err.value.path == papers / first.folder
     assert sorted(n.name for n in papers.iterdir()) == [first.folder]
+
+
+@_NO_PERMISSIONS
+def test_a_revised_title_beside_a_folder_that_cannot_be_examined_is_refused_not_forked(
+    lib: Library,
+) -> None:
+    # #778: the folder's records are hidden from find, and its name is the paper's.
+    first = lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "t")
+    revised = PaperInfo(_PAPER.ids, "Metformin revised", 2024, "Smith")
+    papers = lib.root / "papers"
+    with _unsearchable(papers / first.folder), pytest.raises(Io) as err:
+        lib.save(_ME, revised, b"%PDF other bytes", SourceKind.PDF, "t")
+    assert err.value.path == papers / first.folder
+    assert "may hold this paper; nothing was written" in err.value.reason
+    assert sorted(n.name for n in papers.iterdir()) == [first.folder]
+
+
+@_NO_PERMISSIONS
+def test_another_paper_beside_a_folder_that_cannot_be_examined_is_saved(lib: Library) -> None:
+    first = lib.save(_ME, _PAPER, _BYTES, SourceKind.PDF, "t")
+    other = PaperInfo(canonical_ids("222", None, None), "Metformin revised", 2024, "Smith")
+    with _unsearchable(lib.root / "papers" / first.folder):
+        got = lib.save(_ME, other, b"%PDF other bytes", SourceKind.PDF, "t")
+    assert got.folder == "2024 Smith – Metformin revised (PMID 222)"
+
+
+@pytest.mark.parametrize(
+    ("folder", "ids", "expect"),
+    [
+        ("2024 Smith – T (PMID 123)", ("123", None, None), True),
+        ("2024 Smith – T (PMID 123) (2)", ("123", None, None), True),
+        ("2024 Smith – T (pmid 123)", ("123", None, None), True),
+        ("(PMID 123)", ("123", None, None), True),
+        ("2024 Smith – T (PMID 1234)", ("123", None, None), False),
+        ("2024 Smith – T (PMID 123) x", ("123", None, None), False),
+        ("2024 Smith – T (PMID 123) ()", ("123", None, None), False),
+        ("2024 Smith – T (PMID 123) (x)", ("123", None, None), False),
+        ("2024 Smith – T (PMID 123) (٢)", ("123", None, None), False),
+        ("2024 Smith –\nT (PMID 123) (2)", ("123", None, None), True),
+        ("2024 Smith – T (DOI 10.1 x)", (None, "10.1/x", None), True),
+        ("2024 Smith – T (DOI 10.1 x)", ("123", "10.1/x", None), True),
+        ("2024 Smith – T (PMCID PMC9)", (None, None, "PMC9"), True),
+        ("2024 Smith – T (PMID 123)", (None, "10.1/x", None), False),
+        ("2024 Smith – T (no identifier)", (None, None, None), False),
+    ],
+)
+def test_may_name_reads_the_identifier_a_folder_name_ends_in(
+    folder: str, ids: tuple[str | None, str | None, str | None], expect: bool
+) -> None:
+    assert may_name(folder, canonical_ids(*ids)) is expect
 
 
 @_NO_PERMISSIONS
