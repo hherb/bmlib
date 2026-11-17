@@ -104,8 +104,8 @@ All notable changes to bmlib are documented here. The format is based on
   `remove_file` had it joined to a path: it reached nothing, or a real
   sibling holding the lossy spelling, which `remove_file` then deleted. It is
   now an `undecodable_name` problem (`folder`, `name`) only, to show and ask
-  the user to rename. Only file systems that allow such names (Linux, some
-  Windows volumes) hold one.
+  the user to rename. Only Linux file systems hold one, and on Windows a name
+  holding an unpaired surrogate.
 - **A paper folder bmlib cannot name is reported** (#789; both languages and
   bmlib-ffi). A folder whose name `component()` refuses, such as one made under
   the device rule before #788 (`Con .x (PMID 1)`) or a user's `papers/con`,
@@ -131,7 +131,7 @@ All notable changes to bmlib are documented here. The format is based on
   name is reported and never joined to a path, because a real sibling may hold
   its lossy spelling (#788's review): in `papers/` it is a `stray_entry`, in
   `records/` an `unreadable_record`, and beside the records an
-  `unrecorded_file`; joined to a path, a `caf\xe9` folder's lossy name reached
+  `undecodable_name` (#796, below); joined to a path, a `caf\xe9` folder's lossy name reached
   a real `caf\ufffd` beside it, scanned twice while the other was dropped
   unreported. Python used to scan such a paper folder under a surrogate-escaped
   name. The temporary-name check counts Rust's 42-byte token in bytes, as Rust

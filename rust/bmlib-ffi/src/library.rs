@@ -307,7 +307,9 @@ pub struct PaperFolder {
     pub ids: PaperIds,
     /// The valid, correctly named records, by file name.
     pub records: Vec<LibraryRecord>,
-    /// The source files present, by name.
+    /// The source files present, by name. A name that is not UTF-8 is left
+    /// out and shown only as a [`LibraryProblem::UndecodableName`]; such a
+    /// file is still deleted with its folder by `remove_folder` (#796).
     pub files_on_disk: Vec<String>,
 }
 
@@ -461,7 +463,7 @@ pub enum LibraryProblem {
     UndecodableName {
         /// The paper's folder.
         folder: String,
-        /// The file's name, lossily.
+        /// The entry's name, lossily.
         name: String,
     },
 }
@@ -920,7 +922,8 @@ impl PaperLibrary {
     }
 
     /// Delete a paper's whole folder, records included: the user's manual
-    /// clear, never automatic.
+    /// clear, never automatic. Files whose names are not UTF-8 go with it,
+    /// though `files_on_disk` does not list them (#796).
     ///
     /// # Errors
     ///

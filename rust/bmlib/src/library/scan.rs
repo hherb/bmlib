@@ -182,7 +182,7 @@ pub enum Problem {
     UndecodableName {
         /// The paper's folder.
         folder: String,
-        /// The file's name, lossily.
+        /// The entry's name, lossily.
         name: String,
     },
 }

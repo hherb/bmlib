@@ -51,8 +51,8 @@ class PaperFolder:
     """One paper's folder as found on disk.
 
     ``records`` are the valid, correctly named records (by file name, bytes); ``files_on_disk``
-    the source files present (placeholders, ``records/`` and names that are not UTF-8, each an
-    ``undecodable_name`` problem, left out).
+    the source files present, with placeholders, ``records/`` and names that are not UTF-8
+    (each an ``undecodable_name`` problem) left out.
     """
 
     folder: str
