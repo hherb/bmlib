@@ -966,3 +966,51 @@ fn corrupt_record_is_kept_aside_under_a_non_utf8_root() {
     assert_eq!(fs::read_to_string(&aside).unwrap(), "{ not json");
     fs::remove_dir_all(parent).unwrap();
 }
+
+/// #778: the folder's records are hidden from `find`, and its name is the paper's.
+#[cfg(unix)]
+#[test]
+fn a_revised_title_beside_a_folder_that_cannot_be_examined_is_refused_not_forked() {
+    let (dir, lib) = scratch("unexamined-revised");
+    let first = save(&lib, &me(), &paper(), BYTES);
+    let papers = dir.join("papers");
+    let revised = PaperInfo {
+        title: Some("Metformin revised".into()),
+        ..paper()
+    };
+    let got = unsearchable(&papers.join(&first.folder), || {
+        lib.save(&me(), &revised, b"%PDF other bytes", SourceKind::Pdf, "t")
+    });
+    if let Some(got) = got {
+        assert!(
+            matches!(&got, Err(LibraryError::Io { path, reason })
+                if *path == papers.join(&first.folder)
+                    && reason.ends_with("may hold this paper; nothing was written")),
+            "{got:?}"
+        );
+        assert_eq!(fs::read_dir(&papers).unwrap().count(), 1);
+    }
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn another_paper_beside_a_folder_that_cannot_be_examined_is_saved() {
+    let (dir, lib) = scratch("unexamined-other");
+    let first = save(&lib, &me(), &paper(), BYTES);
+    let other = PaperInfo {
+        ids: PaperIds::canonical(Some("222"), None, None).unwrap(),
+        title: Some("Metformin revised".into()),
+        ..paper()
+    };
+    let got = unsearchable(&dir.join("papers").join(&first.folder), || {
+        lib.save(&me(), &other, b"%PDF other bytes", SourceKind::Pdf, "t")
+    });
+    if let Some(got) = got {
+        assert_eq!(
+            got.unwrap().folder,
+            "2024 Smith – Metformin revised (PMID 222)"
+        );
+    }
+    fs::remove_dir_all(dir).unwrap();
+}

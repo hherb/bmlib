@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import re
 import unicodedata
 
 from bmlib.library.constants import (
@@ -25,7 +26,7 @@ from bmlib.library.constants import (
     MAX_FOLDER_NAME_BYTES,
     MAX_TITLE_CHARS_IN_NAME,
 )
-from bmlib.library.ids import PaperInfo, _is_control, is_bidi_control
+from bmlib.library.ids import PaperIds, PaperInfo, _is_control, is_bidi_control
 
 # CPython 3.13's ``ntpath.isreserved`` list: the superscript digits and the console names count.
 _RESERVED = frozenset(
@@ -108,6 +109,28 @@ def _named(info: PaperInfo, n: int) -> str:
     if is_reserved(name):
         return "_" + _fit(body, suffix, MAX_FOLDER_NAME_BYTES - 1)
     return name
+
+
+def may_name(folder: str, ids: PaperIds) -> bool:
+    """Whether *folder* could be :func:`folder_name_numbered`'s name for a paper holding one
+    of *ids*: it ends ``(PMID …)``, ``(DOI …)`` or ``(PMCID …)`` naming one of them, before
+    any `` (n)``, compared after NFC and lowercasing.
+
+    Nothing else reads an identifier from a name. A save asks this only of a folder whose
+    records it cannot read (#778, #755). A name cut short or renamed by a user is a miss,
+    so this can only ever refuse a save, never choose a folder.
+    """
+    name = unicodedata.normalize("NFC", folder).lower()
+    # ASCII digits, and a newline in a user's name is just a character: Rust's twin reads it so.
+    numbered = re.fullmatch(r"(.*) \([0-9]+\)", name, re.DOTALL)
+    bodies = [name] + ([numbered.group(1)] if numbered else [])
+    for label, value in (("PMID", ids.pmid), ("DOI", ids.doi), ("PMCID", ids.pmcid)):
+        if value is None:
+            continue
+        tag = f"({_sanitise(f'{label} {value}')})".lower()
+        if any(b.endswith(tag) for b in bodies):
+            return True
+    return False
 
 
 def is_reserved(name: str) -> bool:
