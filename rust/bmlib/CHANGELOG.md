@@ -9,37 +9,58 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
-### Added
+## [0.5.0] - 2026-11-17
 
-- **A `europepmc` day-by-day sync source** (as in Python; the argument is the
-  root `CHANGELOG.md`'s). `publications::fetchers::europepmc::{walk,
-  page_params, SearchPages, HttpSearchPages, EuropePmcFetcher}` walk a Europe
-  PMC search one first-index day at a time, `(<query>) AND
-  FIRST_IDATE:[<day> TO <day>]` (the day Europe PMC first indexed a record,
-  not its publication day), with `resultType=core`, 1,000-hit pages and
-  `cursorMark` paging, the parameters percent-encoded. Constants:
-  `SEARCH_URL`, `PAGE_SIZE` (1000), `FIRST_CURSOR` (`"*"`),
-  `EUROPEPMC_SETTLE_DAYS` (3, fixed before measurement, #792) and
-  `RATE_LIMIT_SECONDS` (1.0). The first page's `hitCount` is the promise, and
-  any walk ending short of it fails the day (the stall through
-  `reconcile_delivery`, a stopped cursor with its own message; no shortfall
-  floor). A count that is not a count, a zero count with records, a
-  `nextCursorMark` that is not a string, a hit that is not an object or not
-  first indexed on the day, an error body, an HTTP or transport error and a
-  blank query (ASCII whitespace only, #557) each fail the day; an empty day
-  completes only if the query without its date clause finds something.
-  `builtin_descriptors` and `builtin_registry` gain `europepmc` (config
-  `query` required, `email` optional, `opt_in: true`). Like the other fetchers
-  it does not sleep: `RATE_LIMIT_SECONDS` is for the caller's transport. 31
-  oracle cases (`rust/oracle/europepmc_sync_cases.json`, expected output from
-  `rust/oracle/dump_europepmc_sync.py`) plus named tests in
-  `tests/europepmc_sync.rs`.
-- **`fulltext::newest_source`, `fulltext::lists_use`, and `contradiction`
-  made public** (#784, as in Python): the file `LibraryStore::find_source_in`
-  reads, and the check `note_use_in` makes before it writes, for a caller
-  with its own read and write; both methods call them, unchanged. bmlib-ffi
-  exposes them with `library_ids` (`LibraryScan::newest_source`,
-  `LibraryScan::lists_use`, `library_ids`, `paper_ids_contradiction`).
+Published with the Python library's 0.14.0, from the same merge commit. **The
+shared paper library and the evidence weight**, both languages built
+together against shared fixtures: `bmlib::library` keeps several apps' papers
+in one folder of plain files (bmlib-ffi's `PaperLibrary` and `LibraryScan`
+for Swift and Kotlin), and `FullTextService::with_library` reads and fills it.
+The full-text chain also asks PMC's AWS Open Data bucket (#750, #751) and,
+with `with_fetch_pdf_with_jats(true)`, retries the PDF beside a JATS and seeks
+it again later (#739, #744, #746, #748). `quality` gains the unattended
+evidence weight (`evidence_weight`, over the design and outcome proposals,
+RoB 2 with D5 from facts, and the evidence ladder). `publications` gains the
+`*-details` and opt-in `europepmc` sources, and a count the delivery
+contradicts fails its day (#795). `fulltext::meca` (feature `meca`) reads
+requester-pays S3. `canonical_from_html` caps a page's `<` count instead of its
+length (#656). The `pdf` feature builds on Windows.
+
+A minor bump because public APIs break, gathered under *Changed — breaking*;
+each entry carries the argument. The `library` entries there (`Problem`'s new
+cases, `ForeignJats`) break only a caller of `main` between releases, since
+`bmlib::library` is new since 0.4.0; one more break is recorded only in the
+root CHANGELOG and listed below. The data answer is the Python CHANGELOG's
+`[0.14.0]`: nothing stored goes stale, and a re-fetch labels bioRxiv and
+medRxiv full-text sources with their version. One more is the crate's own:
+`publications` now stores a DOI or PMID edged by U+001C-U+001F stripped, as
+Python does (see *Fixed*).
+
+These Rust changes are written up once, in the repository's
+[`CHANGELOG.md`](../../CHANGELOG.md) under `[0.14.0]`, which carries the
+argument:
+
+- **`bmlib::library`** (#754) and its hardening (#761, #767, #768, #769,
+  #755 item 7), **`FullTextService::with_library`** (#763) and **bmlib-ffi's
+  `PaperLibrary`** (#764).
+- **`fulltext::meca`** (feature `meca`) and
+  **`HttpClient::get_with_headers_stream`**, whose default refuses; ureq is
+  now `>=3.5`.
+- **`FullTextService::with_fetch_pdf_with_jats`** (#739) and the failure it
+  reports (#746).
+- **The evidence weight**: `quality::design_agent`, `outcome_agent`,
+  `rob2_algorithm`, `rob2_questions`, `rob2_agent`, `rob2_d5_checks`,
+  `rob2_d5_facts`, `evidence_ladder`, `evidence_weight` and
+  `full_text_agent`, with the `QueryCondenser` seam (`LlmQueryCondenser`;
+  `LlmCondenser::with_prompts` takes the query as `&str`).
+- **`verify_quotes` locates a quote cut with an ellipsis piece by piece**,
+  through `citations::split_at_ellipses`.
+- **`ChatJsonError::WrongShape` gains `short_reply: Option<String>`**, so an
+  exhaustive destructuring or a construction of it must name the field.
+- **A body that is not UTF-8 is a `UnicodeDecodeError` fault** in the three
+  JSON reads of `FullTextService`, where it was `TransportError` (#753).
+- **The `pdf` feature builds on Windows**: `mupdf::Document::open` takes a
+  `&str` there, so a path that is not valid Unicode is an engine failure.
 
 ### Changed — breaking
 
@@ -103,6 +124,36 @@ The Python library is documented separately, in the repository's
   argument is the root `CHANGELOG.md`'s.
 
 ### Added
+
+- **A `europepmc` day-by-day sync source** (as in Python; the argument is the
+  root `CHANGELOG.md`'s). `publications::fetchers::europepmc::{walk,
+  page_params, SearchPages, HttpSearchPages, EuropePmcFetcher}` walk a Europe
+  PMC search one first-index day at a time, `(<query>) AND
+  FIRST_IDATE:[<day> TO <day>]` (the day Europe PMC first indexed a record,
+  not its publication day), with `resultType=core`, 1,000-hit pages and
+  `cursorMark` paging, the parameters percent-encoded. Constants:
+  `SEARCH_URL`, `PAGE_SIZE` (1000), `FIRST_CURSOR` (`"*"`),
+  `EUROPEPMC_SETTLE_DAYS` (3, fixed before measurement, #792) and
+  `RATE_LIMIT_SECONDS` (1.0). The first page's `hitCount` is the promise, and
+  any walk ending short of it fails the day (the stall through
+  `reconcile_delivery`, a stopped cursor with its own message; no shortfall
+  floor). A count that is not a count, a zero count with records, a
+  `nextCursorMark` that is not a string, a hit that is not an object or not
+  first indexed on the day, an error body, an HTTP or transport error and a
+  blank query (ASCII whitespace only, #557) each fail the day; an empty day
+  completes only if the query without its date clause finds something.
+  `builtin_descriptors` and `builtin_registry` gain `europepmc` (config
+  `query` required, `email` optional, `opt_in: true`). Like the other fetchers
+  it does not sleep: `RATE_LIMIT_SECONDS` is for the caller's transport. 31
+  oracle cases (`rust/oracle/europepmc_sync_cases.json`, expected output from
+  `rust/oracle/dump_europepmc_sync.py`) plus named tests in
+  `tests/europepmc_sync.rs`.
+- **`fulltext::newest_source`, `fulltext::lists_use`, and `contradiction`
+  made public** (#784, as in Python): the file `LibraryStore::find_source_in`
+  reads, and the check `note_use_in` makes before it writes, for a caller
+  with its own read and write; both methods call them, unchanged. bmlib-ffi
+  exposes them with `library_ids` (`LibraryScan::newest_source`,
+  `LibraryScan::lists_use`, `library_ids`, `paper_ids_contradiction`).
 
 - **`/details`: every bioRxiv and medRxiv posting** (#341, as in Python; the
   argument is the root `CHANGELOG.md`'s). `builtin_registry` gains

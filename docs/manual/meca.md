@@ -1,6 +1,6 @@
 # bmlib.fulltext.meca — MECA Bulk Archives over Requester-Pays S3
 
-*(unreleased)* medRxiv and bioRxiv publish every preprint as a MECA package
+*(0.14.0)* medRxiv and bioRxiv publish every preprint as a MECA package
 (a ZIP holding the JATS XML, the PDF and the supplementary files) in the S3
 buckets `s3://medrxiv-src-monthly` and `s3://biorxiv-src-monthly`. Both
 buckets are **requester pays**: the AWS account whose key signs the request

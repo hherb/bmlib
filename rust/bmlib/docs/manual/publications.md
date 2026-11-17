@@ -201,7 +201,7 @@ built-ins only `europepmc` is opt-in.
 page's `hitCount` with no shortfall floor: any walk ending short of it fails the
 day, and an empty day completes only if the query without its date clause finds
 something. The Python page's [`fetch_europepmc`
-section](../../../../docs/manual/publications.md#fetch_europepmc-unreleased) has
+section](../../../../docs/manual/publications.md#fetch_europepmc-0140) has
 the rules and the known limits (#792-#794); the Rust walk keeps them, except
 that its `FetchSink` cannot fail a record. PubMed titles and abstracts are read
 as Markdown (`text_with_formatting`, `escape_markdown`), as in Python.

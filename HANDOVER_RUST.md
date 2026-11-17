@@ -1,6 +1,14 @@
 # HANDOVER — the Rust port of bmlib
 
-_Last updated: 2026-11-10. **0.4.0 is on crates.io** (2026-11-10T02:37Z) with Python's 0.13.0,
+_Last updated: 2026-11-17. **0.5.0 is cut, not yet published**, on `release/0.14.0` with
+Python's 0.14.0. The workspace version is bumped (and `bmlib_version()`'s doc, the FFI README,
+the manual's header), `BMLIB_VERSION` is `"0.14.0"` with the analyzer oracle regenerated, and
+`bmlib/CHANGELOG.md` has its `[0.5.0]` section. The changes the root CHANGELOG alone records
+are listed in the paragraph above *Changed — breaking*, `ChatJsonError::WrongShape`'s
+`short_reply` among them. Publish it from a clean worktree of that PR's merge commit, per
+*Publishing to crates.io* below, and remove the token link afterwards._
+
+_2026-11-10. **0.4.0 is on crates.io** (2026-11-10T02:37Z) with Python's 0.13.0,
 from `161849c0`, the merge of PR #736: the workspace version is bumped (and `bmlib_version()`'s doc, the FFI README,
 the manual's header), `BMLIB_VERSION` is `"0.13.0"` with the analyzer oracle regenerated, and
 `bmlib/CHANGELOG.md` has its `[0.4.0]` section (repeated sub-headings merged, the breaks recorded

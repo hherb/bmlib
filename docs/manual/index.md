@@ -1,6 +1,6 @@
 # bmlib API Manual
 
-**Version 0.13.0** | **License: AGPL-3.0-or-later** | **Python >=3.11**
+**Version 0.14.0** | **License: AGPL-3.0-or-later** | **Python >=3.11**
 
 bmlib is a shared Python library for biomedical literature tools. It provides LLM abstraction, quality assessment, transparency analysis, full-text retrieval, database utilities, and publication ingestion/sync.
 
@@ -54,8 +54,8 @@ has its own row, but is part of `fulltext`):
 | [`bmlib.citations`](citations.md) | Citation-marker parsing, Vancouver/APA/Harvard/Chicago formatting, reference-list building, locating an LLM's quoted passage *(0.12.0)* (pure stdlib) | [citations.md](citations.md) |
 | [`bmlib.embed`](embeddings.md) | *(0.12.0)* In-process text embedding (arctic-embed-l-v2.0 GGUF via llama-cpp-python), verified model download, a paper's chunks stored and searched | [embeddings.md](embeddings.md) |
 | [`bmlib.secrets`](secrets.md) | *(0.13.0)* API keys by provider in one OS keychain item, read once for `get`s and cached; the same item as Rust's (#686) | [secrets.md](secrets.md) |
-| [`bmlib.fulltext.meca`](meca.md) | medRxiv / bioRxiv MECA bulk archives over requester-pays S3: SigV4 signing, listing, verified downloads *(unreleased)* (Rust `bmlib::fulltext::meca`, feature `meca`) | [meca.md](meca.md) |
-| [`bmlib.library`](library.md) | A shared folder of research papers several apps read and write: write-once source files, one record per installation, scan, find, read, save *(unreleased)* (pure stdlib; Rust `bmlib::library`) | [library.md](library.md) |
+| [`bmlib.fulltext.meca`](meca.md) | medRxiv / bioRxiv MECA bulk archives over requester-pays S3: SigV4 signing, listing, verified downloads *(0.14.0)* (Rust `bmlib::fulltext::meca`, feature `meca`) | [meca.md](meca.md) |
+| [`bmlib.library`](library.md) | A shared folder of research papers several apps read and write: write-once source files, one record per installation, scan, find, read, save *(0.14.0)* (pure stdlib; Rust `bmlib::library`) | [library.md](library.md) |
 
 ## Architecture Principles
 

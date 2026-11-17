@@ -142,7 +142,7 @@ A `FileRef` is `(folder, name, sha256, kind)`.
 - **Names are checked.** A Windows device name (`con`, `nul`, `com1`, `com¹`,
   `conin$` …, also with spaces before the dot, `nul .txt`) as a folder name
   gets a `_` in front, after the length is fitted. A folder or file name that is
-  not one plain path component is `BadName`. *(unreleased)*
+  not one plain path component is `BadName`. *(0.14.0)*
 - **iCloud placeholders.** A file shown as `.name.icloud` is online-only.
   `read` reports it as `NotDownloaded` rather than `Missing`, and `open` counts
   it as a user's file, so a library is never started in a folder of someone's
@@ -199,7 +199,7 @@ versions, so some will be real).
 
 | `Problem.kind` | Meaning |
 |---|---|
-| `"unreadable_record"` | A record file is not valid, or its name is not UTF-8 *(unreleased)*; it is not used |
+| `"unreadable_record"` | A record file is not valid, or its name is not UTF-8 *(0.14.0)*; it is not used |
 | `"unreadable_folder"` | A paper folder, or its `records/`, cannot be listed or examined, or `records/` is not a folder (a symbolic link included) |
 | `"newer_record"` | A record written by a newer layout version; update the app |
 | `"record_not_downloaded"` | A record present only as an iCloud placeholder or evicted (dataless); its installation's uses are unknown until it is downloaded |
@@ -207,9 +207,9 @@ versions, so some will be real).
 | `"conflicting_ids"` | Two records of one folder hold different values for one identifier (`field`); both count for `find` and `group` |
 | `"unrecorded_file"` | A source file no record lists (a crash, or a record lost) |
 | `"leftover_temp"` | A temporary of an atomic write, in flight or left by a crash; never deleted, and never a user's file |
-| `"stray_entry"` | Something in `papers/` that is not a folder, a symbolic link to one included, or whose name is not UTF-8 *(unreleased)* |
-| `"bad_folder_name"` | A paper folder whose name bmlib refuses as a path component, such as `con` or `Con .x (PMID 1)` (from before the device rule of #788), both of which Windows reads as a device. It is still listed, so `find` sees the paper and `save` refuses with `BadName` rather than making a second folder; ask the user to rename it *(unreleased)* |
-| `"undecodable_name"` | A file or folder in a paper folder whose name is not UTF-8, shown lossily. It is not in `files_on_disk`, since its lossy name may be a real sibling's; show it, never pass it to `read` or `remove_file`, and ask the user to rename it *(unreleased)* |
+| `"stray_entry"` | Something in `papers/` that is not a folder, a symbolic link to one included, or whose name is not UTF-8 *(0.14.0)* |
+| `"bad_folder_name"` | A paper folder whose name bmlib refuses as a path component, such as `con` or `Con .x (PMID 1)` (from before the device rule of #788), both of which Windows reads as a device. It is still listed, so `find` sees the paper and `save` refuses with `BadName` rather than making a second folder; ask the user to rename it *(0.14.0)* |
+| `"undecodable_name"` | A file or folder in a paper folder whose name is not UTF-8, shown lossily. It is not in `files_on_disk`, since its lossy name may be a real sibling's; show it, never pass it to `read` or `remove_file`, and ask the user to rename it *(0.14.0)* |
 
 ## Errors and what to tell the user
 

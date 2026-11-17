@@ -23,7 +23,7 @@ Requires `httpx` for HTTP requests to external APIs.
 | `fetchers.registry` | `register_source()`, `list_sources()`, `get_source()`, `get_fetcher()`, `source_names()` | Pluggable source registry |
 | `lookup` *(0.12.0)* | `lookup_record()`, `RecordLookup`, `SourceReport`, `SourceOutcome`, `PublishedVersion` | One paper's record by PMID, DOI, PMC ID or PPR accession — see [Looking up one paper](#looking-up-one-paper-0120) |
 | `fetchers.pubmed` / `.biorxiv` / `.openalex` | `fetch_pubmed()`, `fetch_biorxiv()`, `fetch_openalex()` | Built-in fetchers |
-| `fetchers.europepmc` *(0.12.0)* | `normalize_europepmc()`, `fetch_europepmc()` *(unreleased, PR #790)*, `EUROPEPMC_SETTLE_DAYS` | One Europe PMC search hit as a `FetchedRecord` (used by `lookup_record`), and the opt-in `europepmc` sync source — see [`fetch_europepmc`](#fetch_europepmc-unreleased) |
+| `fetchers.europepmc` *(0.12.0)* | `normalize_europepmc()`, `fetch_europepmc()` *(0.14.0, PR #790)*, `EUROPEPMC_SETTLE_DAYS` | One Europe PMC search hit as a `FetchedRecord` (used by `lookup_record`), and the opt-in `europepmc` sync source — see [`fetch_europepmc`](#fetch_europepmc-0.14.0) |
 
 > **Breaking change in 0.4.0 — `on_record` now fires *before* storage.**
 > `sync()` no longer stores each record as it arrives. Records are buffered for the duration of a source/day fetch and written in a **single transaction per day** once the fetch completes. Your `on_record` callback is invoked while the record is still only in memory, so it **must not** expect to read the record back from the database. See [Buffering and commit batching](#buffering-and-commit-batching).
@@ -449,7 +449,7 @@ class SourceDescriptor:
     params: list[SourceParam] = field(default_factory=list)
     resumable: bool = False          # 0.11.0, #105
     settle_days: int = 0             # 0.11.0, #325
-    opt_in: bool = False             # unreleased, PR #790
+    opt_in: bool = False             # 0.14.0, PR #790
 ```
 
 | Field | Type | Description |
@@ -464,8 +464,8 @@ class SourceDescriptor:
 | `SourceDescriptor.description` | `str` | What the source covers. |
 | `SourceDescriptor.params` | `list[SourceParam]` | Configurable parameters for this source. |
 | `SourceDescriptor.resumable` | `bool` | Whether `sync()` may pass this fetcher the per-part resume keywords. Default `False`. *(0.11.0, #105)* |
-| `SourceDescriptor.settle_days` | `int` | How many days after a day has ended the source may still add records to it. Default `0`; `biorxiv` and `medrxiv` declare `90`, `biorxiv-details` and `medrxiv-details` `7` *(unreleased, #341)*, `europepmc` `3` *(unreleased, PR #790)*. See [A source that fills its days late](#a-source-that-fills-its-days-late). *(0.11.0, #325)* |
-| `SourceDescriptor.opt_in` | `bool` | Whether the source runs only when named. A `sync()` with `sources=None` leaves an opt-in source out. Default `False`; of the built-ins only `europepmc` sets it, since it needs a search you choose and without one would fail every day of every default run. *(unreleased, PR #790)* |
+| `SourceDescriptor.settle_days` | `int` | How many days after a day has ended the source may still add records to it. Default `0`; `biorxiv` and `medrxiv` declare `90`, `biorxiv-details` and `medrxiv-details` `7` *(0.14.0, #341)*, `europepmc` `3` *(0.14.0, PR #790)*. See [A source that fills its days late](#a-source-that-fills-its-days-late). *(0.11.0, #325)* |
+| `SourceDescriptor.opt_in` | `bool` | Whether the source runs only when named. A `sync()` with `sources=None` leaves an opt-in source out. Default `False`; of the built-ins only `europepmc` sets it, since it needs a search you choose and without one would fail every day of every default run. *(0.14.0, PR #790)* |
 
 > **`resumable` — new, and `False` on purpose *(0.11.0, #105)*.** A day too
 > large for one history session is fetched in parts, and a fetcher that can
@@ -805,7 +805,7 @@ The sole public entry point for ingestion. Ensures the schema exists, determines
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `conn` | `Any` | *(required)* | A DB-API connection. |
-| `sources` | `list[str] \| None` | `None` | Source names to sync. Defaults to **every registered source that is not opt-in** (`SourceDescriptor.opt_in`), which includes any you registered yourself; `europepmc` is opt-in, so name it to run it *(unreleased, PR #790)*. |
+| `sources` | `list[str] \| None` | `None` | Source names to sync. Defaults to **every registered source that is not opt-in** (`SourceDescriptor.opt_in`), which includes any you registered yourself; `europepmc` is opt-in, so name it to run it *(0.14.0, PR #790)*. |
 | `date_from` | `date \| None` | `None` | Start date (inclusive). Defaults to yesterday (`today - 1 day`). |
 | `date_to` | `date \| None` | `None` | End date (inclusive). Defaults to today. |
 | `source_configs` | `dict[str, dict[str, Any]] \| None` | `None` | Per-source config. Each inner dict is unpacked as `**kwargs` into that source's fetcher. **Supersedes `email` and `api_keys` entirely when provided.** |
@@ -921,7 +921,7 @@ Both cheaper rules are unsafe, and not hypothetically. PubMed, bioRxiv/medRxiv a
 
 bioRxiv's `/pubs` endpoint files a record under the date its **journal publication** appeared, and bioRxiv learns of a publication weeks after it happens. Measured on 2026-09-27 as one snapshot of weekly totals, the bioRxiv week just ended held **1** record, the week before **3**, the weeks two to five weeks old 135-470, and every week from six to seventy-six weeks old a steady 450-580 — weeks of different ages, not one week watched filling. Under the 12:00 UTC rule alone such a day is durable the morning after it ends, when it is nearly empty, and the default window `[yesterday, today]` has moved past it by the next run, so it would never be fetched again.
 
-A source declares this with `SourceDescriptor.settle_days` (`biorxiv` and `medrxiv`: **90**, roughly twice the measured plateau; whether anything is still added after that is not measured. `biorxiv-details` and `medrxiv-details`: **7** *(unreleased, #341)*, a bound rather than a measurement: `/details` files a version under the day it was posted, and old days hold their counts, but how soon a day is whole after it ends was not measured. `europepmc`: **3** *(unreleased, PR #790)*, fixed before measurement: one probe saw Europe PMC load an index day in a batch, but whether a past index day still grows was not measured, #792). For such a source:
+A source declares this with `SourceDescriptor.settle_days` (`biorxiv` and `medrxiv`: **90**, roughly twice the measured plateau; whether anything is still added after that is not measured. `biorxiv-details` and `medrxiv-details`: **7** *(0.14.0, #341)*, a bound rather than a measurement: `/details` files a version under the day it was posted, and old days hold their counts, but how soon a day is whole after it ends was not measured. `europepmc`: **3** *(0.14.0, PR #790)*, fixed before measurement: one probe saw Europe PMC load an index day in a batch, but whether a past index day still grows was not measured, #792). For such a source:
 
 - a completed day is durable only once it was fetched **at least `settle_days` after** 12:00 UTC on the following day;
 - every row that is not yet final — a `"completed"` day not yet durable, or a day whose last fetch did not complete — is re-offered on **every run, whatever the window**, however old it is. A floor such as "the last 90 days" would strand the days of a cron stopped for a season, which are exactly the incomplete ones.
@@ -1136,7 +1136,7 @@ def source_names() -> list[str]
 | `get_fetcher(name)` | Just the fetcher callable. Same `ValueError` on an unknown name. |
 | `source_names()` | Names of all registered sources. `sync()` defaults `sources` to those of them that are not opt-in. |
 
-`bmlib.publications.fetchers` additionally exports `ALL_SOURCES = ["pubmed", "biorxiv", "biorxiv-details", "medrxiv", "medrxiv-details", "openalex", "europepmc"]` (the `*-details` names *unreleased*, #341; `europepmc` *unreleased*, PR #790), a backward-compatibility constant for code that reads the built-in list at module level. It lists every built-in, opt-in ones included, and does not reflect runtime registrations; use `source_names()` instead.
+`bmlib.publications.fetchers` additionally exports `ALL_SOURCES = ["pubmed", "biorxiv", "biorxiv-details", "medrxiv", "medrxiv-details", "openalex", "europepmc"]` (the `*-details` names *0.14.0*, #341; `europepmc` *0.14.0*, PR #790), a backward-compatibility constant for code that reads the built-in list at module level. It lists every built-in, opt-in ones included, and does not reflect runtime registrations; use `source_names()` instead.
 
 ### Built-in sources
 
@@ -1144,11 +1144,11 @@ def source_names() -> list[str]
 |--------|--------------|---------|------------|
 | `pubmed` | PubMed | `fetch_pubmed` | `api_key` — NCBI API key for higher rate limits *(secret)* |
 | `biorxiv` | bioRxiv | `fetch_biorxiv` (`server="biorxiv"`) | `api_key` — reserved, unused *(secret)* |
-| `biorxiv-details` | bioRxiv (all postings) | `fetch_biorxiv` (`server="biorxiv"`, `endpoint="details"`) *(unreleased, #341)* | `api_key` — reserved, unused *(secret)* |
+| `biorxiv-details` | bioRxiv (all postings) | `fetch_biorxiv` (`server="biorxiv"`, `endpoint="details"`) *(0.14.0, #341)* | `api_key` — reserved, unused *(secret)* |
 | `medrxiv` | medRxiv | `fetch_biorxiv` (`server="medrxiv"`) | `api_key` — reserved, unused *(secret)* |
-| `medrxiv-details` | medRxiv (all postings) | `fetch_biorxiv` (`server="medrxiv"`, `endpoint="details"`) *(unreleased, #341)* | `api_key` — reserved, unused *(secret)* |
+| `medrxiv-details` | medRxiv (all postings) | `fetch_biorxiv` (`server="medrxiv"`, `endpoint="details"`) *(0.14.0, #341)* | `api_key` — reserved, unused *(secret)* |
 | `openalex` | OpenAlex | `fetch_openalex` | `email` — contact email for polite API access *(**required**)*; `api_key` — OpenAlex API key for premium access *(secret)* |
-| `europepmc` | Europe PMC | `fetch_europepmc` *(unreleased, PR #790; **opt-in**)* | `query` — Europe PMC search, without a date clause *(**required**)*; `email` — contact email sent to Europe PMC |
+| `europepmc` | Europe PMC | `fetch_europepmc` *(0.14.0, PR #790; **opt-in**)* | `query` — Europe PMC search, without a date clause *(**required**)*; `email` — contact email sent to Europe PMC |
 
 The four bioRxiv sources are thin wrappers that call `fetch_biorxiv` with their `server` and `endpoint`. **`biorxiv`/`medrxiv` and their `*-details` twins list different populations** — preprints by the day their journal version appeared, against every version by the day it was posted — and they are separate sources rather than one source with a setting because `download_days` is keyed by the source's name: a day completed under `/pubs` must not read as completed for `/details`. Sync both and the records meet on one row per DOI. `openalex` and `europepmc` have genuinely required parameters — omitting `openalex`'s `email` or `europepmc`'s `query` makes the fetcher raise `TypeError`, which `sync()` records as a failed day, and a blank `query` fails the day unsent. `europepmc` is opt-in, so a `sync()` that names no sources does not run it and so never fails for want of a query.
 
@@ -1314,14 +1314,14 @@ All fetchers pass a `FetchedRecord` to `on_record`, matching `sync()`. (Before 0
 
 > **New (0.10.0).** Issue #88.
 
-Each built-in fetcher learns a record count before it walks pages — PubMed's `<Count>`, OpenAlex's `meta.count`, bioRxiv's `messages[0].total`, and *(unreleased)* Europe PMC's `hitCount`, which [`fetch_europepmc`](#fetch_europepmc-unreleased) holds to a stricter rule of its own (no shortfall floor). Before this change none of them compared that promise against what arrived, so a walk that stopped early returned `status="completed"`, `sync()` stored the day as done, and `_days_needing_fetch()` did not offer it again once it was in the past (with `recheck_days` at its default). The records were permanently absent, with nothing logged above INFO.
+Each built-in fetcher learns a record count before it walks pages — PubMed's `<Count>`, OpenAlex's `meta.count`, bioRxiv's `messages[0].total`, and *(0.14.0)* Europe PMC's `hitCount`, which [`fetch_europepmc`](#fetch_europepmc-0.14.0) holds to a stricter rule of its own (no shortfall floor). Before this change none of them compared that promise against what arrived, so a walk that stopped early returned `status="completed"`, `sync()` stored the day as done, and `_days_needing_fetch()` did not offer it again once it was in the past (with `recheck_days` at its default). The records were permanently absent, with nothing logged above INFO.
 
 The comparison now happens in one shared place and applies three rules that differ in kind:
 
 | Rule | Fires when | Threshold |
 |------|-----------|-----------|
 | **Stalled** | A page delivers no records while the source's own count says records remain. | None — broken outright, whatever the size of the gap. |
-| **Unreconcilable** | Records arrived, but the source reported no count to judge them against, or *(unreleased)* a count of 0, which the records contradict; or *(unreleased)* the source reported a negative count, which is not a count (#795). | None — the walk cannot be shown to have finished. |
+| **Unreconcilable** | Records arrived, but the source reported no count to judge them against, or *(0.14.0)* a count of 0, which the records contradict; or *(0.14.0)* the source reported a negative count, which is not a count (#795). | None — the walk cannot be shown to have finished. |
 | **Shortfall** | The walk ended naturally but delivered less than half the promised count. | `SHORTFALL_FAILURE_RATIO = 0.5`, exclusive. |
 
 Delivering nothing against no count, or against a count of 0, is the ordinary quiet day and passes silently. A shortfall too small to fail on completes, is logged at WARNING, and is returned as `FetchResult.note` — which `sync()` collects into `SyncReport.notes`, separately from `errors`, because that day will *not* be retried and is the one case where an operator has to be able to find it afterwards.
@@ -1331,7 +1331,7 @@ Three things worth knowing before relying on this:
 - **The floor is a rule fixed before measurement**, unlike bmlib's other calibrated thresholds. It asserts only that no benign cause plausibly removes half a day's records. Issue #92 is the follow-up that measures the real distribution per source and tightens it — do not read `0.5` as a measured value.
 - **Partitioning a PubMed day raised what that unmeasured floor exposes, by about 24×** *(0.11.0, #105)*. Before it, no PubMed day above 9,999 records was walked at all, so a `completed` day could be missing at most 4,999 records. Now every part of a partitioned day may come up to half short without failing, and the day's own total is judged against the same floor — so a 242,216-record day can be recorded `completed` while missing some 121,000 records, behind notes. Nothing about the rule changed; the population it applies to did. That is what makes #92 more urgent than when it was filed.
 - **The floor exists because a failed day is retried forever.** `_days_needing_fetch()` re-offers a `failed` day on every later run, so treating a benign, permanent gap as a failure would re-fetch and re-merge that whole day for the rest of an installation's life. Sources are not exact: a record can be withdrawn between search and fetch, and an index can move under a long walk.
-- **A count of `None` is not a count of `0`.** If you write a fetcher, pass `promised=None` when your source reported no count, never `0`. *(unreleased)* Both now reach one verdict (only an empty delivery satisfies either, #795), but the failure names which one the source sent, and a `0` your source never sent misleads whoever reads it.
+- **A count of `None` is not a count of `0`.** If you write a fetcher, pass `promised=None` when your source reported no count, never `0`. *(0.14.0)* Both now reach one verdict (only an empty delivery satisfies either, #795), but the failure names which one the source sent, and a `0` your source never sent misleads whoever reads it.
 
 Each fetcher also refuses a malformed envelope rather than reading it through defaults, since an HTTP-200 error body is otherwise indistinguishable from a day with no publications: PubMed rejects an efetch response that is not a `PubmedArticleSet` (NCBI answers an evicted history session with `<eFetchResult><ERROR>…</ERROR>` at HTTP 200), and OpenAlex requires `results` to be a list and `meta` an object carrying a numeric `count`.
 
@@ -1581,14 +1581,14 @@ def fetch_biorxiv(
 
 Fetch preprint records from the bioRxiv/medRxiv API for a single date.
 
-- Uses `https://api.biorxiv.org/pubs/{server}/{date}/{date}/{cursor}` *(changed, 0.11.0, #325: it was `/details`)*, or with `endpoint="details"` *(unreleased, #341)* `https://api.biorxiv.org/details/{server}/{date}/{date}/{cursor}`. Any other `endpoint` raises `ValueError`.
+- Uses `https://api.biorxiv.org/pubs/{server}/{date}/{date}/{cursor}` *(changed, 0.11.0, #325: it was `/details`)*, or with `endpoint="details"` *(0.14.0, #341)* `https://api.biorxiv.org/details/{server}/{date}/{date}/{cursor}`. Any other `endpoint` raises `ValueError`.
 - `server` is `"biorxiv"` (default) or `"medrxiv"`; the registry supplies it, and the endpoint, through the four registered sources.
 - Pages through results in batches of 100 (`PAGE_SIZE`) on `/pubs` and **30** (`DETAILS_PAGE_SIZE`, measured 2026-11-13) on `/details`, 0.5 s between pages. A page shorter than its endpoint's size ends the walk.
-- Each full-text source carries the record's own `version` (`"2"` for a second posting), or `None` for a `/pubs` record, which names none *(unreleased, #341)*. A v2 posting stored over its v1 row keeps both versions' sources, since each version's URLs differ.
+- Each full-text source carries the record's own `version` (`"2"` for a second posting), or `None` for a `/pubs` record, which names none *(0.14.0, #341)*. A v2 posting stored over its v1 row keeps both versions' sources, since each version's URLs differ.
 - Extracts: DOI, title, authors (semicolon-separated), abstract, the preprint's own date as `publication_date`, category, and the PDF URL. `extras` carries `category`, `published` (the journal version's DOI), `published_journal`, `published_date` and `server`.
 - Requires **no** credentials. `api_key` is accepted but unused — reserved for future API authentication.
 
-> **Changed *(0.11.0, #325)*: a day now means the day a preprint's journal version appeared, and unpublished preprints are not collected.** `/details`, which lists the preprints *posted* on a day, answered HTTP 200 with a zero-byte body on every URL shape tried (medRxiv's date interval on 2026-09-26, every form `BASE_URL`'s docstring lists on 2026-09-27), so every bioRxiv day failed and the fetcher moved. `/details` came back later on 2026-09-27 and serves JSON again (re-probed 2026-10-01, *(0.11.0, #386)*), and #341 reads both: `/pubs` here, `/details` through the `*-details` sources below. `/pubs` serves only preprints bioRxiv has paired with a publication, filed under the publication's date: about 500 bioRxiv and 120 medRxiv records a week, a small fraction of what the servers post (#325 puts bioRxiv alone at several hundred postings a day; that figure is not re-measured here). A record's `publication_date` is therefore usually months before the day it was fetched for; that day is `extras["published_date"]`. `/pubs` carries neither a version nor a JATS path, so the PDF URL names `v1` and no XML source is produced. It also fills each day in late, which is what [`settle_days`](#a-source-that-fills-its-days-late) handles. Preprints that are never published are collected by the `*-details` sources *(unreleased, #341)*, which read `/details`: one record per posted version, filed under its posting date, with its `jatsxml` (an `xml` source) and `version`; `extras["published"]` is then the journal DOI, or `""` where `/details` sends `"NA"`. A `/details` record that names no version fails its day, since it would take v1's URLs. A record carrying no DOI under either spelling fails its day, since it has no identity to deduplicate on. The reader accepts both endpoints' field names (`preprint_title` or `title`, and so on), with the `/pubs` name winning.
+> **Changed *(0.11.0, #325)*: a day now means the day a preprint's journal version appeared, and unpublished preprints are not collected.** `/details`, which lists the preprints *posted* on a day, answered HTTP 200 with a zero-byte body on every URL shape tried (medRxiv's date interval on 2026-09-26, every form `BASE_URL`'s docstring lists on 2026-09-27), so every bioRxiv day failed and the fetcher moved. `/details` came back later on 2026-09-27 and serves JSON again (re-probed 2026-10-01, *(0.11.0, #386)*), and #341 reads both: `/pubs` here, `/details` through the `*-details` sources below. `/pubs` serves only preprints bioRxiv has paired with a publication, filed under the publication's date: about 500 bioRxiv and 120 medRxiv records a week, a small fraction of what the servers post (#325 puts bioRxiv alone at several hundred postings a day; that figure is not re-measured here). A record's `publication_date` is therefore usually months before the day it was fetched for; that day is `extras["published_date"]`. `/pubs` carries neither a version nor a JATS path, so the PDF URL names `v1` and no XML source is produced. It also fills each day in late, which is what [`settle_days`](#a-source-that-fills-its-days-late) handles. Preprints that are never published are collected by the `*-details` sources *(0.14.0, #341)*, which read `/details`: one record per posted version, filed under its posting date, with its `jatsxml` (an `xml` source) and `version`; `extras["published"]` is then the journal DOI, or `""` where `/details` sends `"NA"`. A `/details` record that names no version fails its day, since it would take v1's URLs. A record carrying no DOI under either spelling fails its day, since it has no identity to deduplicate on. The reader accepts both endpoints' field names (`preprint_title` or `title`, and so on), with the `/pubs` name winning.
 
 ### `fetch_openalex`
 
@@ -1616,7 +1616,7 @@ Fetch all OpenAlex works published on `target_date`.
 Core fields are guaranteed present (possibly `None`/empty); source-specific
 data goes in `extras`.
 
-### `fetch_europepmc` *(unreleased)*
+### `fetch_europepmc` *(0.14.0)*
 
 > **New (PR #790).** Opt-in: name `"europepmc"` in `sources` and give it a `query` in `source_configs`.
 
