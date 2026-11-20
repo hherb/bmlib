@@ -170,7 +170,7 @@ pub use pico_models::{
     PicoCitation, PicoContradictedQuote, PicoError, PicoExtraction, PicoPart, PicoPartState,
     PicoPrepared, PicoSuitability,
 };
-pub use prisma2020_checklist::{ChecklistItem, Section, CHECKLIST, KEY_ITEMS};
+pub use prisma2020_checklist::{ChecklistItem, ChecklistSection, CHECKLIST, KEY_ITEMS};
 pub use quality_agent::{QualityAgent, ASSESSMENT_SYSTEM_PROMPT, ASSESSMENT_USER_TEMPLATE};
 pub use rob2_agent::{
     domain_prompt, escalation_message, read_domain_reply, read_escalation_reply, rob2_overall,

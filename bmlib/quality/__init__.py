@@ -117,7 +117,7 @@ from bmlib.quality.prisma2020_checklist import (
     CHECKLIST,
     KEY_ITEMS,
     ChecklistItem,
-    Section,
+    ChecklistSection,
 )
 from bmlib.quality.rob2_agent import (
     NOT_APPLICABLE,
@@ -201,7 +201,7 @@ __all__ = [
     "CHECKLIST",
     "KEY_ITEMS",
     "ChecklistItem",
-    "Section",
+    "ChecklistSection",
     # The evidence ladder and the number
     "LADDER_VERSION",
     "EffectScale",

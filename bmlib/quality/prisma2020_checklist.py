@@ -45,12 +45,12 @@ __all__ = [
     "CHECKLIST",
     "KEY_ITEMS",
     "ChecklistItem",
-    "Section",
+    "ChecklistSection",
     "item",
 ]
 
 
-class Section(StrEnum):
+class ChecklistSection(StrEnum):
     """A checklist section, in the checklist's order; the value is its wire string."""
 
     TITLE = "title"
@@ -85,7 +85,7 @@ class ChecklistItem:
     """
 
     id: str
-    section: Section
+    section: ChecklistSection
     name: str
     wording: str
     guidance: str
@@ -99,11 +99,13 @@ class ChecklistItem:
 #: bias, certainty, registration.  Exactly the rows whose ``key`` is true.
 KEY_ITEMS: tuple[str, ...] = ("7", "11", "18", "13d", "20b", "14", "21", "15", "22", "24a")
 
+# Items 11, 14, 15, 18, 21 and 22 judge a stated "not done" as not_reported, unlike the "any
+# methods" items, where "none" is a full report: they are decision-critical assessments (spec §4.1).
 #: Every item and sub-item of the PRISMA 2020 checklist, in checklist order.
 CHECKLIST: tuple[ChecklistItem, ...] = (
     ChecklistItem(
         id="1",
-        section=Section.TITLE,
+        section=ChecklistSection.TITLE,
         name="Title",
         wording="Identify the report as a systematic review.",
         guidance=(
@@ -121,7 +123,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="2",
-        section=Section.ABSTRACT,
+        section=ChecklistSection.ABSTRACT,
         name="Abstract",
         wording="See the PRISMA 2020 for Abstracts checklist.",
         guidance=(
@@ -148,7 +150,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="3",
-        section=Section.INTRODUCTION,
+        section=ChecklistSection.INTRODUCTION,
         name="Rationale",
         wording="Describe the rationale for the review in the context of existing knowledge.",
         guidance=(
@@ -169,7 +171,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="4",
-        section=Section.INTRODUCTION,
+        section=ChecklistSection.INTRODUCTION,
         name="Objectives",
         wording=(
             "Provide an explicit statement of the objective(s) or question(s) the review addresses."
@@ -192,7 +194,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="5",
-        section=Section.METHODS,
+        section=ChecklistSection.METHODS,
         name="Eligibility criteria",
         wording=(
             "Specify the inclusion and exclusion criteria for the review and how studies "
@@ -217,7 +219,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="6",
-        section=Section.METHODS,
+        section=ChecklistSection.METHODS,
         name="Information sources",
         wording=(
             "Specify all databases, registers, websites, organisations, reference lists "
@@ -244,7 +246,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="7",
-        section=Section.METHODS,
+        section=ChecklistSection.METHODS,
         name="Search strategy",
         wording=(
             "Present the full search strategies for all databases, registers and "
@@ -272,7 +274,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="8",
-        section=Section.METHODS,
+        section=ChecklistSection.METHODS,
         name="Selection process",
         wording=(
             "Specify the methods used to decide whether a study met the inclusion "
@@ -300,7 +302,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="9",
-        section=Section.METHODS,
+        section=ChecklistSection.METHODS,
         name="Data collection process",
         wording=(
             "Specify the methods used to collect data from reports, including how many "
@@ -328,7 +330,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="10a",
-        section=Section.METHODS,
+        section=ChecklistSection.METHODS,
         name="Data items: outcomes",
         wording=(
             "List and define all outcomes for which data were sought. Specify whether all"
@@ -355,7 +357,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="10b",
-        section=Section.METHODS,
+        section=ChecklistSection.METHODS,
         name="Data items: other variables",
         wording=(
             "List and define all other variables for which data were sought (e.g. "
@@ -382,7 +384,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="11",
-        section=Section.METHODS,
+        section=ChecklistSection.METHODS,
         name="Study risk of bias assessment",
         wording=(
             "Specify the methods used to assess risk of bias in the included studies, "
@@ -400,7 +402,8 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
             "domains.\n"
             "not_reported: no method of assessing risk of bias, or only a statement that "
             "study quality was considered. A statement that this was not done is "
-            "not_reported; say so in the explanation and quote it."
+            'not_reported: open the explanation with "The paper states this was not done"'
+            " and quote the statement."
         ),
         condense_hint=(
             "The risk of bias tool and its version, the number of reviewers, their "
@@ -412,7 +415,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="12",
-        section=Section.METHODS,
+        section=ChecklistSection.METHODS,
         name="Effect measures",
         wording=(
             "Specify for each outcome the effect measure(s) (e.g. risk ratio, mean "
@@ -435,7 +438,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="13a",
-        section=Section.METHODS,
+        section=ChecklistSection.METHODS,
         name="Synthesis methods: eligibility for each synthesis",
         wording=(
             "Describe the processes used to decide which studies were eligible for each "
@@ -461,7 +464,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="13b",
-        section=Section.METHODS,
+        section=ChecklistSection.METHODS,
         name="Synthesis methods: data preparation",
         wording=(
             "Describe any methods required to prepare the data for presentation or "
@@ -489,7 +492,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="13c",
-        section=Section.METHODS,
+        section=ChecklistSection.METHODS,
         name="Synthesis methods: tabulation and display",
         wording=(
             "Describe any methods used to tabulate or visually display results of "
@@ -514,7 +517,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="13d",
-        section=Section.METHODS,
+        section=ChecklistSection.METHODS,
         name="Synthesis methods: synthesis method",
         wording=(
             "Describe any methods used to synthesize results and provide a rationale for "
@@ -551,7 +554,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="13e",
-        section=Section.METHODS,
+        section=ChecklistSection.METHODS,
         name="Synthesis methods: heterogeneity",
         wording=(
             "Describe any methods used to explore possible causes of heterogeneity among "
@@ -579,7 +582,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="13f",
-        section=Section.METHODS,
+        section=ChecklistSection.METHODS,
         name="Synthesis methods: sensitivity analyses",
         wording=(
             "Describe any sensitivity analyses conducted to assess robustness of the "
@@ -604,7 +607,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="14",
-        section=Section.METHODS,
+        section=ChecklistSection.METHODS,
         name="Reporting bias assessment",
         wording=(
             "Describe any methods used to assess risk of bias due to missing results in a"
@@ -613,17 +616,16 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
         guidance=(
             "reported: the methods used to assess risk of bias due to missing results, "
             "for example funnel plots, Egger's test, comparing the outcomes in protocols "
-            "or registrations with those published, or ROB-ME. A planned method that "
-            "could not be applied counts when the reason is stated, for example fewer "
-            "than ten studies for a funnel plot.\n"
+            "or registrations with those published, or ROB-ME. A method must be named and"
+            " applied; a reason alone is not a method.\n"
             'partly_reported: a method named only vaguely, for example "publication bias '
             'was assessed", without saying how.\n'
-            "not_reported: nothing on reporting bias. A statement that this was not done "
-            "is not_reported; say so in the explanation and quote it.\n"
-            "not_applicable: only when the review has no synthesis at all, statistical or"
-            " not (vote counting, combining P values and a structured narrative synthesis"
-            " are all syntheses); quote the passage that shows it, for example a "
-            "statement that results are presented study by study only."
+            'not_reported: nothing on reporting bias. A bare "not done" or "not '
+            'assessed", with no reason given, is not_reported: open the explanation with '
+            '"The paper states this was not done" and quote the statement.\n'
+            "not_applicable: no method was applied, for a reason the paper states, for "
+            "example fewer than 10 studies for a funnel plot, or a review with no "
+            "synthesis at all (statistical or not); quote the reason."
         ),
         condense_hint=(
             "How publication bias and other missing results were assessed, or why they "
@@ -635,7 +637,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="15",
-        section=Section.METHODS,
+        section=ChecklistSection.METHODS,
         name="Certainty assessment",
         wording=(
             "Describe any methods used to assess certainty (or confidence) in the body of"
@@ -648,7 +650,8 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
             'partly_reported: a method named, for example "GRADE was used", without the '
             "domains, the outcomes or how judgements were made.\n"
             "not_reported: nothing on certainty of the evidence. A statement that this "
-            "was not done is not_reported; say so in the explanation and quote it."
+            'was not done is not_reported: open the explanation with "The paper states '
+            'this was not done" and quote the statement.'
         ),
         condense_hint=(
             "The certainty method (for example GRADE), its domains, the outcomes it was "
@@ -660,7 +663,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="16a",
-        section=Section.RESULTS,
+        section=ChecklistSection.RESULTS,
         name="Study selection",
         wording=(
             "Describe the results of the search and selection process, from the number of"
@@ -688,7 +691,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="16b",
-        section=Section.RESULTS,
+        section=ChecklistSection.RESULTS,
         name="Study selection: excluded studies",
         wording=(
             "Cite studies that might appear to meet the inclusion criteria, but which "
@@ -714,7 +717,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="17",
-        section=Section.RESULTS,
+        section=ChecklistSection.RESULTS,
         name="Study characteristics",
         wording="Cite each included study and present its characteristics.",
         guidance=(
@@ -724,9 +727,9 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
             "partly_reported: characteristics for only some studies, or summarised across"
             " studies only, or studies not cited.\n"
             "not_reported: the included studies are neither cited nor described.\n"
-            "reported_elsewhere: also when these results are given only in a figure or a "
-            "table whose content is not in the text (its caption or a reference to it "
-            "is); quote the caption or the reference."
+            "reported_elsewhere: these results are given only in a figure, whose content "
+            "is not in the text (its caption or a reference to it is); quote the caption "
+            "or the reference."
         ),
         condense_hint=(
             "Each included study's citation and characteristics: design, population, "
@@ -738,7 +741,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="18",
-        section=Section.RESULTS,
+        section=ChecklistSection.RESULTS,
         name="Risk of bias in studies",
         wording="Present assessments of risk of bias for each included study.",
         guidance=(
@@ -747,10 +750,11 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
             "partly_reported: judgements for only some studies, or only a summary across "
             'studies, for example "most studies were at low risk of bias".\n'
             "not_reported: no risk of bias results. A statement that this was not done is"
-            " not_reported; say so in the explanation and quote it.\n"
-            "reported_elsewhere: also when these results are given only in a figure or a "
-            "table whose content is not in the text (its caption or a reference to it "
-            "is); quote the caption or the reference."
+            ' not_reported: open the explanation with "The paper states this was not '
+            'done" and quote the statement.\n'
+            "reported_elsewhere: these results are given only in a figure, whose content "
+            "is not in the text (its caption or a reference to it is); quote the caption "
+            "or the reference."
         ),
         condense_hint=(
             "The risk of bias judgement for each study and domain, and any figure caption"
@@ -762,7 +766,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="19",
-        section=Section.RESULTS,
+        section=ChecklistSection.RESULTS,
         name="Results of individual studies",
         wording=(
             "For all outcomes, present, for each study: (a) summary statistics for each "
@@ -777,9 +781,9 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
             "estimates without their precision, or only pooled results.\n"
             "not_reported: no results of individual studies.\n"
             "reported_elsewhere: the paper says per-study results are outside its text, "
-            "for example in supplementary tables, or they are given only in a figure or a"
-            " table whose content is not in the text (its caption or a reference to it "
-            "is); quote the pointer or the caption."
+            "for example in supplementary tables, or they are given only in a figure, "
+            "whose content is not in the text (its caption or a reference to it is); "
+            "quote the pointer or the caption."
         ),
         condense_hint=(
             "Each study's group summary statistics and effect estimate with its interval,"
@@ -791,7 +795,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="20a",
-        section=Section.RESULTS,
+        section=ChecklistSection.RESULTS,
         name="Results of syntheses: contributing studies",
         wording=(
             "For each synthesis, briefly summarise the characteristics and risk of bias "
@@ -818,7 +822,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="20b",
-        section=Section.RESULTS,
+        section=ChecklistSection.RESULTS,
         name="Results of syntheses: results of each synthesis",
         wording=(
             "Present results of all statistical syntheses conducted. If meta-analysis was"
@@ -836,9 +840,9 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
             "partly_reported: results for some syntheses only, or estimates without "
             "intervals, or no heterogeneity measures, or no direction of effect.\n"
             "not_reported: no results of any synthesis.\n"
-            "reported_elsewhere: also when these results are given only in a figure or a "
-            "table whose content is not in the text (its caption or a reference to it "
-            "is); quote the caption or the reference.\n"
+            "reported_elsewhere: these results are given only in a figure, whose content "
+            "is not in the text (its caption or a reference to it is); quote the caption "
+            "or the reference.\n"
             "not_applicable: only when the review has no synthesis at all, statistical or"
             " not (vote counting, combining P values and a structured narrative synthesis"
             " are all syntheses); quote the passage that shows it, for example a "
@@ -855,7 +859,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="20c",
-        section=Section.RESULTS,
+        section=ChecklistSection.RESULTS,
         name="Results of syntheses: heterogeneity",
         wording=(
             "Present results of all investigations of possible causes of heterogeneity "
@@ -883,7 +887,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="20d",
-        section=Section.RESULTS,
+        section=ChecklistSection.RESULTS,
         name="Results of syntheses: sensitivity analyses",
         wording=(
             "Present results of all sensitivity analyses conducted to assess the "
@@ -908,7 +912,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="21",
-        section=Section.RESULTS,
+        section=ChecklistSection.RESULTS,
         name="Reporting biases",
         wording=(
             "Present assessments of risk of bias due to missing results (arising from "
@@ -917,17 +921,18 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
         guidance=(
             "reported: for each synthesis assessed, the result of the assessment of risk "
             "of bias due to missing results, for example funnel plot asymmetry, an "
-            "Egger's test P value, or a judgement with its reasons. A stated reason that "
-            "a synthesis could not be assessed, for example fewer than ten studies, "
-            "counts for that synthesis.\n"
+            "Egger's test P value, or a judgement with its reasons. A synthesis the paper"
+            " says could not be assessed, for a reason it states, does not count against "
+            "the item when others were assessed.\n"
             'partly_reported: for some syntheses only, or a bare conclusion such as "no '
             'evidence of publication bias" without the assessment behind it.\n'
-            "not_reported: no results of a reporting bias assessment. A statement that "
-            "this was not done is not_reported; say so in the explanation and quote it.\n"
-            "not_applicable: only when the review has no synthesis at all, statistical or"
-            " not (vote counting, combining P values and a structured narrative synthesis"
-            " are all syntheses); quote the passage that shows it, for example a "
-            "statement that results are presented study by study only."
+            'not_reported: no results of a reporting bias assessment. A bare "not done" '
+            'or "not assessed", with no reason given, is not_reported: open the '
+            'explanation with "The paper states this was not done" and quote the '
+            "statement.\n"
+            "not_applicable: no synthesis was assessed, for a reason the paper states, "
+            "for example fewer than 10 studies, or the review has no synthesis at all "
+            "(statistical or not); quote the reason."
         ),
         condense_hint=(
             "Every funnel plot, test or judgement of missing results, per synthesis, or "
@@ -939,7 +944,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="22",
-        section=Section.RESULTS,
+        section=ChecklistSection.RESULTS,
         name="Certainty of evidence",
         wording=(
             "Present assessments of certainty (or confidence) in the body of evidence for"
@@ -951,7 +956,8 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
             "in a summary of findings table.\n"
             "partly_reported: ratings for some outcomes only, or ratings without reasons.\n"
             "not_reported: no certainty ratings. A statement that this was not done is "
-            "not_reported; say so in the explanation and quote it."
+            'not_reported: open the explanation with "The paper states this was not done"'
+            " and quote the statement."
         ),
         condense_hint=(
             "The certainty rating for each outcome and the reasons for downgrading or upgrading it."
@@ -962,7 +968,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="23a",
-        section=Section.DISCUSSION,
+        section=ChecklistSection.DISCUSSION,
         name="Discussion: interpretation",
         wording=(
             "Provide a general interpretation of the results in the context of other evidence."
@@ -982,7 +988,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="23b",
-        section=Section.DISCUSSION,
+        section=ChecklistSection.DISCUSSION,
         name="Discussion: limitations of the evidence",
         wording="Discuss any limitations of the evidence included in the review.",
         guidance=(
@@ -1001,7 +1007,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="23c",
-        section=Section.DISCUSSION,
+        section=ChecklistSection.DISCUSSION,
         name="Discussion: limitations of the review process",
         wording="Discuss any limitations of the review processes used.",
         guidance=(
@@ -1020,7 +1026,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="23d",
-        section=Section.DISCUSSION,
+        section=ChecklistSection.DISCUSSION,
         name="Discussion: implications",
         wording=("Discuss implications of the results for practice, policy, and future research."),
         guidance=(
@@ -1036,7 +1042,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="24a",
-        section=Section.OTHER_INFORMATION,
+        section=ChecklistSection.OTHER_INFORMATION,
         name="Registration",
         wording=(
             "Provide registration information for the review, including register name and"
@@ -1048,9 +1054,9 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
             "partly_reported: the review said to be registered without the number, or a "
             "number without the register.\n"
             "not_reported: nothing on registration.\n"
-            "reported_elsewhere: the paper says its registration details are outside its "
-            "text, for example in a supplement; quote the pointer. A register name and "
-            "number in the text is reported, not this state."
+            "This item asks where the review is registered, so a stated register and "
+            "number is the report itself: judge it reported, never reported_elsewhere, "
+            "even though the registry record is not in the text."
         ),
         condense_hint=(
             "The register name and registration number, or the statement that the review "
@@ -1062,7 +1068,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="24b",
-        section=Section.OTHER_INFORMATION,
+        section=ChecklistSection.OTHER_INFORMATION,
         name="Protocol",
         wording=(
             "Indicate where the review protocol can be accessed, or state that a protocol"
@@ -1070,15 +1076,15 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
         ),
         guidance=(
             "reported: where the protocol can be accessed, for example a citation of a "
-            "published protocol, a link, or a registry record that holds it, or a "
-            "statement that no protocol was prepared.\n"
+            'published protocol, a link, or "protocol available at PROSPERO '
+            'CRD42020123456", or a statement that no protocol was prepared.\n'
             "partly_reported: a protocol said to exist without saying where it can be "
             "accessed.\n"
             'not_reported: nothing on a protocol. "Available on request" is not a place '
             "the protocol can be accessed: judge it not_reported.\n"
-            "reported_elsewhere: the paper says where to find the protocol is stated "
-            "outside its text, for example in a supplement; quote the pointer. A "
-            "citation, link or registry record in the text is reported, not this state."
+            "This item asks where the protocol is, so a stated location is the report "
+            "itself: judge it reported, never reported_elsewhere, even though the "
+            "protocol is not in the text."
         ),
         condense_hint="Where the protocol can be found, or the statement that there was none.",
         key=False,
@@ -1087,7 +1093,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="24c",
-        section=Section.OTHER_INFORMATION,
+        section=ChecklistSection.OTHER_INFORMATION,
         name="Amendments",
         wording=(
             "Describe and explain any amendments to information provided at registration "
@@ -1115,7 +1121,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="25",
-        section=Section.OTHER_INFORMATION,
+        section=ChecklistSection.OTHER_INFORMATION,
         name="Support",
         wording=(
             "Describe sources of financial or non-financial support for the review, and "
@@ -1135,7 +1141,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="26",
-        section=Section.OTHER_INFORMATION,
+        section=ChecklistSection.OTHER_INFORMATION,
         name="Competing interests",
         wording="Declare any competing interests of review authors.",
         guidance=(
@@ -1151,7 +1157,7 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
     ),
     ChecklistItem(
         id="27",
-        section=Section.OTHER_INFORMATION,
+        section=ChecklistSection.OTHER_INFORMATION,
         name="Availability of data, code and other materials",
         wording=(
             "Report which of the following are publicly available and where they can be "
@@ -1171,10 +1177,9 @@ CHECKLIST: tuple[ChecklistItem, ...] = (
             '"Available on request" is a statement of availability (the material is not '
             "public), which is this item's own subject: count it for the materials it "
             "names, and never as reported_elsewhere.\n"
-            "reported_elsewhere: the paper says its availability statement is outside its"
-            " text, for example in a supplement; quote the pointer. A repository or "
-            "supplement named in the text as holding the materials is reported, not this "
-            "state."
+            "This item asks where the materials are, so a stated location (a repository, "
+            "a link or a supplement) is the report itself: judge it reported, never "
+            "reported_elsewhere, even though the materials are not in the text."
         ),
         condense_hint=(
             "The data, code and materials availability statement in full, with every "

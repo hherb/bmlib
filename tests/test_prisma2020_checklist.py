@@ -34,7 +34,7 @@ from bmlib.quality.prisma2020_checklist import (
     CHECKLIST,
     KEY_ITEMS,
     ChecklistItem,
-    Section,
+    ChecklistSection,
     item,
 )
 
@@ -56,7 +56,7 @@ def test_checklist_matches_fixture() -> None:
 
 
 def test_sections_are_their_wire_strings() -> None:
-    assert [s.value for s in Section] == [
+    assert [s.value for s in ChecklistSection] == [
         "title",
         "abstract",
         "introduction",
@@ -65,7 +65,7 @@ def test_sections_are_their_wire_strings() -> None:
         "discussion",
         "other_information",
     ]
-    assert all(type(entry.section) is Section for entry in CHECKLIST)
+    assert all(type(entry.section) is ChecklistSection for entry in CHECKLIST)
 
 
 def test_ids_are_unique_and_ordered() -> None:
@@ -78,7 +78,7 @@ def test_ids_are_unique_and_ordered() -> None:
         return int(number), item_id[len(number) :]
 
     assert ids == sorted(ids, key=order)
-    sections = list(Section)
+    sections = list(ChecklistSection)
     positions = [sections.index(entry.section) for entry in CHECKLIST]
     assert positions == sorted(positions)
 
@@ -98,7 +98,7 @@ def test_item_finds_a_row_by_id() -> None:
 
     assert found is not None
     assert found.id == "13d"
-    assert found.section is Section.METHODS
+    assert found.section is ChecklistSection.METHODS
     assert item("13g") is None
     assert item("") is None
 

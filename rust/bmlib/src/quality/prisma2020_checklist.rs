@@ -39,7 +39,7 @@
 
 /// A checklist section, in the checklist's order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Section {
+pub enum ChecklistSection {
     /// Item 1.
     Title,
     /// Item 2.
@@ -56,19 +56,19 @@ pub enum Section {
     OtherInformation,
 }
 
-impl Section {
+impl ChecklistSection {
     /// The section's wire string, as stored and as the fixture spells it:
     /// `title`, `abstract`, `introduction`, `methods`, `results`,
     /// `discussion` or `other_information`.
     pub fn as_str(self) -> &'static str {
         match self {
-            Section::Title => "title",
-            Section::Abstract => "abstract",
-            Section::Introduction => "introduction",
-            Section::Methods => "methods",
-            Section::Results => "results",
-            Section::Discussion => "discussion",
-            Section::OtherInformation => "other_information",
+            ChecklistSection::Title => "title",
+            ChecklistSection::Abstract => "abstract",
+            ChecklistSection::Introduction => "introduction",
+            ChecklistSection::Methods => "methods",
+            ChecklistSection::Results => "results",
+            ChecklistSection::Discussion => "discussion",
+            ChecklistSection::OtherInformation => "other_information",
         }
     }
 }
@@ -79,7 +79,7 @@ pub struct ChecklistItem {
     /// The checklist's item number, for example `"7"` or `"13d"`.
     pub id: &'static str,
     /// The section the item belongs to.
-    pub section: Section,
+    pub section: ChecklistSection,
     /// A short name for display, for example `"Search strategy"`.
     pub name: &'static str,
     /// The checklist's own wording, verbatim.
@@ -105,11 +105,13 @@ pub struct ChecklistItem {
 /// [`ChecklistItem::key`] is true.
 pub const KEY_ITEMS: [&str; 10] = ["7", "11", "18", "13d", "20b", "14", "21", "15", "22", "24a"];
 
+// Items 11, 14, 15, 18, 21 and 22 judge a stated "not done" as not_reported, unlike the "any
+// methods" items, where "none" is a full report: they are decision-critical assessments (spec §4.1).
 /// Every item and sub-item of the PRISMA 2020 checklist, in checklist order.
 pub const CHECKLIST: [ChecklistItem; 42] = [
     ChecklistItem {
         id: "1",
-        section: Section::Title,
+        section: ChecklistSection::Title,
         name: "Title",
         wording: "Identify the report as a systematic review.",
         guidance: r#"reported: the title identifies the report as a systematic review, for example "a systematic review" or "systematic review and meta-analysis".
@@ -122,7 +124,7 @@ not_reported: the title does not identify the report as a systematic review. A s
     },
     ChecklistItem {
         id: "2",
-        section: Section::Abstract,
+        section: ChecklistSection::Abstract,
         name: "Abstract",
         wording: "See the PRISMA 2020 for Abstracts checklist.",
         guidance: "Judge the abstract against the twelve elements of PRISMA 2020 for Abstracts: (1) identifies the report as a systematic review; (2) the main objective(s) or question(s); (3) inclusion and exclusion criteria; (4) information sources and the date each was last searched; (5) methods to assess risk of bias; (6) methods to present and synthesise results; (7) number of included studies and participants, with their relevant characteristics; (8) results for the main outcomes, with the number of studies and participants for each, the summary estimate and its confidence or credible interval if meta-analysis was done, and the direction of effect if groups are compared; (9) limitations of the evidence; (10) a general interpretation and important implications; (11) the primary source of funding; (12) the register name and registration number.
@@ -136,7 +138,7 @@ not_reported: the paper has no abstract.",
     },
     ChecklistItem {
         id: "3",
-        section: Section::Introduction,
+        section: ChecklistSection::Introduction,
         name: "Rationale",
         wording: "Describe the rationale for the review in the context of existing knowledge.",
         guidance: "reported: the paper says what is already known on the question, including any earlier reviews of it, and why this review is needed now, for example uncertainty, new studies, or gaps in earlier reviews.
@@ -149,7 +151,7 @@ not_reported: no rationale for the review.",
     },
     ChecklistItem {
         id: "4",
-        section: Section::Introduction,
+        section: ChecklistSection::Introduction,
         name: "Objectives",
         wording: "Provide an explicit statement of the objective(s) or question(s) the review addresses.",
         guidance: r#"reported: an explicit statement of each objective or question, with its elements named, for example the population, intervention, comparator and outcomes of an intervention review.
@@ -162,7 +164,7 @@ not_reported: no stated objective or question."#,
     },
     ChecklistItem {
         id: "5",
-        section: Section::Methods,
+        section: ChecklistSection::Methods,
         name: "Eligibility criteria",
         wording: "Specify the inclusion and exclusion criteria for the review and how studies were grouped for the syntheses.",
         guidance: "reported: inclusion and exclusion criteria for the studies (for example design, population, interventions, comparators, outcomes, setting) and for the reports (for example years, language, publication status), and, where the review synthesises results, how studies were grouped for each synthesis.
@@ -175,7 +177,7 @@ not_reported: no eligibility criteria.",
     },
     ChecklistItem {
         id: "6",
-        section: Section::Methods,
+        section: ChecklistSection::Methods,
         name: "Information sources",
         wording: "Specify all databases, registers, websites, organisations, reference lists and other sources searched or consulted to identify studies. Specify the date when each source was last searched or consulted.",
         guidance: r#"reported: every database (with its platform or interface, for example Ovid), register, website, organisation, reference list and other source searched or consulted, each with the date it was last searched or consulted. One date counts for all sources only if the paper plainly applies it to each.
@@ -188,7 +190,7 @@ not_reported: no sources named."#,
     },
     ChecklistItem {
         id: "7",
-        section: Section::Methods,
+        section: ChecklistSection::Methods,
         name: "Search strategy",
         wording: "Present the full search strategies for all databases, registers and websites, including any filters and limits used.",
         guidance: r#"reported: the full search strategy, exactly as run (every term, Boolean operator, field tag, filter and limit), for every database, register and website searched, in the text.
@@ -202,7 +204,7 @@ reported_elsewhere: the paper says where the full strategies are, outside its te
     },
     ChecklistItem {
         id: "8",
-        section: Section::Methods,
+        section: ChecklistSection::Methods,
         name: "Selection process",
         wording: "Specify the methods used to decide whether a study met the inclusion criteria of the review, including how many reviewers screened each record and each report retrieved, whether they worked independently, and if applicable, details of automation tools used in the process.",
         guidance: "reported: how many reviewers screened each record (titles and abstracts) and each report retrieved (full texts), whether they worked independently, how disagreements were resolved, and the automation tools used, if any. Silence about automation tools is not a gap.
@@ -215,7 +217,7 @@ not_reported: no account of how studies were selected.",
     },
     ChecklistItem {
         id: "9",
-        section: Section::Methods,
+        section: ChecklistSection::Methods,
         name: "Data collection process",
         wording: "Specify the methods used to collect data from reports, including how many reviewers collected data from each report, whether they worked independently, any processes for obtaining or confirming data from study investigators, and if applicable, details of automation tools used in the process.",
         guidance: "reported: how many reviewers collected data from each report, whether they worked independently, whether and how data were sought or confirmed from study investigators, and the automation tools used, if any. Silence about automation tools is not a gap.
@@ -228,7 +230,7 @@ not_reported: no account of how data were collected.",
     },
     ChecklistItem {
         id: "10a",
-        section: Section::Methods,
+        section: ChecklistSection::Methods,
         name: "Data items: outcomes",
         wording: "List and define all outcomes for which data were sought. Specify whether all results that were compatible with each outcome domain in each study were sought (e.g. for all measures, time points, analyses), and if not, the methods used to decide which results to collect.",
         guidance: "reported: every outcome for which data were sought, listed and defined (measures and time points), and whether all results compatible with each outcome domain were sought; if not, how the results to collect were chosen, for example a preferred measure or time point.
@@ -241,7 +243,7 @@ not_reported: the outcomes for which data were sought are not listed.",
     },
     ChecklistItem {
         id: "10b",
-        section: Section::Methods,
+        section: ChecklistSection::Methods,
         name: "Data items: other variables",
         wording: "List and define all other variables for which data were sought (e.g. participant and intervention characteristics, funding sources). Describe any assumptions made about any missing or unclear information.",
         guidance: r#"reported: every other variable for which data were sought, listed and defined, for example participant, intervention and setting characteristics and funding sources, and the assumptions made about missing or unclear information.
@@ -254,12 +256,12 @@ not_reported: no other variables listed."#,
     },
     ChecklistItem {
         id: "11",
-        section: Section::Methods,
+        section: ChecklistSection::Methods,
         name: "Study risk of bias assessment",
         wording: "Specify the methods used to assess risk of bias in the included studies, including details of the tool(s) used, how many reviewers assessed each study and whether they worked independently, and if applicable, details of automation tools used in the process.",
-        guidance: "reported: the tool or tools used, named (for example RoB 2, ROBINS-I, Newcastle-Ottawa Scale), how many reviewers assessed each study, whether they worked independently, and the automation tools used, if any. Silence about automation tools is not a gap.
+        guidance: r#"reported: the tool or tools used, named (for example RoB 2, ROBINS-I, Newcastle-Ottawa Scale), how many reviewers assessed each study, whether they worked independently, and the automation tools used, if any. Silence about automation tools is not a gap.
 partly_reported: the tool named but the number of reviewers or their independence missing, or a method described without naming a tool or its domains.
-not_reported: no method of assessing risk of bias, or only a statement that study quality was considered. A statement that this was not done is not_reported; say so in the explanation and quote it.",
+not_reported: no method of assessing risk of bias, or only a statement that study quality was considered. A statement that this was not done is not_reported: open the explanation with "The paper states this was not done" and quote the statement."#,
         condense_hint: "The risk of bias tool and its version, the number of reviewers, their independence and how disagreements were resolved.",
         key: true,
         may_be_not_applicable: false,
@@ -267,7 +269,7 @@ not_reported: no method of assessing risk of bias, or only a statement that stud
     },
     ChecklistItem {
         id: "12",
-        section: Section::Methods,
+        section: ChecklistSection::Methods,
         name: "Effect measures",
         wording: "Specify for each outcome the effect measure(s) (e.g. risk ratio, mean difference) used in the synthesis or presentation of results.",
         guidance: "reported: the effect measure for each outcome, for example risk ratio, odds ratio, mean difference, standardised mean difference or hazard ratio, wherever in the paper it is stated.
@@ -281,7 +283,7 @@ not_applicable: only when the review neither synthesises nor presents any effect
     },
     ChecklistItem {
         id: "13a",
-        section: Section::Methods,
+        section: ChecklistSection::Methods,
         name: "Synthesis methods: eligibility for each synthesis",
         wording: "Describe the processes used to decide which studies were eligible for each synthesis (e.g. tabulating the study intervention characteristics and comparing against the planned groups for each synthesis (item #5)).",
         guidance: "reported: how the review decided which studies went into each synthesis, for example by tabulating each study's intervention characteristics and comparing them with the groups planned for each synthesis.
@@ -295,7 +297,7 @@ not_applicable: only when the review has no synthesis at all, statistical or not
     },
     ChecklistItem {
         id: "13b",
-        section: Section::Methods,
+        section: ChecklistSection::Methods,
         name: "Synthesis methods: data preparation",
         wording: "Describe any methods required to prepare the data for presentation or synthesis, such as handling of missing summary statistics, or data conversions.",
         guidance: "reported: the methods used to prepare data for presentation or synthesis, for example imputing missing standard deviations, converting medians to means, combining groups or converting units. A plain statement that none was done or needed counts as reported.
@@ -309,7 +311,7 @@ not_applicable: only when the review has no synthesis at all, statistical or not
     },
     ChecklistItem {
         id: "13c",
-        section: Section::Methods,
+        section: ChecklistSection::Methods,
         name: "Synthesis methods: tabulation and display",
         wording: "Describe any methods used to tabulate or visually display results of individual studies and syntheses.",
         guidance: "reported: how the results of individual studies and of the syntheses were tabulated or displayed, for example summary tables and how they were ordered, forest plots or harvest plots.
@@ -323,7 +325,7 @@ not_applicable: only when the review has no synthesis at all, statistical or not
     },
     ChecklistItem {
         id: "13d",
-        section: Section::Methods,
+        section: ChecklistSection::Methods,
         name: "Synthesis methods: synthesis method",
         wording: "Describe any methods used to synthesize results and provide a rationale for the choice(s). If meta-analysis was performed, describe the model(s), method(s) to identify the presence and extent of statistical heterogeneity, and software package(s) used.",
         guidance: r#"reported: each synthesis method and the reason it was chosen. For a meta-analysis: the model (fixed or random effects, and the estimator, for example REML or DerSimonian-Laird), the methods to identify the presence and extent of statistical heterogeneity (for example I², tau², Cochran's Q) and the software. Without a meta-analysis: the method used instead, for example vote counting on the direction of effect or a structured synthesis following SWiM, and why.
@@ -337,7 +339,7 @@ not_applicable: only when the review has no synthesis at all, statistical or not
     },
     ChecklistItem {
         id: "13e",
-        section: Section::Methods,
+        section: ChecklistSection::Methods,
         name: "Synthesis methods: heterogeneity",
         wording: "Describe any methods used to explore possible causes of heterogeneity among study results (e.g. subgroup analysis, meta-regression).",
         guidance: "reported: the methods used to explore causes of heterogeneity, for example subgroup analysis or meta-regression, with the variables examined and whether they were planned in advance. A plain statement that none was done or needed counts as reported.
@@ -351,7 +353,7 @@ not_applicable: only when the review has no synthesis at all, statistical or not
     },
     ChecklistItem {
         id: "13f",
-        section: Section::Methods,
+        section: ChecklistSection::Methods,
         name: "Synthesis methods: sensitivity analyses",
         wording: "Describe any sensitivity analyses conducted to assess robustness of the synthesized results.",
         guidance: "reported: each sensitivity analysis and the decision it tests, for example excluding studies at high risk of bias or using another model. A plain statement that none was done or needed counts as reported.
@@ -365,13 +367,13 @@ not_applicable: only when the review has no synthesis at all, statistical or not
     },
     ChecklistItem {
         id: "14",
-        section: Section::Methods,
+        section: ChecklistSection::Methods,
         name: "Reporting bias assessment",
         wording: "Describe any methods used to assess risk of bias due to missing results in a synthesis (arising from reporting biases).",
-        guidance: r#"reported: the methods used to assess risk of bias due to missing results, for example funnel plots, Egger's test, comparing the outcomes in protocols or registrations with those published, or ROB-ME. A planned method that could not be applied counts when the reason is stated, for example fewer than ten studies for a funnel plot.
+        guidance: r#"reported: the methods used to assess risk of bias due to missing results, for example funnel plots, Egger's test, comparing the outcomes in protocols or registrations with those published, or ROB-ME. A method must be named and applied; a reason alone is not a method.
 partly_reported: a method named only vaguely, for example "publication bias was assessed", without saying how.
-not_reported: nothing on reporting bias. A statement that this was not done is not_reported; say so in the explanation and quote it.
-not_applicable: only when the review has no synthesis at all, statistical or not (vote counting, combining P values and a structured narrative synthesis are all syntheses); quote the passage that shows it, for example a statement that results are presented study by study only."#,
+not_reported: nothing on reporting bias. A bare "not done" or "not assessed", with no reason given, is not_reported: open the explanation with "The paper states this was not done" and quote the statement.
+not_applicable: no method was applied, for a reason the paper states, for example fewer than 10 studies for a funnel plot, or a review with no synthesis at all (statistical or not); quote the reason."#,
         condense_hint: "How publication bias and other missing results were assessed, or why they could not be.",
         key: true,
         may_be_not_applicable: true,
@@ -379,12 +381,12 @@ not_applicable: only when the review has no synthesis at all, statistical or not
     },
     ChecklistItem {
         id: "15",
-        section: Section::Methods,
+        section: ChecklistSection::Methods,
         name: "Certainty assessment",
         wording: "Describe any methods used to assess certainty (or confidence) in the body of evidence for an outcome.",
         guidance: r#"reported: the method used to assess certainty in the body of evidence, for example GRADE, with the domains considered and how judgements were made, and for which outcomes.
 partly_reported: a method named, for example "GRADE was used", without the domains, the outcomes or how judgements were made.
-not_reported: nothing on certainty of the evidence. A statement that this was not done is not_reported; say so in the explanation and quote it."#,
+not_reported: nothing on certainty of the evidence. A statement that this was not done is not_reported: open the explanation with "The paper states this was not done" and quote the statement."#,
         condense_hint: "The certainty method (for example GRADE), its domains, the outcomes it was applied to and who judged.",
         key: true,
         may_be_not_applicable: false,
@@ -392,7 +394,7 @@ not_reported: nothing on certainty of the evidence. A statement that this was no
     },
     ChecklistItem {
         id: "16a",
-        section: Section::Results,
+        section: ChecklistSection::Results,
         name: "Study selection",
         wording: "Describe the results of the search and selection process, from the number of records identified in the search to the number of studies included in the review, ideally using a flow diagram.",
         guidance: "reported: the numbers from the records identified, through duplicates removed, records screened, reports sought and assessed, to the studies included, with the reasons reports were excluded at full text.
@@ -406,7 +408,7 @@ reported_elsewhere: the counts are given only in a flow diagram whose content is
     },
     ChecklistItem {
         id: "16b",
-        section: Section::Results,
+        section: ChecklistSection::Results,
         name: "Study selection: excluded studies",
         wording: "Cite studies that might appear to meet the inclusion criteria, but which were excluded, and explain why they were excluded.",
         guidance: r#"reported: the studies that might appear to meet the inclusion criteria but were excluded are cited, each with the reason it was excluded.
@@ -420,13 +422,13 @@ reported_elsewhere: the paper says the excluded studies are listed outside its t
     },
     ChecklistItem {
         id: "17",
-        section: Section::Results,
+        section: ChecklistSection::Results,
         name: "Study characteristics",
         wording: "Cite each included study and present its characteristics.",
         guidance: "reported: each included study is cited and its characteristics presented, for example design, population, interventions, comparators, outcomes, setting and follow-up, typically in a table.
 partly_reported: characteristics for only some studies, or summarised across studies only, or studies not cited.
 not_reported: the included studies are neither cited nor described.
-reported_elsewhere: also when these results are given only in a figure or a table whose content is not in the text (its caption or a reference to it is); quote the caption or the reference.",
+reported_elsewhere: these results are given only in a figure, whose content is not in the text (its caption or a reference to it is); quote the caption or the reference.",
         condense_hint: "Each included study's citation and characteristics: design, population, interventions, comparators, outcomes, setting.",
         key: false,
         may_be_not_applicable: false,
@@ -434,13 +436,13 @@ reported_elsewhere: also when these results are given only in a figure or a tabl
     },
     ChecklistItem {
         id: "18",
-        section: Section::Results,
+        section: ChecklistSection::Results,
         name: "Risk of bias in studies",
         wording: "Present assessments of risk of bias for each included study.",
         guidance: r#"reported: the risk of bias judgement for each included study, ideally per domain as well as overall.
 partly_reported: judgements for only some studies, or only a summary across studies, for example "most studies were at low risk of bias".
-not_reported: no risk of bias results. A statement that this was not done is not_reported; say so in the explanation and quote it.
-reported_elsewhere: also when these results are given only in a figure or a table whose content is not in the text (its caption or a reference to it is); quote the caption or the reference."#,
+not_reported: no risk of bias results. A statement that this was not done is not_reported: open the explanation with "The paper states this was not done" and quote the statement.
+reported_elsewhere: these results are given only in a figure, whose content is not in the text (its caption or a reference to it is); quote the caption or the reference."#,
         condense_hint: "The risk of bias judgement for each study and domain, and any figure caption showing them.",
         key: true,
         may_be_not_applicable: false,
@@ -448,13 +450,13 @@ reported_elsewhere: also when these results are given only in a figure or a tabl
     },
     ChecklistItem {
         id: "19",
-        section: Section::Results,
+        section: ChecklistSection::Results,
         name: "Results of individual studies",
         wording: "For all outcomes, present, for each study: (a) summary statistics for each group (where appropriate) and (b) an effect estimate and its precision (e.g. confidence/credible interval), ideally using structured tables or plots.",
         guidance: "reported: for every outcome and every study, summary statistics for each group where appropriate, and an effect estimate with its precision, for example a confidence interval.
 partly_reported: results for some outcomes or studies only, or effect estimates without their precision, or only pooled results.
 not_reported: no results of individual studies.
-reported_elsewhere: the paper says per-study results are outside its text, for example in supplementary tables, or they are given only in a figure or a table whose content is not in the text (its caption or a reference to it is); quote the pointer or the caption.",
+reported_elsewhere: the paper says per-study results are outside its text, for example in supplementary tables, or they are given only in a figure, whose content is not in the text (its caption or a reference to it is); quote the pointer or the caption.",
         condense_hint: "Each study's group summary statistics and effect estimate with its interval, per outcome, and any pointer to them.",
         key: false,
         may_be_not_applicable: false,
@@ -462,7 +464,7 @@ reported_elsewhere: the paper says per-study results are outside its text, for e
     },
     ChecklistItem {
         id: "20a",
-        section: Section::Results,
+        section: ChecklistSection::Results,
         name: "Results of syntheses: contributing studies",
         wording: "For each synthesis, briefly summarise the characteristics and risk of bias among contributing studies.",
         guidance: "reported: for each synthesis, a brief summary of the characteristics and the risk of bias of the studies contributing to it.
@@ -476,13 +478,13 @@ not_applicable: only when the review has no synthesis at all, statistical or not
     },
     ChecklistItem {
         id: "20b",
-        section: Section::Results,
+        section: ChecklistSection::Results,
         name: "Results of syntheses: results of each synthesis",
         wording: "Present results of all statistical syntheses conducted. If meta-analysis was done, present for each the summary estimate and its precision (e.g. confidence/credible interval) and measures of statistical heterogeneity. If comparing groups, describe the direction of the effect.",
         guidance: "reported: the result of every synthesis conducted. For each meta-analysis: the summary estimate with its confidence or credible interval and measures of statistical heterogeneity (for example I², tau², Cochran's Q). When groups are compared, the direction of the effect. Without a meta-analysis: the result of the synthesis used instead, for example the number of studies favouring each group.
 partly_reported: results for some syntheses only, or estimates without intervals, or no heterogeneity measures, or no direction of effect.
 not_reported: no results of any synthesis.
-reported_elsewhere: also when these results are given only in a figure or a table whose content is not in the text (its caption or a reference to it is); quote the caption or the reference.
+reported_elsewhere: these results are given only in a figure, whose content is not in the text (its caption or a reference to it is); quote the caption or the reference.
 not_applicable: only when the review has no synthesis at all, statistical or not (vote counting, combining P values and a structured narrative synthesis are all syntheses); quote the passage that shows it, for example a statement that results are presented study by study only. A review without a meta-analysis still owes this item: the results of the synthesis it did.",
         condense_hint: "Every pooled estimate with its interval, heterogeneity statistics, number of studies and participants, and direction of effect.",
         key: true,
@@ -491,7 +493,7 @@ not_applicable: only when the review has no synthesis at all, statistical or not
     },
     ChecklistItem {
         id: "20c",
-        section: Section::Results,
+        section: ChecklistSection::Results,
         name: "Results of syntheses: heterogeneity",
         wording: "Present results of all investigations of possible causes of heterogeneity among study results.",
         guidance: "reported: the results of every investigation of causes of heterogeneity, for example each subgroup's estimate and the test for subgroup differences, or meta-regression coefficients. A plain statement that none was done or needed counts as reported.
@@ -505,7 +507,7 @@ not_applicable: only when the review has no synthesis at all, statistical or not
     },
     ChecklistItem {
         id: "20d",
-        section: Section::Results,
+        section: ChecklistSection::Results,
         name: "Results of syntheses: sensitivity analyses",
         wording: "Present results of all sensitivity analyses conducted to assess the robustness of the synthesized results.",
         guidance: r#"reported: the results of every sensitivity analysis, for example the re-estimated effect with its interval. A plain statement that none was done or needed counts as reported.
@@ -519,13 +521,13 @@ not_applicable: only when the review has no synthesis at all, statistical or not
     },
     ChecklistItem {
         id: "21",
-        section: Section::Results,
+        section: ChecklistSection::Results,
         name: "Reporting biases",
         wording: "Present assessments of risk of bias due to missing results (arising from reporting biases) for each synthesis assessed.",
-        guidance: r#"reported: for each synthesis assessed, the result of the assessment of risk of bias due to missing results, for example funnel plot asymmetry, an Egger's test P value, or a judgement with its reasons. A stated reason that a synthesis could not be assessed, for example fewer than ten studies, counts for that synthesis.
+        guidance: r#"reported: for each synthesis assessed, the result of the assessment of risk of bias due to missing results, for example funnel plot asymmetry, an Egger's test P value, or a judgement with its reasons. A synthesis the paper says could not be assessed, for a reason it states, does not count against the item when others were assessed.
 partly_reported: for some syntheses only, or a bare conclusion such as "no evidence of publication bias" without the assessment behind it.
-not_reported: no results of a reporting bias assessment. A statement that this was not done is not_reported; say so in the explanation and quote it.
-not_applicable: only when the review has no synthesis at all, statistical or not (vote counting, combining P values and a structured narrative synthesis are all syntheses); quote the passage that shows it, for example a statement that results are presented study by study only."#,
+not_reported: no results of a reporting bias assessment. A bare "not done" or "not assessed", with no reason given, is not_reported: open the explanation with "The paper states this was not done" and quote the statement.
+not_applicable: no synthesis was assessed, for a reason the paper states, for example fewer than 10 studies, or the review has no synthesis at all (statistical or not); quote the reason."#,
         condense_hint: "Every funnel plot, test or judgement of missing results, per synthesis, or why one could not be made.",
         key: true,
         may_be_not_applicable: true,
@@ -533,12 +535,12 @@ not_applicable: only when the review has no synthesis at all, statistical or not
     },
     ChecklistItem {
         id: "22",
-        section: Section::Results,
+        section: ChecklistSection::Results,
         name: "Certainty of evidence",
         wording: "Present assessments of certainty (or confidence) in the body of evidence for each outcome assessed.",
-        guidance: "reported: the certainty rating for each outcome assessed, for example GRADE high, moderate, low or very low, with the reasons for each rating, ideally in a summary of findings table.
+        guidance: r#"reported: the certainty rating for each outcome assessed, for example GRADE high, moderate, low or very low, with the reasons for each rating, ideally in a summary of findings table.
 partly_reported: ratings for some outcomes only, or ratings without reasons.
-not_reported: no certainty ratings. A statement that this was not done is not_reported; say so in the explanation and quote it.",
+not_reported: no certainty ratings. A statement that this was not done is not_reported: open the explanation with "The paper states this was not done" and quote the statement."#,
         condense_hint: "The certainty rating for each outcome and the reasons for downgrading or upgrading it.",
         key: true,
         may_be_not_applicable: false,
@@ -546,7 +548,7 @@ not_reported: no certainty ratings. A statement that this was not done is not_re
     },
     ChecklistItem {
         id: "23a",
-        section: Section::Discussion,
+        section: ChecklistSection::Discussion,
         name: "Discussion: interpretation",
         wording: "Provide a general interpretation of the results in the context of other evidence.",
         guidance: "reported: a general interpretation of the results set against other evidence, for example earlier reviews or major studies.
@@ -559,7 +561,7 @@ not_reported: no interpretation of the results.",
     },
     ChecklistItem {
         id: "23b",
-        section: Section::Discussion,
+        section: ChecklistSection::Discussion,
         name: "Discussion: limitations of the evidence",
         wording: "Discuss any limitations of the evidence included in the review.",
         guidance: "reported: the limitations of the included evidence are discussed, for example risk of bias, inconsistency, imprecision, indirectness or few studies. Limitations of the review's own methods belong to item 23c, not here.
@@ -572,7 +574,7 @@ not_reported: no limitations of the included evidence.",
     },
     ChecklistItem {
         id: "23c",
-        section: Section::Discussion,
+        section: ChecklistSection::Discussion,
         name: "Discussion: limitations of the review process",
         wording: "Discuss any limitations of the review processes used.",
         guidance: "reported: the limitations of the review's own methods are discussed, for example a search limited by language or date, a single screener, or unpublished data not sought. Limitations of the included studies belong to item 23b, not here.
@@ -585,7 +587,7 @@ not_reported: no limitations of the review process.",
     },
     ChecklistItem {
         id: "23d",
-        section: Section::Discussion,
+        section: ChecklistSection::Discussion,
         name: "Discussion: implications",
         wording: "Discuss implications of the results for practice, policy, and future research.",
         guidance: "reported: implications for practice, for policy and for future research are all discussed.
@@ -598,13 +600,13 @@ not_reported: no implications discussed.",
     },
     ChecklistItem {
         id: "24a",
-        section: Section::OtherInformation,
+        section: ChecklistSection::OtherInformation,
         name: "Registration",
         wording: "Provide registration information for the review, including register name and registration number, or state that the review was not registered.",
         guidance: "reported: the register name and the registration number (for example PROSPERO CRD42020123456), or a statement that the review was not registered.
 partly_reported: the review said to be registered without the number, or a number without the register.
 not_reported: nothing on registration.
-reported_elsewhere: the paper says its registration details are outside its text, for example in a supplement; quote the pointer. A register name and number in the text is reported, not this state.",
+This item asks where the review is registered, so a stated register and number is the report itself: judge it reported, never reported_elsewhere, even though the registry record is not in the text.",
         condense_hint: "The register name and registration number, or the statement that the review was not registered.",
         key: true,
         may_be_not_applicable: false,
@@ -612,13 +614,13 @@ reported_elsewhere: the paper says its registration details are outside its text
     },
     ChecklistItem {
         id: "24b",
-        section: Section::OtherInformation,
+        section: ChecklistSection::OtherInformation,
         name: "Protocol",
         wording: "Indicate where the review protocol can be accessed, or state that a protocol was not prepared.",
-        guidance: r#"reported: where the protocol can be accessed, for example a citation of a published protocol, a link, or a registry record that holds it, or a statement that no protocol was prepared.
+        guidance: r#"reported: where the protocol can be accessed, for example a citation of a published protocol, a link, or "protocol available at PROSPERO CRD42020123456", or a statement that no protocol was prepared.
 partly_reported: a protocol said to exist without saying where it can be accessed.
 not_reported: nothing on a protocol. "Available on request" is not a place the protocol can be accessed: judge it not_reported.
-reported_elsewhere: the paper says where to find the protocol is stated outside its text, for example in a supplement; quote the pointer. A citation, link or registry record in the text is reported, not this state."#,
+This item asks where the protocol is, so a stated location is the report itself: judge it reported, never reported_elsewhere, even though the protocol is not in the text."#,
         condense_hint: "Where the protocol can be found, or the statement that there was none.",
         key: false,
         may_be_not_applicable: false,
@@ -626,7 +628,7 @@ reported_elsewhere: the paper says where to find the protocol is stated outside 
     },
     ChecklistItem {
         id: "24c",
-        section: Section::OtherInformation,
+        section: ChecklistSection::OtherInformation,
         name: "Amendments",
         wording: "Describe and explain any amendments to information provided at registration or in the protocol.",
         guidance: "reported: each amendment to the registration or protocol is described and explained. A plain statement that there were no amendments counts as reported.
@@ -641,7 +643,7 @@ not_applicable: only when the paper states the review was neither registered nor
     },
     ChecklistItem {
         id: "25",
-        section: Section::OtherInformation,
+        section: ChecklistSection::OtherInformation,
         name: "Support",
         wording: "Describe sources of financial or non-financial support for the review, and the role of the funders or sponsors in the review.",
         guidance: "reported: the sources of financial and non-financial support and the role of the funders or sponsors in the review. A statement that the review had no funding counts as reported.
@@ -654,7 +656,7 @@ not_reported: nothing on support.",
     },
     ChecklistItem {
         id: "26",
-        section: Section::OtherInformation,
+        section: ChecklistSection::OtherInformation,
         name: "Competing interests",
         wording: "Declare any competing interests of review authors.",
         guidance: "reported: a declaration of the review authors' competing interests. A statement that there are none counts as reported.
@@ -667,14 +669,14 @@ not_reported: no declaration of competing interests.",
     },
     ChecklistItem {
         id: "27",
-        section: Section::OtherInformation,
+        section: ChecklistSection::OtherInformation,
         name: "Availability of data, code and other materials",
         wording: "Report which of the following are publicly available and where they can be found: template data collection forms; data extracted from included studies; data used for all analyses; analytic code; any other materials used in the review.",
         guidance: r#"reported: for each of template data collection forms, data extracted from the included studies, data used for all analyses, analytic code and other materials, the paper says whether it is publicly available and, if so, where.
 partly_reported: only some of these covered, or materials said to be public without saying where.
 not_reported: no statement on the availability of data, code or other materials.
 "Available on request" is a statement of availability (the material is not public), which is this item's own subject: count it for the materials it names, and never as reported_elsewhere.
-reported_elsewhere: the paper says its availability statement is outside its text, for example in a supplement; quote the pointer. A repository or supplement named in the text as holding the materials is reported, not this state."#,
+This item asks where the materials are, so a stated location (a repository, a link or a supplement) is the report itself: judge it reported, never reported_elsewhere, even though the materials are not in the text."#,
         condense_hint: "The data, code and materials availability statement in full, with every repository or supplement it names.",
         key: false,
         may_be_not_applicable: false,

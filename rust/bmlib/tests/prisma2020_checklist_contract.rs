@@ -22,7 +22,9 @@
 
 use std::collections::BTreeSet;
 
-use bmlib::quality::prisma2020_checklist::{item, ChecklistItem, Section, CHECKLIST, KEY_ITEMS};
+use bmlib::quality::prisma2020_checklist::{
+    item, ChecklistItem, ChecklistSection, CHECKLIST, KEY_ITEMS,
+};
 use serde_json::{json, Value};
 
 const FIXTURE: &str = include_str!("../../../tests/fixtures/prisma2020_checklist.json");
@@ -60,13 +62,13 @@ fn checklist_matches_fixture() {
 #[test]
 fn sections_are_their_wire_strings() {
     let all = [
-        (Section::Title, "title"),
-        (Section::Abstract, "abstract"),
-        (Section::Introduction, "introduction"),
-        (Section::Methods, "methods"),
-        (Section::Results, "results"),
-        (Section::Discussion, "discussion"),
-        (Section::OtherInformation, "other_information"),
+        (ChecklistSection::Title, "title"),
+        (ChecklistSection::Abstract, "abstract"),
+        (ChecklistSection::Introduction, "introduction"),
+        (ChecklistSection::Methods, "methods"),
+        (ChecklistSection::Results, "results"),
+        (ChecklistSection::Discussion, "discussion"),
+        (ChecklistSection::OtherInformation, "other_information"),
     ];
     for (section, wire) in all {
         assert_eq!(section.as_str(), wire);
@@ -91,7 +93,7 @@ fn ids_are_unique_and_ordered() {
     sorted.sort();
     assert_eq!(keys, sorted);
 
-    let sections: Vec<Section> = CHECKLIST.iter().map(|entry| entry.section).collect();
+    let sections: Vec<ChecklistSection> = CHECKLIST.iter().map(|entry| entry.section).collect();
     let mut by_section = sections.clone();
     by_section.sort_by_key(|section| *section as u8);
     assert_eq!(sections, by_section);
@@ -121,7 +123,7 @@ fn forty_two_rows() {
 fn item_finds_a_row_by_id() {
     let found = item("13d").expect("13d is a row");
     assert_eq!(found.id, "13d");
-    assert_eq!(found.section, Section::Methods);
+    assert_eq!(found.section, ChecklistSection::Methods);
     assert!(item("13g").is_none());
     assert!(item("").is_none());
 }
