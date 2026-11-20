@@ -43,6 +43,7 @@
 //! | `quality/rob2_d5_facts.py` | [`rob2_d5_facts`] | ported (evidence weight, D5 from facts) |
 //! | `quality/evidence_weight.py` | [`evidence_weight`] | ported (evidence weight, piece 6) |
 //! | `quality/prisma2020_checklist.py` | [`prisma2020_checklist`] | on par (PRISMA 2020, the checklist) |
+//! | `quality/prisma2020_parts.py` | [`prisma2020_parts`] | on par (PRISMA 2020, the split) |
 //!
 //! The three LLM tiers do not own a client. Each takes a
 //! [`agent_chat::JsonChat`] — the message-carrying form of
@@ -94,6 +95,7 @@ pub mod outcome_agent;
 pub mod pico_agent;
 pub mod pico_models;
 pub mod prisma2020_checklist;
+pub mod prisma2020_parts;
 pub mod quality_agent;
 pub mod rob2_agent;
 pub mod rob2_algorithm;
@@ -171,6 +173,7 @@ pub use pico_models::{
     PicoPrepared, PicoSuitability,
 };
 pub use prisma2020_checklist::{ChecklistItem, ChecklistSection, CHECKLIST, KEY_ITEMS};
+pub use prisma2020_parts::{part_query, plan_parts, PartPlan, PartsError, PART_OVERHEAD_CHARS};
 pub use quality_agent::{QualityAgent, ASSESSMENT_SYSTEM_PROMPT, ASSESSMENT_USER_TEMPLATE};
 pub use rob2_agent::{
     domain_prompt, escalation_message, read_domain_reply, read_escalation_reply, rob2_overall,
