@@ -9,6 +9,17 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Fixed
+
+- **A record with neither DOI nor PMID is stored once, not again on every
+  re-fetch** (#794), as in Python. `FetchedRecord::source_record_id` (filled
+  by the OpenAlex and Europe PMC normalisers) is stored by `sync()` through the
+  new `store_publication_with_record_id`, in the new `publication_record_ids`
+  table, and consolidates a keyless row into the DOI or PMID row once a record
+  links them. `store_publication` keeps its signature. **Breaking** for a
+  struct literal of `FetchedRecord` (use `FetchedRecord::new`) and an
+  exhaustive `match` on `ReplaceError`, which gains `EmptyRecordId`.
+
 ## [0.5.0] - 2026-11-17
 
 Published with the Python library's 0.14.0, from the same merge commit. **The

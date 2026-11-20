@@ -1367,5 +1367,300 @@
   },
   "fn": "normalize",
   "name": "normalize/location-fields-wrong-type"
+ },
+ {
+  "args": {
+   "raw": {
+    "abstract_inverted_index": {
+     "hello": [
+      0
+     ],
+     "world": [
+      1
+     ]
+    },
+    "authorships": [
+     {
+      "author": {
+       "display_name": "A"
+      }
+     },
+     {
+      "author": {
+       "display_name": "B"
+      }
+     }
+    ],
+    "doi": "https://doi.org/10.1/x",
+    "ids": {
+     "pmid": "https://pubmed.ncbi.nlm.nih.gov/123"
+    },
+    "license": "cc-by",
+    "locations": [
+     {
+      "is_oa": true,
+      "landing_page_url": "http://l",
+      "pdf_url": "http://p",
+      "source": {
+       "display_name": "S"
+      },
+      "version": "publishedVersion"
+     }
+    ],
+    "open_access": {
+     "is_oa": true
+    },
+    "primary_location": {
+     "source": {
+      "display_name": "J"
+     }
+    },
+    "primary_topic": {
+     "display_name": "topic"
+    },
+    "publication_date": "2024-01-02",
+    "title": "T",
+    "type": "article",
+    "id": "https://openalex.org/W2741809807"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/work_id_url"
+ },
+ {
+  "args": {
+   "raw": {
+    "abstract_inverted_index": {
+     "hello": [
+      0
+     ],
+     "world": [
+      1
+     ]
+    },
+    "authorships": [
+     {
+      "author": {
+       "display_name": "A"
+      }
+     },
+     {
+      "author": {
+       "display_name": "B"
+      }
+     }
+    ],
+    "doi": "https://doi.org/10.1/x",
+    "ids": {
+     "pmid": "https://pubmed.ncbi.nlm.nih.gov/123"
+    },
+    "license": "cc-by",
+    "locations": [
+     {
+      "is_oa": true,
+      "landing_page_url": "http://l",
+      "pdf_url": "http://p",
+      "source": {
+       "display_name": "S"
+      },
+      "version": "publishedVersion"
+     }
+    ],
+    "open_access": {
+     "is_oa": true
+    },
+    "primary_location": {
+     "source": {
+      "display_name": "J"
+     }
+    },
+    "primary_topic": {
+     "display_name": "topic"
+    },
+    "publication_date": "2024-01-02",
+    "title": "T",
+    "type": "article",
+    "id": "W2741809807"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/work_id_bare"
+ },
+ {
+  "args": {
+   "raw": {
+    "abstract_inverted_index": {
+     "hello": [
+      0
+     ],
+     "world": [
+      1
+     ]
+    },
+    "authorships": [
+     {
+      "author": {
+       "display_name": "A"
+      }
+     },
+     {
+      "author": {
+       "display_name": "B"
+      }
+     }
+    ],
+    "doi": "https://doi.org/10.1/x",
+    "ids": {
+     "pmid": "https://pubmed.ncbi.nlm.nih.gov/123"
+    },
+    "license": "cc-by",
+    "locations": [
+     {
+      "is_oa": true,
+      "landing_page_url": "http://l",
+      "pdf_url": "http://p",
+      "source": {
+       "display_name": "S"
+      },
+      "version": "publishedVersion"
+     }
+    ],
+    "open_access": {
+     "is_oa": true
+    },
+    "primary_location": {
+     "source": {
+      "display_name": "J"
+     }
+    },
+    "primary_topic": {
+     "display_name": "topic"
+    },
+    "publication_date": "2024-01-02",
+    "title": "T",
+    "type": "article",
+    "id": "https://openalex.org/A123"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/work_id_an_author"
+ },
+ {
+  "args": {
+   "raw": {
+    "abstract_inverted_index": {
+     "hello": [
+      0
+     ],
+     "world": [
+      1
+     ]
+    },
+    "authorships": [
+     {
+      "author": {
+       "display_name": "A"
+      }
+     },
+     {
+      "author": {
+       "display_name": "B"
+      }
+     }
+    ],
+    "doi": "https://doi.org/10.1/x",
+    "ids": {
+     "pmid": "https://pubmed.ncbi.nlm.nih.gov/123"
+    },
+    "license": "cc-by",
+    "locations": [
+     {
+      "is_oa": true,
+      "landing_page_url": "http://l",
+      "pdf_url": "http://p",
+      "source": {
+       "display_name": "S"
+      },
+      "version": "publishedVersion"
+     }
+    ],
+    "open_access": {
+     "is_oa": true
+    },
+    "primary_location": {
+     "source": {
+      "display_name": "J"
+     }
+    },
+    "primary_topic": {
+     "display_name": "topic"
+    },
+    "publication_date": "2024-01-02",
+    "title": "T",
+    "type": "article",
+    "id": "https://openalex.org/W"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/work_id_no_digits"
+ },
+ {
+  "args": {
+   "raw": {
+    "abstract_inverted_index": {
+     "hello": [
+      0
+     ],
+     "world": [
+      1
+     ]
+    },
+    "authorships": [
+     {
+      "author": {
+       "display_name": "A"
+      }
+     },
+     {
+      "author": {
+       "display_name": "B"
+      }
+     }
+    ],
+    "doi": "https://doi.org/10.1/x",
+    "ids": {
+     "pmid": "https://pubmed.ncbi.nlm.nih.gov/123"
+    },
+    "license": "cc-by",
+    "locations": [
+     {
+      "is_oa": true,
+      "landing_page_url": "http://l",
+      "pdf_url": "http://p",
+      "source": {
+       "display_name": "S"
+      },
+      "version": "publishedVersion"
+     }
+    ],
+    "open_access": {
+     "is_oa": true
+    },
+    "primary_location": {
+     "source": {
+      "display_name": "J"
+     }
+    },
+    "primary_topic": {
+     "display_name": "topic"
+    },
+    "publication_date": "2024-01-02",
+    "title": "T",
+    "type": "article",
+    "id": 2741809807
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/work_id_integer"
  }
 ]

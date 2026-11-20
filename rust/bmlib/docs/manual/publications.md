@@ -43,8 +43,8 @@ over `serde_json::Value`. `DownloadDay::from_json` refuses a row with no
 ## Storing a paper
 
 `ensure_schema` creates `publications`, `fulltext_sources`, `download_days`,
-`download_day_parts`, `retraction_notices`, `publication_grants` and
-`publication_affiliations`, and adds columns a database written by an older
+`download_day_parts`, `retraction_notices`, `publication_grants`,
+`publication_affiliations` and `publication_record_ids` *(unreleased)*, and adds columns a database written by an older
 bmlib lacks. Call it once after upgrading: `store_publication` names every
 column in its `INSERT`.
 
@@ -55,6 +55,14 @@ paper up by each, and either inserts (`StoreOutcome::Added`) or merges
 **an existing value is never overwritten**, and `is_open_access` latches on.
 Everything — merge, full-text sources, grants, affiliations — is one
 transaction.
+
+A record with neither DOI nor PMID (an OpenAlex work, a Europe PMC preprint or
+AGR record) is found again by the source's own ID instead (#794):
+`store_publication_with_record_id(db, &mut pub_, …, Some((source, id)))`
+*(unreleased)*, which `sync()` calls with the record's `source_record_id`.
+Rows the DOI, the PMID and the record ID find apart are consolidated into one,
+the DOI's row kept first; an empty source or ID is
+`ReplaceError::EmptyRecordId`, before anything is written.
 
 ```rust
 use bmlib::db::open_memory;

@@ -60,7 +60,7 @@ use crate::publications::models::{
     AuthorAffiliation, DownloadDay, FetchResult, FetchedRecord, Grant, PartCheckpoint, Publication,
     SyncReport,
 };
-use crate::publications::storage::store_publication;
+use crate::publications::storage::store_publication_with_record_id;
 use crate::pyvalue::repr_str;
 
 /// The last day the window may name.
@@ -1305,7 +1305,18 @@ pub fn store_records(
         let fts = record_to_fulltext_sources(record).unwrap_or_default();
         let grants = stamp_grant_source(&record.grants, source);
         let affiliations = stamp_affiliation_source(&record.author_affiliations, source);
-        match store_publication(&mut *db, &mut pub_, &fts, &grants, &affiliations) {
+        let record_id = record
+            .source_record_id
+            .as_deref()
+            .map(|id| (record.source.as_str(), id));
+        match store_publication_with_record_id(
+            &mut *db,
+            &mut pub_,
+            &fts,
+            &grants,
+            &affiliations,
+            record_id,
+        ) {
             Ok(outcome) => match outcome.as_str() {
                 "added" => added += 1,
                 "merged" => merged += 1,

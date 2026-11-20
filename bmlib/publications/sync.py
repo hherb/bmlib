@@ -783,6 +783,9 @@ def _store_records(
                 fulltext_sources=fts,
                 grants=_stamp_source(record.grants, record.source),
                 affiliations=_stamp_source(record.author_affiliations, record.source),
+                record_id=(
+                    (record.source, record.source_record_id) if record.source_record_id else None
+                ),
             )
             if result == "added":
                 added += 1

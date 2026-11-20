@@ -46,6 +46,7 @@ _RATE_LIMIT_SECONDS = 0.1
 _DOI_PREFIX = "https://doi.org/"
 _PMID_PREFIX = "https://pubmed.ncbi.nlm.nih.gov/"
 _PMCID_SEGMENT = re.compile(r"(?:PMC)?([0-9]+)")
+_WORK_ID = re.compile(r"W[0-9]+")
 
 _VERSION_MAP: dict[str, str] = {
     "publishedVersion": "published",
@@ -119,6 +120,17 @@ def _pmc_id(pmcid_url: str | None) -> str | None:
         return None
     match = _PMCID_SEGMENT.fullmatch(pmcid_url.rstrip("/").rsplit("/", 1)[-1])
     return f"PMC{match.group(1)}" if match else None
+
+
+def _work_id(work_url: str | None) -> str | None:
+    """``W`` + digits from the work's ``id`` URL (``https://openalex.org/W123``).
+
+    The one key a work with neither DOI nor PMID carries (#794).
+    """
+    if work_url is None:
+        return None
+    segment = work_url.rstrip("/").rsplit("/", 1)[-1]
+    return segment if _WORK_ID.fullmatch(segment) else None
 
 
 def _normalize(raw: dict[str, Any]) -> FetchedRecord:
@@ -204,6 +216,7 @@ def _normalize(raw: dict[str, Any]) -> FetchedRecord:
         is_open_access=is_open_access,
         license=license_value,
         fulltext_sources=fulltext_sources,
+        source_record_id=_work_id(_string(raw, "id")),
     )
 
 

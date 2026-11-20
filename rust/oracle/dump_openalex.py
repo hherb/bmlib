@@ -72,6 +72,7 @@ def normalize(raw):
         "is_open_access": r.is_open_access,
         "license": r.license,
         "fulltext_sources": [f.to_dict() for f in r.fulltext_sources],
+        "source_record_id": r.source_record_id,
     }
 
 

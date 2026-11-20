@@ -116,6 +116,7 @@ class TestSchema:
             "retraction_notices",
             "publication_grants",
             "publication_affiliations",
+            "publication_record_ids",
         ):
             assert table_exists(backend_conn, table)
 
@@ -2091,3 +2092,120 @@ class TestGrantAndAffiliationStorage:
             "Wellcome Trust",
         ]
         assert _count(backend_conn, "publication_grants") == 2
+
+
+# ---------------------------------------------------------------------------
+# A record with neither DOI nor PMID (#794)
+# ---------------------------------------------------------------------------
+
+
+class TestARecordIdDeduplicates:
+    """A source's own record ID finds the row a DOI or PMID cannot (#794)."""
+
+    @pytest.fixture(autouse=True)
+    def _schema(self, backend_conn):
+        ensure_schema(backend_conn)
+
+    def test_a_keyless_record_is_stored_once(self, backend_conn):
+        for _ in range(3):
+            store_publication(
+                backend_conn,
+                _pub(title="A preprint", sources=["europepmc"]),
+                record_id=("europepmc", "PPR:PPR123"),
+            )
+
+        assert _count(backend_conn, "publications") == 1
+        assert _count(backend_conn, "publication_record_ids") == 1
+
+    def test_the_second_store_is_a_merge(self, backend_conn):
+        first = store_publication(backend_conn, _pub(), record_id=("openalex", "W1"))
+        second = store_publication(backend_conn, _pub(journal="Cell"), record_id=("openalex", "W1"))
+
+        assert (first, second) == ("added", "merged")
+
+    def test_one_id_in_two_sources_names_two_records(self, backend_conn):
+        store_publication(backend_conn, _pub(), record_id=("openalex", "W1"))
+        store_publication(backend_conn, _pub(), record_id=("europepmc", "W1"))
+
+        assert _count(backend_conn, "publications") == 2
+
+    def test_a_keyless_row_joins_the_doi_row_once_the_record_gains_a_doi(self, backend_conn):
+        store_publication(backend_conn, _pub(doi="10.1/x", title="By DOI"))
+        store_publication(
+            backend_conn, _pub(title="Keyless", journal="Cell"), record_id=("openalex", "W1")
+        )
+        assert _count(backend_conn, "publications") == 2
+
+        store_publication(backend_conn, _pub(doi="10.1/x"), record_id=("openalex", "W1"))
+
+        assert _count(backend_conn, "publications") == 1
+        kept = get_publication_by_doi(backend_conn, "10.1/x")
+        assert (kept.title, kept.journal) == ("By DOI", "Cell")
+        ph = placeholder(backend_conn)
+        owner = fetch_scalar(
+            backend_conn,
+            f"SELECT publication_id FROM publication_record_ids WHERE record_id = {ph}",
+            ("W1",),
+        )
+        assert owner == kept.id
+
+    def test_three_rows_one_work_become_one(self, backend_conn):
+        store_publication(backend_conn, _pub(doi="10.1/x", title="By DOI"))
+        store_publication(backend_conn, _pub(pmid="9", title="By PMID"))
+        store_publication(backend_conn, _pub(title="Keyless"), record_id=("openalex", "W1"))
+        assert _count(backend_conn, "publications") == 3
+
+        store_publication(backend_conn, _pub(doi="10.1/x", pmid="9"), record_id=("openalex", "W1"))
+
+        assert _count(backend_conn, "publications") == 1
+        kept = get_publication_by_doi(backend_conn, "10.1/x")
+        assert (kept.title, kept.pmid) == ("By DOI", "9")
+
+    def test_the_pmid_row_holding_the_id_is_consolidated_once(self, backend_conn):
+        # The PMID lookup and the record-ID lookup find the same row: it is
+        # folded into the DOI row once, not a second time after it is gone.
+        store_publication(backend_conn, _pub(doi="10.1/x"))
+        store_publication(backend_conn, _pub(pmid="9"), record_id=("openalex", "W1"))
+
+        store_publication(backend_conn, _pub(doi="10.1/x", pmid="9"), record_id=("openalex", "W1"))
+
+        assert _count(backend_conn, "publications") == 1
+        assert _count(backend_conn, "publication_record_ids") == 1
+
+    def test_a_re_fetch_of_a_keyed_record_keeps_its_row_and_children(self, backend_conn):
+        # The DOI and the record ID find the same row: it must not be
+        # consolidated into itself, which would delete it.
+        store_publication(
+            backend_conn,
+            _pub(doi="10.1/x"),
+            [FullTextSource(publication_id=0, source="oa", url="http://x/1", format="pdf")],
+            record_id=("openalex", "W1"),
+        )
+
+        result = store_publication(backend_conn, _pub(doi="10.1/x"), record_id=("openalex", "W1"))
+
+        assert result == "merged"
+        assert _count(backend_conn, "publications") == 1
+        assert _count(backend_conn, "fulltext_sources") == 1
+        assert _count(backend_conn, "publication_record_ids") == 1
+
+    def test_a_row_keeps_every_id_it_was_given(self, backend_conn):
+        store_publication(backend_conn, _pub(doi="10.1/x"), record_id=("openalex", "W1"))
+        store_publication(backend_conn, _pub(doi="10.1/x"), record_id=("europepmc", "PPR:PPR1"))
+
+        store_publication(backend_conn, _pub(title="Again"), record_id=("openalex", "W1"))
+        store_publication(backend_conn, _pub(title="Again"), record_id=("europepmc", "PPR:PPR1"))
+
+        assert _count(backend_conn, "publications") == 1
+        assert _count(backend_conn, "publication_record_ids") == 2
+
+    @pytest.mark.parametrize(
+        "record_id", [("", "W1"), ("openalex", ""), ("openalex", None), ("openalex",)]
+    )
+    def test_an_unusable_record_id_is_refused_before_anything_is_written(
+        self, backend_conn, record_id
+    ):
+        with pytest.raises(ValueError, match="record_id"):
+            store_publication(backend_conn, _pub(), record_id=record_id)
+
+        assert _count(backend_conn, "publications") == 0

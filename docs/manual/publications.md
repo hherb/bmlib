@@ -1,6 +1,6 @@
 # bmlib.publications — Publication Ingestion and Sync
 
-Publication ingestion, deduplication, storage, and multi-source sync for biomedical literature. Fetches records from PubMed, bioRxiv, medRxiv, OpenAlex and (opt-in, for a search you choose) Europe PMC, stores them in a unified schema with automatic deduplication by normalised DOI and PMID, and tracks which source/date combinations have already been downloaded.
+Publication ingestion, deduplication, storage, and multi-source sync for biomedical literature. Fetches records from PubMed, bioRxiv, medRxiv, OpenAlex and (opt-in, for a search you choose) Europe PMC, stores them in a unified schema with automatic deduplication by normalised DOI and PMID (and, for a record carrying neither, by the source's own record ID), and tracks which source/date combinations have already been downloaded.
 
 ## Installation
 
@@ -195,6 +195,7 @@ class FetchedRecord:
     # -- Declared last, for positional stability --
     grants: list[Grant] = field(default_factory=list)
     author_affiliations: list[AuthorAffiliation] = field(default_factory=list)
+    source_record_id: str | None = None
 ```
 
 | Field | Type | Description |
@@ -216,12 +217,13 @@ class FetchedRecord:
 | `extras` | `dict[str, Any]` | Source-specific data not covered by the core fields. |
 | `grants` | `list[Grant]` | Funding awards. Only `fetch_pubmed` populates these. |
 | `author_affiliations` | `list[AuthorAffiliation]` | Author affiliations. Only `fetch_pubmed` populates these. |
+| `source_record_id` | `str \| None` | The source's own ID for the record: an OpenAlex work (`"W2741809807"`) or Europe PMC's `"{source}:{id}"` (`"PPR:PPR1325930"`, `"AGR:…"`, `"MED:…"`). `sync()` stores it as `record_id=(record.source, source_record_id)`, the key that finds a record with neither DOI nor PMID again (#794). PubMed and bioRxiv leave it `None`, since their records always carry a PMID or DOI. *(unreleased)* |
 
-`sync()` maps `FetchedRecord` → `Publication` by copying the core fields and setting both `sources=[record.source]` and `first_seen_source=record.source`. `grants` and `author_affiliations` are persisted separately, into their own tables (see [`Grant` and `AuthorAffiliation`](#grant-and-authoraffiliation)), and `pmc_id` is stored as `Publication.pmcid`. `extras` is **not** persisted — if you need it, capture it in an `on_record` callback.
+`sync()` maps `FetchedRecord` → `Publication` by copying the core fields and setting both `sources=[record.source]` and `first_seen_source=record.source`. `grants` and `author_affiliations` are persisted separately, into their own tables (see [`Grant` and `AuthorAffiliation`](#grant-and-authoraffiliation)), `pmc_id` is stored as `Publication.pmcid`, and `source_record_id` in `publication_record_ids`. `extras` is **not** persisted — if you need it, capture it in an `on_record` callback.
 
 `to_dict()` / `from_dict()` *(0.12.0)* serialise a record with one key per field, in declaration order, nested entries through their own `to_dict()`; `from_dict()` raises `ValueError` for a dictionary carrying any other set of keys, or a field of the wrong type, naming the field — a nested entry must be exactly what its own `to_dict()` writes.
 
-The last two fields are declared after `extras` rather than beside the content fields they read best beside, because downstream projects construct `FetchedRecord` positionally: inserting a field anywhere but the end shifts every later argument silently.
+The last three fields are declared after `extras` rather than beside the content fields they read best beside, because downstream projects construct `FetchedRecord` positionally: inserting a field anywhere but the end shifts every later argument silently.
 
 ---
 
@@ -530,6 +532,7 @@ Create all publications tables if they do not exist, delegating to `bmlib.db.cre
 - **`download_day_parts`** *(0.11.0, #105)* — Which parts of an over-large day a previous run finished, so an interrupted fetch resumes. Unique on `(source, date, part_key)`. Rows exist only while a day is unfinished: `sync()` deletes the day's rows when it records the day `completed`.
 - **`retraction_notices`** — Retraction Watch notices, unique on `record_id`. See [Retractions](#retractions).
 - **`publication_grants`** and **`publication_affiliations`** — funding awards and author affiliations, each carrying a `source` column and indexed on `publication_id`.
+- **`publication_record_ids`** *(unreleased, #794)* — each source's own ID for a record (`source`, `record_id`), unique on the pair and indexed on `publication_id`; a publication may hold several. It is the key [`store_publication`](#store_publication) finds a record with neither DOI nor PMID by. A database an older bmlib wrote gains the table, empty: rows it already duplicated stay duplicated.
 
 Neither of the last two carries a UNIQUE constraint on its natural key, and that is deliberate: every column of a grant proper is nullable, and both backends treat `NULL` as *distinct* in a unique index, so `UNIQUE(publication_id, source, agency, grant_id)` would let `(1, 'pubmed', NULL, 'R01')` insert twice — protecting nothing while appearing to. An expression index over `COALESCE`d columns would work on both backends, but there is nothing left for it to catch: repeats are collapsed at parse time and [`store_publication`](#store_publication) is idempotent per source, and both of those are reachable from a test in a way an index written around three nullable columns is not.
 
@@ -600,13 +603,13 @@ DOIs are case-insensitive per the DOI handbook, but sources disagree in practice
 
 ### Split-identity consolidation
 
-An incoming record's DOI and PMID can point at **two different existing rows** — a "split identity" that arises when a work is indexed under one identifier before its cross-reference to the other exists (typically a preprint DOI ingested from bioRxiv, later cross-referenced by PubMed). Without handling, the subsequent merge would try to write the second row's identifier onto the first and hit the `UNIQUE` index, aborting the write and stranding the duplicates permanently.
+An incoming record's DOI, PMID and record ID can point at **different existing rows** — a "split identity" that arises when a work is indexed under one identifier before its cross-reference to the other exists (typically a preprint DOI ingested from bioRxiv, later cross-referenced by PubMed). Without handling, the subsequent merge would try to write the second row's identifier onto the first and hit the `UNIQUE` index, aborting the write and stranding the duplicates permanently.
 
 When `store_publication()` detects this, it consolidates before merging:
 
-1. The **DOI row is kept**; the PMID row is dropped.
+1. The **DOI row is kept**, else the PMID row; every other row found is dropped, one at a time, in that order (the PMID row, then the record ID's). A row two identifiers find is one row, and is never consolidated into itself.
 2. The drop row's full-text sources are re-pointed at the keep row with `UPDATE OR IGNORE` (silently skipping any `(publication_id, url)` pair the keep row already has); leftover duplicates on the drop row are then deleted.
-3. The drop row's grants and affiliations move to the keep row **per source**: a source the keep row already has wins and the drop row's rows for it are discarded, while a source only the drop row saw moves across. That is the same "fill, never overwrite" rule the field merge follows, at source granularity — merging two rows' accounts of what PubMed said would produce a set PubMed never asserted, while a source the keep row has never seen is real information it should gain.
+3. The drop row's record IDs all move to the keep row (the pair is unique, so the keep row holds none of them). Its grants and affiliations move to the keep row **per source**: a source the keep row already has wins and the drop row's rows for it are discarded, while a source only the drop row saw moves across. That is the same "fill, never overwrite" rule the field merge follows, at source granularity — merging two rows' accounts of what PubMed said would produce a set PubMed never asserted, while a source the keep row has never seen is real information it should gain.
 4. The drop row's data is snapshotted, the drop row is deleted — freeing its unique identifier — and the snapshot is merged into the keep row.
 5. The keep row is re-read, and the incoming record is merged into it as usual. The call returns `"merged"`.
 
@@ -626,19 +629,21 @@ def store_publication(
     *,
     grants: Sequence[Grant] | None = None,
     affiliations: Sequence[AuthorAffiliation] | None = None,
+    record_id: tuple[str, str] | None = None,
 ) -> str
 ```
 
-Store a publication, de-duplicating by DOI then PMID.
+Store a publication, de-duplicating by DOI, then PMID, then record ID.
 
 **Deduplication logic:**
 1. Normalise `pub.doi` and `pub.pmid` in place.
-2. Look up the existing row by DOI and by PMID independently.
-3. If both match but are **different rows**, [consolidate them](#split-identity-consolidation) first.
+2. Look up the existing row by DOI, by PMID and by `record_id` independently.
+3. If they match **different rows**, [consolidate them](#split-identity-consolidation) first.
 4. If a row was found, **merge** the incoming record into it.
 5. Otherwise, **insert** as a new record.
-6. Insert any `fulltext_sources` against the resulting row id.
-7. Apply `grants` and `affiliations` against the resulting row id.
+6. Record `record_id` against the resulting row id, unless it is already there.
+7. Insert any `fulltext_sources` against the resulting row id.
+8. Apply `grants` and `affiliations` against the resulting row id.
 
 **Merge behaviour:**
 - Appends new source names to the existing `sources` list (no duplicates).
@@ -678,6 +683,7 @@ batches a whole day into one commit — see `bmlib.db.transaction`).
 | `fulltext_sources` | `Sequence[FullTextSource] \| None` | `None` | Optional full-text sources to associate with the publication. Their `publication_id` is ignored; the stored row's id is used. They accumulate across calls. |
 | `grants` | `Sequence[Grant] \| None` | `None` | Keyword-only. Funding awards. Replaces the stored rows for each `source` they name; leaves other sources', and everything, alone if empty. Every row **must** name a source — see below. |
 | `affiliations` | `Sequence[AuthorAffiliation] \| None` | `None` | Keyword-only. Author affiliations, same replace-per-source rule. |
+| `record_id` | `tuple[str, str] \| None` | `None` | Keyword-only. `(source, id)`, the source's own ID for the record. It finds the row again when the record has neither DOI nor PMID, and is kept beside the row. Anything but two non-empty strings raises `ValueError` before anything is written. *(unreleased, #794)* |
 
 **A row naming no source raises `ValueError`.** Scoping is the whole mechanism, so an unnamed row is not merely unlabelled — it is unreachable: no later sync can name it, so it can never be replaced, and each subsequent sync stacks a correctly-labelled duplicate beside it. `sync()` stamps the source for you from the record's own (`_stamp_source`), so this only concerns callers reaching `store_publication` directly. Note that `Grant.source` and `AuthorAffiliation.source` **default to `""`**, which is why the check lives in the storage layer rather than being left to the `NOT NULL` column — the column rejects `None`, but the value a forgetful caller actually produces is the empty string.
 
