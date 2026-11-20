@@ -1286,8 +1286,7 @@ pub fn record_to_fulltext_sources(record: &FetchedRecord) -> Option<Vec<FullText
 ///
 /// Runs inside the caller's transaction, so a record that fails rolls back to
 /// its own savepoint without losing the batch. One bad record must not lose the
-/// batch, so the per-record error is caught — which is exactly why the failure
-/// count is reported rather than logged and dropped.
+/// batch, so the per-record error is caught, logged at ERROR and counted.
 ///
 /// # Errors
 ///
@@ -1317,12 +1316,26 @@ pub fn store_records(
             &affiliations,
             record_id,
         ) {
-            Ok(outcome) => match outcome.as_str() {
-                "added" => added += 1,
-                "merged" => merged += 1,
-                _ => {}
-            },
-            Err(_) => failed += 1,
+            Ok(outcome) => {
+                if pub_.doi.is_none() && pub_.pmid.is_none() && record.source_record_id.is_none() {
+                    // Nothing finds the row again, so each re-fetch adds another.
+                    log::warn!(
+                        "Record from {source} has no DOI, PMID or record ID: stored unkeyed, a \
+                         re-fetch stores it again ({:?})",
+                        record.title
+                    );
+                }
+                match outcome.as_str() {
+                    "added" => added += 1,
+                    "merged" => merged += 1,
+                    _ => {}
+                }
+            }
+            Err(e) => {
+                // One bad record must not lose the batch; Python logs it too.
+                log::error!("Failed to store record from {source}: {e}");
+                failed += 1;
+            }
         }
     }
     Ok((added, merged, failed))

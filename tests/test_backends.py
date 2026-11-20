@@ -182,6 +182,19 @@ class TestSchema:
         store_publication(backend_conn, _pub(doi="10.1234/a", pmcid="PMC1"))
         assert get_publication_by_doi(backend_conn, "10.1234/a").pmcid == "PMC1"
 
+    def test_ensure_schema_adds_the_record_id_table_to_an_older_database(self, backend_conn):
+        """A 0.14.0 database gains #794's table, committed and usable."""
+        ensure_schema(backend_conn)
+        with transaction(backend_conn):
+            execute(backend_conn, "DROP TABLE publication_record_ids")
+
+        ensure_schema(backend_conn)
+
+        backend_conn.rollback()
+        for _ in range(2):
+            store_publication(backend_conn, _pub(), record_id=("openalex", "W1"))
+        assert _count(backend_conn, "publications") == 1
+
     def test_ensure_schema_adds_peak_count_to_an_older_database(self, backend_conn):
         """A 0.10.0 ``download_days`` gains #346's column, NULL on its rows."""
         ensure_schema(backend_conn)
@@ -2128,6 +2141,7 @@ class TestARecordIdDeduplicates:
         store_publication(backend_conn, _pub(), record_id=("europepmc", "W1"))
 
         assert _count(backend_conn, "publications") == 2
+        assert _count(backend_conn, "publication_record_ids") == 2
 
     def test_a_keyless_row_joins_the_doi_row_once_the_record_gains_a_doi(self, backend_conn):
         store_publication(backend_conn, _pub(doi="10.1/x", title="By DOI"))
@@ -2161,9 +2175,19 @@ class TestARecordIdDeduplicates:
         kept = get_publication_by_doi(backend_conn, "10.1/x")
         assert (kept.title, kept.pmid) == ("By DOI", "9")
 
+    def test_the_pmid_row_is_kept_before_the_record_id_row(self, backend_conn):
+        store_publication(backend_conn, _pub(pmid="9", title="By PMID"))
+        store_publication(backend_conn, _pub(title="Keyless"), record_id=("openalex", "W1"))
+
+        store_publication(backend_conn, _pub(pmid="9"), record_id=("openalex", "W1"))
+
+        assert _count(backend_conn, "publications") == 1
+        assert get_publication_by_pmid(backend_conn, "9").title == "By PMID"
+
     def test_the_pmid_row_holding_the_id_is_consolidated_once(self, backend_conn):
-        # The PMID lookup and the record-ID lookup find the same row: it is
-        # folded into the DOI row once, not a second time after it is gone.
+        # The PMID lookup and the record-ID lookup find the same row, which is
+        # folded into the DOI row. A second fold of the gone row would change
+        # nothing visible; the re-fetch test below pins the dedupe itself.
         store_publication(backend_conn, _pub(doi="10.1/x"))
         store_publication(backend_conn, _pub(pmid="9"), record_id=("openalex", "W1"))
 
@@ -2198,6 +2222,110 @@ class TestARecordIdDeduplicates:
 
         assert _count(backend_conn, "publications") == 1
         assert _count(backend_conn, "publication_record_ids") == 2
+
+    def _owner(self, conn, record_id: str) -> int:
+        ph = placeholder(conn)
+        return fetch_scalar(
+            conn,
+            f"SELECT publication_id FROM publication_record_ids WHERE record_id = {ph}",
+            (record_id,),
+        )
+
+    def _rows(self, conn) -> list[tuple]:
+        return [
+            (r["title"], r["doi"], r["pmid"])
+            for r in fetch_all(conn, "SELECT title, doi, pmid FROM publications ORDER BY id")
+        ]
+
+    def test_an_id_now_naming_another_doi_never_merges_two_papers(self, backend_conn, caplog):
+        # The source moves its ID to a work whose DOI already has its own row
+        # (OpenAlex merging a preprint into its journal version). The row the
+        # ID first named keeps its DOI; the ID follows the record's DOI.
+        store_publication(backend_conn, _pub(doi="10.1/x", title="Preprint"))
+        store_publication(backend_conn, _pub(doi="10.1/x"), record_id=("openalex", "W1"))
+        store_publication(backend_conn, _pub(doi="10.1/y", title="Journal"))
+
+        with caplog.at_level(logging.WARNING, logger="bmlib.publications.storage"):
+            result = store_publication(
+                backend_conn, _pub(doi="10.1/y"), record_id=("openalex", "W1")
+            )
+
+        assert result == "merged"
+        assert self._rows(backend_conn) == [
+            ("Preprint", "10.1/x", None),
+            ("Journal", "10.1/y", None),
+        ]
+        assert self._owner(backend_conn, "W1") == get_publication_by_doi(backend_conn, "10.1/y").id
+        assert "openalex:W1 moves from publication" in caplog.text
+
+    def test_an_id_now_naming_a_new_doi_adds_the_paper(self, backend_conn):
+        store_publication(
+            backend_conn, _pub(doi="10.1/x", title="Preprint"), record_id=("openalex", "W1")
+        )
+
+        result = store_publication(
+            backend_conn, _pub(doi="10.1/y", title="Journal"), record_id=("openalex", "W1")
+        )
+
+        assert result == "added"
+        assert self._rows(backend_conn) == [
+            ("Preprint", "10.1/x", None),
+            ("Journal", "10.1/y", None),
+        ]
+        assert self._owner(backend_conn, "W1") == get_publication_by_doi(backend_conn, "10.1/y").id
+
+    def test_an_id_now_naming_another_pmid_never_merges_two_papers(self, backend_conn):
+        store_publication(backend_conn, _pub(pmid="1", title="First"), record_id=("openalex", "W1"))
+        store_publication(backend_conn, _pub(pmid="2", title="Second"))
+
+        store_publication(backend_conn, _pub(pmid="2"), record_id=("openalex", "W1"))
+
+        assert self._rows(backend_conn) == [("First", None, "1"), ("Second", None, "2")]
+        assert self._owner(backend_conn, "W1") == get_publication_by_pmid(backend_conn, "2").id
+
+    def test_an_id_row_conflicting_with_the_pmid_rows_doi_is_kept(self, backend_conn):
+        # The record names no DOI, but the PMID row it joins has one, and the
+        # ID's row has another: folding them would lose one DOI.
+        store_publication(
+            backend_conn, _pub(doi="10.1/x", title="ID row"), record_id=("openalex", "W1")
+        )
+        store_publication(backend_conn, _pub(doi="10.1/y", pmid="2", title="PMID row"))
+
+        store_publication(backend_conn, _pub(pmid="2"), record_id=("openalex", "W1"))
+
+        assert self._rows(backend_conn) == [("ID row", "10.1/x", None), ("PMID row", "10.1/y", "2")]
+        assert self._owner(backend_conn, "W1") == get_publication_by_pmid(backend_conn, "2").id
+
+    def test_an_id_row_with_the_same_or_no_doi_still_joins(self, backend_conn):
+        store_publication(backend_conn, _pub(doi="10.1/x", title="By DOI"))
+        store_publication(
+            backend_conn, _pub(pmid="9", title="ID row"), record_id=("openalex", "W1")
+        )
+
+        store_publication(backend_conn, _pub(doi="10.1/x", pmid="9"), record_id=("openalex", "W1"))
+
+        assert self._rows(backend_conn) == [("By DOI", "10.1/x", "9")]
+
+    def test_an_id_stored_meanwhile_by_another_writer_fails_the_store(
+        self, backend_conn, monkeypatch
+    ):
+        # Another connection commits the ID between this store's lookup and
+        # its insert. Ignoring the conflict would leave this row unkeyed, a
+        # duplicate for good (#794 again); failing rolls the store back.
+        store_publication(backend_conn, _pub(title="Theirs"), record_id=("openalex", "W1"))
+        storage = sys.modules["bmlib.publications.storage"]
+        real = storage.fetch_one
+
+        def blind(conn, sql, params=()):
+            return None if "publication_record_ids" in sql else real(conn, sql, params)
+
+        monkeypatch.setattr(storage, "fetch_one", blind)
+
+        with pytest.raises(Exception, match="(?i)unique"):
+            store_publication(backend_conn, _pub(title="Ours"), record_id=("openalex", "W1"))
+
+        monkeypatch.undo()
+        assert [r[0] for r in self._rows(backend_conn)] == ["Theirs"]
 
     @pytest.mark.parametrize(
         "record_id", [("", "W1"), ("openalex", ""), ("openalex", None), ("openalex",)]

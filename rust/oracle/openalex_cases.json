@@ -1662,5 +1662,123 @@
   },
   "fn": "normalize",
   "name": "normalize/work_id_integer"
+ },
+ {
+  "args": {
+   "raw": {
+    "abstract_inverted_index": {
+     "hello": [
+      0
+     ],
+     "world": [
+      1
+     ]
+    },
+    "authorships": [
+     {
+      "author": {
+       "display_name": "A"
+      }
+     },
+     {
+      "author": {
+       "display_name": "B"
+      }
+     }
+    ],
+    "doi": "https://doi.org/10.1/x",
+    "ids": {
+     "pmid": "https://pubmed.ncbi.nlm.nih.gov/123"
+    },
+    "license": "cc-by",
+    "locations": [
+     {
+      "is_oa": true,
+      "landing_page_url": "http://l",
+      "pdf_url": "http://p",
+      "source": {
+       "display_name": "S"
+      },
+      "version": "publishedVersion"
+     }
+    ],
+    "open_access": {
+     "is_oa": true
+    },
+    "primary_location": {
+     "source": {
+      "display_name": "J"
+     }
+    },
+    "primary_topic": {
+     "display_name": "topic"
+    },
+    "publication_date": "2024-01-02",
+    "title": "T",
+    "type": "article",
+    "id": "https://openalex.org/W\u0661\u0662\u0663"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/work_id_non_ascii_digits"
+ },
+ {
+  "args": {
+   "raw": {
+    "abstract_inverted_index": {
+     "hello": [
+      0
+     ],
+     "world": [
+      1
+     ]
+    },
+    "authorships": [
+     {
+      "author": {
+       "display_name": "A"
+      }
+     },
+     {
+      "author": {
+       "display_name": "B"
+      }
+     }
+    ],
+    "doi": "https://doi.org/10.1/x",
+    "ids": {
+     "pmid": "https://pubmed.ncbi.nlm.nih.gov/123"
+    },
+    "license": "cc-by",
+    "locations": [
+     {
+      "is_oa": true,
+      "landing_page_url": "http://l",
+      "pdf_url": "http://p",
+      "source": {
+       "display_name": "S"
+      },
+      "version": "publishedVersion"
+     }
+    ],
+    "open_access": {
+     "is_oa": true
+    },
+    "primary_location": {
+     "source": {
+      "display_name": "J"
+     }
+    },
+    "primary_topic": {
+     "display_name": "topic"
+    },
+    "publication_date": "2024-01-02",
+    "title": "T",
+    "type": "article",
+    "id": "https://openalex.org/W2741809807/"
+   }
+  },
+  "fn": "normalize",
+  "name": "normalize/work_id_trailing_slash"
  }
 ]

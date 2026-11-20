@@ -2120,5 +2120,91 @@
       "source_record_id": null,
       "title": "T"
     }
+  },
+  {
+    "name": "normalize/work_id_non_ascii_digits",
+    "ok": true,
+    "value": {
+      "abstract": "hello world",
+      "authors": [
+        "A",
+        "B"
+      ],
+      "doi": "10.1/x",
+      "fulltext_sources": [
+        {
+          "format": "html",
+          "open_access": true,
+          "source": "S",
+          "url": "http://l",
+          "version": "published"
+        },
+        {
+          "format": "pdf",
+          "open_access": true,
+          "source": "S",
+          "url": "http://p",
+          "version": "published"
+        }
+      ],
+      "is_open_access": true,
+      "journal": "J",
+      "keywords": [
+        "topic"
+      ],
+      "license": "cc-by",
+      "pmc_id": null,
+      "pmid": "123",
+      "publication_date": "2024-01-02",
+      "publication_types": [
+        "article"
+      ],
+      "source": "openalex",
+      "source_record_id": null,
+      "title": "T"
+    }
+  },
+  {
+    "name": "normalize/work_id_trailing_slash",
+    "ok": true,
+    "value": {
+      "abstract": "hello world",
+      "authors": [
+        "A",
+        "B"
+      ],
+      "doi": "10.1/x",
+      "fulltext_sources": [
+        {
+          "format": "html",
+          "open_access": true,
+          "source": "S",
+          "url": "http://l",
+          "version": "published"
+        },
+        {
+          "format": "pdf",
+          "open_access": true,
+          "source": "S",
+          "url": "http://p",
+          "version": "published"
+        }
+      ],
+      "is_open_access": true,
+      "journal": "J",
+      "keywords": [
+        "topic"
+      ],
+      "license": "cc-by",
+      "pmc_id": null,
+      "pmid": "123",
+      "publication_date": "2024-01-02",
+      "publication_types": [
+        "article"
+      ],
+      "source": "openalex",
+      "source_record_id": "W2741809807",
+      "title": "T"
+    }
   }
 ]

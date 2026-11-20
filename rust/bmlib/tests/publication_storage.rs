@@ -830,3 +830,229 @@ fn an_empty_record_id_is_refused_before_anything_is_written() {
     }
     assert_eq!(rows(&mut *db), (0, 0));
 }
+
+fn papers(db: &mut dyn Db) -> Vec<(String, Option<String>, Option<String>)> {
+    let text = |row: &bmlib::db::Row, key: &str| {
+        row.get(key).expect("column").as_str().map(str::to_string)
+    };
+    bmlib::db::fetch_all(
+        db,
+        "SELECT title, doi, pmid FROM publications ORDER BY id",
+        &[],
+    )
+    .expect("rows")
+    .iter()
+    .map(|row| {
+        (
+            text(row, "title").expect("title"),
+            text(row, "doi"),
+            text(row, "pmid"),
+        )
+    })
+    .collect()
+}
+
+fn owner(db: &mut dyn Db, record_id: &str) -> i64 {
+    count(
+        db,
+        &format!(
+            "SELECT publication_id FROM publication_record_ids WHERE record_id = '{record_id}'"
+        ),
+    )
+}
+
+fn paper(
+    title: &str,
+    doi: Option<&str>,
+    pmid: Option<&str>,
+) -> (String, Option<String>, Option<String>) {
+    (
+        title.to_string(),
+        doi.map(str::to_string),
+        pmid.map(str::to_string),
+    )
+}
+
+#[test]
+fn the_pmid_row_is_kept_before_the_record_id_row() {
+    let mut db = db();
+    keyed(&mut *db, None, Some("9"), "By PMID", None);
+    keyed(&mut *db, None, None, "Keyless", Some(("openalex", "W1")));
+
+    keyed(&mut *db, None, Some("9"), "P", Some(("openalex", "W1")));
+
+    assert_eq!(papers(&mut *db), [paper("By PMID", None, Some("9"))]);
+}
+
+/// The source moves its ID to a work whose DOI already has its own row
+/// (OpenAlex merging a preprint into its journal version): the row the ID
+/// first named keeps its DOI, and the ID follows the record's DOI.
+#[test]
+fn an_id_now_naming_another_doi_never_merges_two_papers() {
+    let mut db = db();
+    keyed(&mut *db, Some("10.1/x"), None, "Preprint", None);
+    keyed(
+        &mut *db,
+        Some("10.1/x"),
+        None,
+        "P",
+        Some(("openalex", "W1")),
+    );
+    keyed(&mut *db, Some("10.1/y"), None, "Journal", None);
+
+    let outcome = keyed(
+        &mut *db,
+        Some("10.1/y"),
+        None,
+        "P",
+        Some(("openalex", "W1")),
+    );
+
+    assert_eq!(outcome, StoreOutcome::Merged);
+    assert_eq!(
+        papers(&mut *db),
+        [
+            paper("Preprint", Some("10.1/x"), None),
+            paper("Journal", Some("10.1/y"), None)
+        ]
+    );
+    assert_eq!(owner(&mut *db, "W1"), 2);
+}
+
+#[test]
+fn an_id_now_naming_a_new_doi_adds_the_paper() {
+    let mut db = db();
+    keyed(
+        &mut *db,
+        Some("10.1/x"),
+        None,
+        "Preprint",
+        Some(("openalex", "W1")),
+    );
+
+    let outcome = keyed(
+        &mut *db,
+        Some("10.1/y"),
+        None,
+        "Journal",
+        Some(("openalex", "W1")),
+    );
+
+    assert_eq!(outcome, StoreOutcome::Added);
+    assert_eq!(
+        papers(&mut *db),
+        [
+            paper("Preprint", Some("10.1/x"), None),
+            paper("Journal", Some("10.1/y"), None)
+        ]
+    );
+    assert_eq!(owner(&mut *db, "W1"), 2);
+}
+
+#[test]
+fn an_id_now_naming_another_pmid_never_merges_two_papers() {
+    let mut db = db();
+    keyed(&mut *db, None, Some("1"), "First", Some(("openalex", "W1")));
+    keyed(&mut *db, None, Some("2"), "Second", None);
+
+    keyed(&mut *db, None, Some("2"), "P", Some(("openalex", "W1")));
+
+    assert_eq!(
+        papers(&mut *db),
+        [
+            paper("First", None, Some("1")),
+            paper("Second", None, Some("2"))
+        ]
+    );
+    assert_eq!(owner(&mut *db, "W1"), 2);
+}
+
+/// The record names no DOI, but the PMID row it joins has one, and the ID's
+/// row has another: folding them would lose one DOI.
+#[test]
+fn an_id_row_conflicting_with_the_pmid_rows_doi_is_kept() {
+    let mut db = db();
+    keyed(
+        &mut *db,
+        Some("10.1/x"),
+        None,
+        "ID row",
+        Some(("openalex", "W1")),
+    );
+    keyed(&mut *db, Some("10.1/y"), Some("2"), "PMID row", None);
+
+    keyed(&mut *db, None, Some("2"), "P", Some(("openalex", "W1")));
+
+    assert_eq!(
+        papers(&mut *db),
+        [
+            paper("ID row", Some("10.1/x"), None),
+            paper("PMID row", Some("10.1/y"), Some("2"))
+        ]
+    );
+    assert_eq!(owner(&mut *db, "W1"), 2);
+}
+
+#[test]
+fn an_id_row_with_the_same_or_no_doi_still_joins() {
+    let mut db = db();
+    keyed(&mut *db, Some("10.1/x"), None, "By DOI", None);
+    keyed(
+        &mut *db,
+        None,
+        Some("9"),
+        "ID row",
+        Some(("openalex", "W1")),
+    );
+
+    keyed(
+        &mut *db,
+        Some("10.1/x"),
+        Some("9"),
+        "P",
+        Some(("openalex", "W1")),
+    );
+
+    assert_eq!(
+        papers(&mut *db),
+        [paper("By DOI", Some("10.1/x"), Some("9"))]
+    );
+}
+
+/// `sync` keys a stored record by its source's ID, so a keyless record
+/// fetched three times is one row (Python's
+/// `test_a_keyless_record_is_found_again_by_its_record_id`).
+#[test]
+fn sync_stores_a_keyless_record_once_by_its_record_id() {
+    use bmlib::publications::models::FetchedRecord;
+    use bmlib::publications::sync::store_records;
+    let mut db = db();
+    let mut record = FetchedRecord::new("P", "europepmc");
+    record.source_record_id = Some("PPR:PPR1".to_string());
+
+    let counts = store_records(
+        &mut *db,
+        "europepmc",
+        &[record.clone(), record.clone(), record],
+    )
+    .expect("store");
+
+    assert_eq!(counts, (1, 2, 0));
+    assert_eq!(rows(&mut *db), (1, 1));
+}
+
+/// An empty ID fails the record, as in Python: stored unkeyed it would
+/// duplicate on every re-fetch (#794).
+#[test]
+fn sync_fails_a_record_with_an_empty_record_id() {
+    use bmlib::publications::models::FetchedRecord;
+    use bmlib::publications::sync::store_records;
+    let mut db = db();
+    let mut record = FetchedRecord::new("P", "europepmc");
+    record.source_record_id = Some(String::new());
+
+    let counts = store_records(&mut *db, "europepmc", &[record]).expect("store");
+
+    assert_eq!(counts, (0, 0, 1));
+    assert_eq!(rows(&mut *db), (0, 0));
+}

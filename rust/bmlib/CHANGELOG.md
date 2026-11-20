@@ -16,7 +16,12 @@ The Python library is documented separately, in the repository's
   by the OpenAlex and Europe PMC normalisers) is stored by `sync()` through the
   new `store_publication_with_record_id`, in the new `publication_record_ids`
   table, and consolidates a keyless row into the DOI or PMID row once a record
-  links them. `store_publication` keeps its signature. **Breaking** for a
+  links them, never a row whose DOI or PMID differs from the record's (the ID
+  moves instead, with a WARNING). An ID another writer stored since the lookup
+  fails the store, `store_records` logs each record it fails or stores with no
+  key, and a database an older bmlib wrote gains the table empty (each record
+  it already duplicated gains one more row on its first re-fetch after the
+  upgrade). `store_publication` keeps its signature. **Breaking** for a
   struct literal of `FetchedRecord` (use `FetchedRecord::new`) and an
   exhaustive `match` on `ReplaceError`, which gains `EmptyRecordId`.
 

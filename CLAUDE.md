@@ -122,7 +122,7 @@ bmlib/
 ├── publications/            # Publication ingestion, deduplication, and sync
 │   ├── models.py            # Publication, FullTextSource, FetchedRecord, SyncReport, SourceDescriptor, RetractionNature, RetractionNotice, Grant, AuthorAffiliation
 │   ├── schema.py            # SQL schema (publications, fulltext_sources, download_days, download_day_parts, retraction_notices, publication_grants, publication_affiliations, publication_record_ids)
-│   ├── storage.py           # Upsert with dedup by DOI/PMID, merge logic
+│   ├── storage.py           # Upsert with dedup by DOI, PMID, then record ID (a DOI or PMID outranks it), merge logic
 │   ├── sync.py              # Multi-source sync orchestrator
 │   ├── retractions.py       # Retraction Watch: parse_retraction_watch_csv, store_retraction_notices, import_retraction_watch_export, lookup_retractions, is_retracted
 │   ├── retraction_status.py # One verdict (retracted/concern/clear/unchecked) from the export, Crossref updated-by and the PubMed label; Crossref URL builder + parser, no transport (#504)
@@ -266,7 +266,7 @@ All database functions take a connection as the first argument. The `transaction
 - `publication_grants` / `publication_affiliations` carry a `source` column. `_replace_child_rows()` scopes every delete to that source. `sync._stamp_source()` fills the column; fetchers do not.
 - A row with no source (including `""`) raises `ValueError`.
 - **No UNIQUE constraint on the natural key, on purpose**: NULLs are distinct in a unique index.
-- `_consolidate_rows()` relocates **every** child row, per source, before deleting the dropped publication (foreign keys are on).
+- `_consolidate_rows()` relocates **every** child row before deleting the dropped publication (foreign keys are on): grants and affiliations per source, record IDs wholesale.
 
 ### A completed day is a durable claim
 A `completed` day in `download_days` is not offered again, so a false success loses the day's records for good. Every rule here **fails closed**:

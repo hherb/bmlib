@@ -130,12 +130,13 @@ fn author(value: &Value) -> Option<String> {
 /// Convert one Europe PMC `resultType=core` search hit to a record, or `None`
 /// when the hit is not a JSON object.
 ///
-/// `source="europepmc"`. The hit's `source` and `id` are its `source_record_id`
-/// (`"PPR:PPR123"`, the one key an AGR, CBA or patent record, or a preprint
-/// with no DOI, carries; #794). A `PPR` accession is kept in `extras["ppr_id"]`, and a
-/// record Europe PMC holds the text of (`inEPMC` `"Y"`) gains an `xml` source
-/// for its `fullTextXML`, addressed by its PMC ID, else its `PPR` accession —
-/// the only way `FullTextService` reaches a preprint's text.
+/// `source="europepmc"`. The hit's `source` and `id` are its
+/// `source_record_id` (`"PPR:PPR123"`, the one key an AGR, CBA or patent
+/// record, or a preprint with no DOI, carries; #794). A `PPR` accession is kept
+/// in `extras["ppr_id"]`, and a record Europe PMC holds the text of (`inEPMC`
+/// `"Y"`) gains an `xml` source for its `fullTextXML`, addressed by its PMC ID,
+/// else its `PPR` accession — the only way `FullTextService` reaches a
+/// preprint's text.
 #[must_use]
 pub fn normalize(raw: &Value) -> Option<FetchedRecord> {
     raw.as_object()?;

@@ -10,23 +10,36 @@ All notable changes to bmlib are documented here. The format is based on
 
 - **A record with neither DOI nor PMID is stored once, not again on every
   re-fetch** (#794). `store_publication` deduplicated by DOI and PMID alone,
-  so an OpenAlex work with neither, and a Europe PMC preprint, PMC-only, AGR,
-  CBA or patent record, gained a row each time its day was fetched (and a
-  europepmc day is fetched on every run until it settles). Each source's own
-  ID now finds the row: `FetchedRecord.source_record_id` (OpenAlex's
-  `"W123"`, Europe PMC's `"{source}:{id}"`), stored by `sync()` in the new
-  `publication_record_ids` table through `store_publication(...,
+  so a record with neither (an OpenAlex work, or a Europe PMC preprint,
+  PMC-only, AGR, CBA or patent record) gained a row each time its day was
+  fetched, and a europepmc day is fetched on every run until it settles. Each
+  source's own ID now finds the row: `FetchedRecord.source_record_id`
+  (OpenAlex's `"W123"`, Europe PMC's `"{source}:{id}"`), stored by `sync()` in
+  the new `publication_record_ids` table through `store_publication(...,
   record_id=(source, id))`. A keyless row and the DOI or PMID row of the same
   work are consolidated once a record links them. PubMed and bioRxiv leave the
   ID `None`; their records always carry a key.
+  - **A DOI or PMID outranks a record ID.** When the row an ID names holds a
+    different DOI or PMID than the record (OpenAlex moving a work's ID to its
+    journal version, say), the two rows are never merged: the record is stored
+    by its DOI or PMID, the ID moves to that row, and a WARNING names both.
+  - An ID another writer stored since the lookup fails the store rather than
+    leaving an unkeyed duplicate. `sync()` refuses an empty
+    `source_record_id` (the record fails, as in Rust) and logs a WARNING for
+    each record it stores with no DOI, PMID or record ID.
   - **Data**: `ensure_schema()` adds the table to an existing database,
-    empty. Rows already duplicated stay duplicated; the fix stops new ones.
-    Nothing stored goes stale.
-  - **API**: `FetchedRecord` gains `source_record_id`, declared last, so
-    `to_dict()` writes one more key and `from_dict()` refuses a dictionary
-    without it (an older `to_dict()`'s). `store_publication`'s `record_id` is
-    keyword-only and optional. `tests/fixtures/record_lookup.json` carries the
-    new key.
+    empty. Rows already duplicated stay duplicated, and since no stored row
+    carries its ID yet, each such record gains one more row on its first
+    re-fetch after the upgrade; after that it is stored once. Nothing stored
+    goes stale.
+  - **API**: `store_publication`'s `record_id` is keyword-only and optional.
+    `tests/fixtures/record_lookup.json` carries the new key.
+
+### Changed — breaking
+
+- `FetchedRecord` gains `source_record_id`, declared last, so `to_dict()`
+  writes one more key and `from_dict()` refuses a dictionary without it (one an
+  older `to_dict()` wrote) (#794).
 
 ## [0.14.0] — 2026-11-17
 

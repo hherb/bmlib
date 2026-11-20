@@ -524,7 +524,7 @@ pub fn replace_child_rows<T>(
     Ok(())
 }
 
-/// Why a child-row batch was refused.
+/// Why a store or a child-row batch was refused.
 #[derive(Debug)]
 pub enum ReplaceError {
     /// A row named no source.
@@ -620,9 +620,10 @@ pub fn relocate_child_rows(
 /// Used when an incoming record carries identifiers (DOI, PMID, record ID)
 /// that currently point at different existing rows — a "split identity" that
 /// arises when a work is indexed by one identifier before its cross-reference
-/// to the other exists. Without this, the subsequent `COALESCE` merge would try to write the
-/// drop row's identifier onto the keep row and hit the `UNIQUE` constraint,
-/// aborting the write and leaving the duplicates stranded forever.
+/// to the other exists. Without this, a DOI/PMID split makes the subsequent
+/// `COALESCE` merge write the drop row's identifier onto the keep row and hit
+/// the `UNIQUE` constraint, aborting the write and leaving the duplicates
+/// stranded forever; a keyless row the record ID finds would stay a duplicate.
 ///
 /// Ordering matters: the drop row is deleted **before** its identifier is
 /// merged onto the keep row, so the unique index is free when the merge runs.
@@ -729,19 +730,47 @@ pub fn store_publication(
     store_publication_with_record_id(db, pub_, fulltext_sources, grants, affiliations, None)
 }
 
+/// Whether `row` holds a DOI or PMID that differs from the incoming
+/// record's or from one of `others`' (the rows its DOI and PMID found). A
+/// missing value on either side is no conflict.
+fn identifiers_conflict(
+    row: &crate::db::Row,
+    pub_: &Publication,
+    others: &[&crate::db::Row],
+) -> Result<bool, DbError> {
+    for (key, incoming) in [("doi", pub_.doi.as_deref()), ("pmid", pub_.pmid.as_deref())] {
+        let Some(mine) = row.get(key)?.as_str() else {
+            continue;
+        };
+        if incoming.is_some_and(|v| v != mine) {
+            return Ok(true);
+        }
+        for other in others {
+            if other.get(key)?.as_str().is_some_and(|v| v != mine) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
 /// [`store_publication`], also keyed by the source's own ID for the record.
 ///
 /// `record_id` is `(source, id)` (an OpenAlex work `"W123"`, a Europe PMC
 /// `"PPR:PPR123"`). It finds the row again when the record carries neither DOI
 /// nor PMID (#794), and is kept beside the row; a row may hold several. Rows
 /// the DOI, the PMID and the record ID find apart are consolidated into one,
-/// the DOI's row kept first, then the PMID's. Python's `store_publication`
-/// takes it as `record_id=`.
+/// the DOI's row kept first, then the PMID's. A DOI or PMID outranks it: a row
+/// the ID finds holding a different DOI or PMID is another paper, kept apart,
+/// and the ID moves to this record's row with a WARNING. Python's
+/// `store_publication` takes it as `record_id=`.
 ///
 /// # Errors
 ///
 /// [`ReplaceError::EmptyRecordId`] if either part of `record_id` is empty,
-/// before anything is written; otherwise as [`store_publication`].
+/// before anything is written; the driver's error if another writer stored
+/// the ID since the lookup (the store rolls back); otherwise as
+/// [`store_publication`].
 pub fn store_publication_with_record_id(
     db: &mut dyn Db,
     pub_: &mut Publication,
@@ -776,21 +805,38 @@ pub fn store_publication_with_record_id(
             &[DbValue::Text(pmid.clone())],
         )?);
     }
-    if let Some((source, id)) = record_id {
-        found.push(fetch_one(
+    let by_record_id = match record_id {
+        Some((source, id)) => fetch_one(
             &mut *tx,
             "SELECT p.* FROM publications p JOIN publication_record_ids r \
              ON r.publication_id = p.id WHERE r.source = ? AND r.record_id = ?",
             &[DbValue::Text(source.into()), DbValue::Text(id.into())],
-        )?);
-    }
+        )?,
+        None => None,
+    };
     // One entry per row, in priority order: a row two lookups find (every
-    // re-fetch of a keyed record) consolidated into itself is deleted.
+    // re-fetch of a keyed record) would be deleted if consolidated into
+    // itself, so each row appears once.
     let mut rows: Vec<(i64, crate::db::Row)> = Vec::new();
     for row in found.into_iter().flatten() {
         let id = row.get_i64("id")?;
         if rows.iter().all(|(kept, _)| *kept != id) {
             rows.push((id, row));
+        }
+    }
+    let mut moved_from = None;
+    if let Some(row) = &by_record_id {
+        let id = row.get_i64("id")?;
+        if rows.iter().all(|(kept, _)| *kept != id) {
+            let others: Vec<&crate::db::Row> = rows.iter().map(|(_, r)| r).collect();
+            if identifiers_conflict(row, pub_, &others)? {
+                // A DOI or PMID outranks a source's ID: the row the ID named
+                // is another paper, kept as it is, and the ID moves to the
+                // record.
+                moved_from = Some(row.clone());
+            } else {
+                rows.push((id, row.clone()));
+            }
         }
     }
 
@@ -824,19 +870,45 @@ pub fn store_publication_with_record_id(
     };
 
     if let Some((source, id)) = record_id {
-        // Already on this row if a lookup found it; consolidation moved it.
-        execute(
-            &mut *tx,
-            "INSERT INTO publication_record_ids \
-             (publication_id, source, record_id, created_at) \
-             VALUES (?, ?, ?, ?) ON CONFLICT (source, record_id) DO NOTHING",
-            &[
-                DbValue::Int(pub_id),
-                DbValue::Text(source.into()),
-                DbValue::Text(id.into()),
-                DbValue::Text(now.clone()),
-            ],
-        )?;
+        if let Some(old) = &moved_from {
+            let text = |key: &str| -> Result<String, DbError> {
+                Ok(old.get(key)?.as_str().unwrap_or("None").to_string())
+            };
+            log::warn!(
+                "Record ID {source}:{id} moves from publication {} (doi {}, pmid {}) to {pub_id} \
+                 (doi {}, pmid {}); the two are kept apart",
+                old.get_i64("id")?,
+                text("doi")?,
+                text("pmid")?,
+                pub_.doi.as_deref().unwrap_or("None"),
+                pub_.pmid.as_deref().unwrap_or("None"),
+            );
+            execute(
+                &mut *tx,
+                "UPDATE publication_record_ids SET publication_id = ? \
+                 WHERE source = ? AND record_id = ?",
+                &[
+                    DbValue::Int(pub_id),
+                    DbValue::Text(source.into()),
+                    DbValue::Text(id.into()),
+                ],
+            )?;
+        } else if by_record_id.is_none() {
+            // A plain INSERT: an ID another writer stored since the lookup
+            // must fail this store, not leave its row unkeyed. A found ID is
+            // already on this row, or consolidation moved it here.
+            execute(
+                &mut *tx,
+                "INSERT INTO publication_record_ids \
+                 (publication_id, source, record_id, created_at) VALUES (?, ?, ?, ?)",
+                &[
+                    DbValue::Int(pub_id),
+                    DbValue::Text(source.into()),
+                    DbValue::Text(id.into()),
+                    DbValue::Text(now.clone()),
+                ],
+            )?;
+        }
     }
 
     for fts in fulltext_sources {

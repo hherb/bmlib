@@ -783,10 +783,22 @@ def _store_records(
                 fulltext_sources=fts,
                 grants=_stamp_source(record.grants, record.source),
                 affiliations=_stamp_source(record.author_affiliations, record.source),
+                # `is not None`: an empty ID is refused by the store, not dropped.
                 record_id=(
-                    (record.source, record.source_record_id) if record.source_record_id else None
+                    (record.source, record.source_record_id)
+                    if record.source_record_id is not None
+                    else None
                 ),
             )
+            if pub.doi is None and pub.pmid is None and record.source_record_id is None:
+                # Nothing finds the row again, so each re-fetch adds another.
+                logger.warning(
+                    "Record from %s/%s has no DOI, PMID or record ID: stored unkeyed, a"
+                    " re-fetch stores it again (%r)",
+                    source,
+                    day.isoformat(),
+                    record.title,
+                )
             if result == "added":
                 added += 1
             elif result == "merged":

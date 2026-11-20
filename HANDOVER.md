@@ -24,10 +24,30 @@ link first, remove it after)._
   distinct row found into the first. **A row two lookups find is one row**:
   consolidating it into itself deletes it (the mutant was caught only by the
   re-fetch test, in both languages).
+- **The finalcheck review (2026-11-20) found two defects, both fixed in both
+  languages.** A row found only by its record ID was consolidated even when
+  its DOI or PMID differed from the record's, so a stored preprint could be
+  merged away when OpenAlex moved its ID to the journal version: a DOI or PMID
+  now outranks a record ID (the rows stay apart, the ID moves, a WARNING names
+  both). And `ON CONFLICT DO NOTHING` let a concurrent writer leave an unkeyed
+  duplicate: the insert is now plain and fails the store. `sync()` refuses an
+  empty `source_record_id` in Python as Rust did, and both log a WARNING for a
+  record stored with no key at all.
+- **Deferred to #803 (open):** the same merge-away in the *older* DOI-row and
+  PMID-row consolidation. A record whose DOI and PMID name two rows that each
+  already hold a different PMID or DOI folds one paper into the other. It is
+  reproduced on `main` and predates #794. Neither identifier outranks the
+  other, so it needs its own decision. Also not pinned: Rust has no test of the
+  concurrent-writer insert (Python's
+  `test_an_id_stored_meanwhile_by_another_writer_fails_the_store` blinds the
+  lookup with monkeypatch; Rust would need a `Db` wrapper). The code mirrors
+  Python's.
 - **Data**: the table arrives empty on an existing database; rows already
-  duplicated stay. Refusing keyless records was rejected (it loses records).
+  duplicated stay, and each such record gains one more row on its first
+  re-fetch after the upgrade. Refusing keyless records was rejected (it loses
+  records).
 - `tests/fixtures/record_lookup.json` regenerated (only the new key moved);
-  five OpenAlex oracle cases added to both case copies.
+  seven OpenAlex oracle cases added to both case copies.
 
 ## What 0.14.0 costs StudyAnalyzer (and any downstream)
 
@@ -255,15 +275,14 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   medRxiv full-text sources with their version on a re-fetch. The two questions are independent, and a downstream reading only the
   number must still read this list.
 - **Tests on `fix/keyless-record-dedup-794`** (2026-11-20, PostgreSQL 18 DSN
-  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,205 passed + 23
-  skipped (11,228 collected); ruff 0.15.20 and mypy clean. Rust `cargo test -p
-  bmlib -p bmlib-ffi` 1,895 passed on macOS, clippy and `cargo fmt --check`
+  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`, after the finalcheck fixes):
+  Python 11,225 passed + 23 skipped (11,248 collected); ruff 0.15.20 and mypy
+  clean. Rust `cargo test -p bmlib -p bmlib-ffi` 1,903 passed on macOS, clippy and `cargo fmt --check`
   clean, `postgres_live` 15 passed; the Rust oracle 45 clean. At the release
   (2026-11-17) the release gates were rehearsed: `uv build`, `twine check
   --strict`, `py.typed` in the wheel, and 126 of 126 modules imported, one fresh
   interpreter each, in a core-only venv. On `main` before the release PR, `-p bmlib
-  --no-default-features` passed 1,464 and clippy was clean; this branch
-  changes no Rust code but a version literal. Other recipes: `postgres_live.rs` with
+  --no-default-features` passed 1,464 and clippy was clean. Other recipes: `postgres_live.rs` with
   `BMLIB_PG_TESTS=1 BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`; `--features embed` and the
   embedder's live tests need `BMLIB_EMBED_MODEL` (the GGUFs are in
   `~/.cache/bmlib/models/`; the Python live tests need `.[all,dev,embed]`).
