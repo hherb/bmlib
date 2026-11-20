@@ -1,53 +1,41 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-20 (**#794, the PR on `fix/keyless-record-dedup-794`**).
-**0.14.0 is tagged and released on GitHub** (`v0.14.0` on `e7b7c98a`, PR
-#801); `release.yml` run 44306259452 **waits at the `pypi` gate for the
-maintainer**, so PyPI still serves 0.13.0. **Crate 0.5.0 is not yet on
-crates.io**: publish it once PyPI has 0.14.0, from a clean worktree of
-`e7b7c98a` (`HANDOVER_RUST.md`, *Publishing to crates.io*: remake the token
-link first, remove it after)._
+_Last updated: 2026-11-21 (**#803, the PR on
+`fix/split-identity-consolidation-803`**). **0.14.0 is tagged and released on
+GitHub** (`v0.14.0` on `e7b7c98a`, PR #801); `release.yml` run 44306259452
+**still waits at the `pypi` gate for the maintainer** (checked 2026-11-21), so
+PyPI still serves 0.13.0. **Crate 0.5.0 is not yet on crates.io**: publish it
+once PyPI has 0.14.0, from a clean worktree of `e7b7c98a` (`HANDOVER_RUST.md`,
+*Publishing to crates.io*: remake the token link first, remove it after)._
 
-## This session: a record with neither DOI nor PMID is stored once (#794, PR open)
+## This session: a DOI and a PMID naming two papers never merge them (#803, PR open)
 
-- **The defect was wider than the issue**: besides Europe PMC's preprints,
-  PMC-only, AGR, CBA and patent records, every **OpenAlex work with no DOI
-  and no PMID** gained a row on every re-fetch (the fetcher keeps no DOI
-  filter and dropped the `W…` ID). PubMed and bioRxiv always carry a key.
-- **The fix, both languages (the maintainer's choice of design)**: a new child
-  table `publication_record_ids(publication_id, source, record_id,
-  UNIQUE(source, record_id))`; `FetchedRecord.source_record_id` (declared
-  last) filled by the OpenAlex (`W` + ASCII digits) and Europe PMC
-  (`"{source}:{id}"`) normalisers; `store_publication(..., record_id=)`
-  (Rust: `store_publication_with_record_id`, so `store_publication` keeps its
-  signature) looks up by DOI, PMID, then record ID and consolidates every
-  distinct row found into the first. **A row two lookups find is one row**:
-  consolidating it into itself deletes it (the mutant was caught only by the
-  re-fetch test, in both languages).
-- **The finalcheck review (2026-11-20) found two defects, both fixed in both
-  languages.** A row found only by its record ID was consolidated even when
-  its DOI or PMID differed from the record's, so a stored preprint could be
-  merged away when OpenAlex moved its ID to the journal version: a DOI or PMID
-  now outranks a record ID (the rows stay apart, the ID moves, a WARNING names
-  both). And `ON CONFLICT DO NOTHING` let a concurrent writer leave an unkeyed
-  duplicate: the insert is now plain and fails the store. `sync()` refuses an
-  empty `source_record_id` in Python as Rust did, and both log a WARNING for a
-  record stored with no key at all.
-- **Deferred to #803 (open):** the same merge-away in the *older* DOI-row and
-  PMID-row consolidation. A record whose DOI and PMID name two rows that each
-  already hold a different PMID or DOI folds one paper into the other. It is
-  reproduced on `main` and predates #794. Neither identifier outranks the
-  other, so it needs its own decision. Also not pinned: Rust has no test of the
-  concurrent-writer insert (Python's
-  `test_an_id_stored_meanwhile_by_another_writer_fails_the_store` blinds the
-  lookup with monkeypatch; Rust would need a `Db` wrapper). The code mirrors
-  Python's.
-- **Data**: the table arrives empty on an existing database; rows already
-  duplicated stay, and each such record gains one more row on its first
-  re-fetch after the upgrade. Refusing keyless records was rejected (it loses
-  records).
-- `tests/fixtures/record_lookup.json` regenerated (only the new key moved);
-  seven OpenAlex oracle cases added to both case copies.
+- **The defect** (PR #802's review, older than #794): a record whose DOI
+  found one row and whose PMID found another consolidated them even when each
+  held a different value of the other identifier, so one wrong DOI-PMID link
+  deleted a paper (`COALESCE`, no log line). Reproduced in both languages on
+  `main`: four of the six new Python tests and all four new Rust tests failed.
+- **The fix, both languages (the maintainer's choice, 2026-11-21)**: both rows
+  are kept, the record merges into the DOI row **without its PMID** (the
+  plain merge would write it onto the DOI row under `UNIQUE`; a mutation that
+  drops the strip is caught by
+  `test_a_doi_row_without_a_pmid_does_not_take_the_other_paper_s`), and a
+  WARNING names both rows. A one-sided split (DOI row without a PMID, PMID
+  row without a DOI) is still consolidated. The record ID follows the record
+  to the DOI row. Reasoning in `docs/DECISIONS.md`.
+- **Data**: nothing stored moves; papers already merged away stay merged.
+- The manual's consolidation step 2 said `UPDATE OR IGNORE`; the code uses
+  an anti-join on both backends. The manual now says so.
+
+## Earlier: a record with neither DOI nor PMID is stored once (#794, PR #802, merged)
+
+New table `publication_record_ids`, `FetchedRecord.source_record_id`,
+`store_publication(..., record_id=)` (Rust
+`store_publication_with_record_id`); a DOI or PMID outranks a record ID. Detail
+in the CHANGELOG and PR #802. **Not pinned**: Rust has no test of the
+concurrent-writer insert (Python's
+`test_an_id_stored_meanwhile_by_another_writer_fails_the_store` blinds the
+lookup with monkeypatch; Rust would need a `Db` wrapper).
 
 ## What 0.14.0 costs StudyAnalyzer (and any downstream)
 
@@ -81,7 +69,7 @@ Each is a CHANGELOG entry and a PR body; the library's reasoning is in
   index day settled is never fetched; and measure the settle period:
   `EUROPEPMC_SETTLE_DAYS` = 3 is fixed before measurement, as is
   `hitCount`'s exactness, so cite neither as measured) and **#793** (the day
-  ledger ignores the query); #794 is this session's PR.
+  ledger ignores the query); #794 is fixed (PR #802).
 - **The library's save-fork guard** (#778 item 1, PR #798) has a **known miss**:
   a DOI-only save beside a PMID-named folder still forks, as do renamed and
   cut-short names. #778 items 2-4 and #755 items 1 and 4 come after 0.14
@@ -274,11 +262,12 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache; **0.14.0 makes nothing stored stale** and labels bioRxiv and
   medRxiv full-text sources with their version on a re-fetch. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests on `fix/keyless-record-dedup-794`** (2026-11-20, PostgreSQL 18 DSN
-  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`, after the finalcheck fixes):
-  Python 11,225 passed + 23 skipped (11,248 collected); ruff 0.15.20 and mypy
-  clean. Rust `cargo test -p bmlib -p bmlib-ffi` 1,903 passed on macOS, clippy and `cargo fmt --check`
-  clean, `postgres_live` 15 passed; the Rust oracle 45 clean. At the release
+- **Tests on `fix/split-identity-consolidation-803`** (2026-11-21, PostgreSQL
+  18 DSN on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,237 passed +
+  23 skipped; ruff 0.15.20 and mypy clean. Rust `cargo test -p bmlib -p
+  bmlib-ffi` 1,907 passed on macOS, clippy and `cargo fmt --check` clean; the
+  Rust oracle 45 clean. `postgres_live` was not re-run (no Rust SQL changed;
+  15 passed on #794's branch). At the release
   (2026-11-17) the release gates were rehearsed: `uv build`, `twine check
   --strict`, `py.typed` in the wheel, and 126 of 126 modules imported, one fresh
   interpreter each, in a core-only venv. On `main` before the release PR, `-p bmlib
@@ -310,7 +299,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**124 open** (2026-11-20; #794 closes with this session's PR, #755 stays open
+**124 open** (2026-11-21; #803 closes with this session's PR, #755 stays open
 for its decisions): Europe PMC's **#792** and **#793** (PR #790's review,
 above), the library's #755, #762 and **#778** (PR #777's review follow-ups,
 above), **#776** (PR #775's

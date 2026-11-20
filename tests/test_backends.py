@@ -2337,3 +2337,113 @@ class TestARecordIdDeduplicates:
             store_publication(backend_conn, _pub(), record_id=record_id)
 
         assert _count(backend_conn, "publications") == 0
+
+
+class TestADoiAndAPmidNamingTwoPapersNeverMergeThem:
+    """A record whose DOI and PMID find two rows that each hold a different
+    value of the other identifier names two papers (#803): neither row is
+    folded into the other, and the record merges into the DOI's row."""
+
+    _WARNING = "name two papers; the record merges into publication"
+
+    @pytest.fixture(autouse=True)
+    def _schema(self, backend_conn):
+        ensure_schema(backend_conn)
+
+    def _rows(self, conn) -> list[tuple]:
+        return [
+            (r["title"], r["doi"], r["pmid"], r["journal"])
+            for r in fetch_all(
+                conn, "SELECT title, doi, pmid, journal FROM publications ORDER BY id"
+            )
+        ]
+
+    def test_two_fully_keyed_papers_stay_apart(self, backend_conn, caplog):
+        store_publication(backend_conn, _pub(title="Paper A", doi="10.1/x", pmid="5"))
+        store_publication(backend_conn, _pub(title="Paper B", doi="10.1/y", pmid="9"))
+        bad = _pub(title="Bad link", doi="10.1/x", pmid="9", journal="Cell")
+
+        with caplog.at_level(logging.WARNING, logger="bmlib.publications.storage"):
+            result = store_publication(
+                backend_conn,
+                bad,
+                [FullTextSource(publication_id=0, source="oa", url="http://x/1", format="pdf")],
+            )
+
+        assert result == "merged"
+        assert self._rows(backend_conn) == [
+            ("Paper A", "10.1/x", "5", "Cell"),
+            ("Paper B", "10.1/y", "9", None),
+        ]
+        ph = placeholder(backend_conn)
+        owner = fetch_scalar(
+            backend_conn,
+            f"SELECT publication_id FROM fulltext_sources WHERE url = {ph}",
+            ("http://x/1",),
+        )
+        assert owner == get_publication_by_doi(backend_conn, "10.1/x").id
+        assert bad.pmid == "9"  # the caller's record keeps its own PMID
+        assert self._WARNING in caplog.text
+
+    def test_a_doi_row_without_a_pmid_does_not_take_the_other_paper_s(self, backend_conn):
+        # The plain merge would write PMID 9 onto the DOI row, which the PMID
+        # row already holds.
+        store_publication(backend_conn, _pub(title="Paper A", doi="10.1/x"))
+        store_publication(backend_conn, _pub(title="Paper B", doi="10.1/y", pmid="9"))
+
+        store_publication(backend_conn, _pub(doi="10.1/x", pmid="9"))
+
+        assert self._rows(backend_conn) == [
+            ("Paper A", "10.1/x", None, None),
+            ("Paper B", "10.1/y", "9", None),
+        ]
+
+    def test_a_pmid_row_without_a_doi_is_kept_when_the_doi_row_has_a_pmid(self, backend_conn):
+        store_publication(backend_conn, _pub(title="Paper A", doi="10.1/x", pmid="5"))
+        store_publication(backend_conn, _pub(title="Paper B", pmid="9"))
+
+        store_publication(backend_conn, _pub(doi="10.1/x", pmid="9"))
+
+        assert self._rows(backend_conn) == [
+            ("Paper A", "10.1/x", "5", None),
+            ("Paper B", None, "9", None),
+        ]
+
+    def test_rows_with_no_conflicting_identifier_are_still_consolidated(self, backend_conn, caplog):
+        store_publication(backend_conn, _pub(title="By DOI", doi="10.1/x"))
+        store_publication(backend_conn, _pub(title="By PMID", pmid="9"))
+
+        with caplog.at_level(logging.WARNING, logger="bmlib.publications.storage"):
+            store_publication(backend_conn, _pub(doi="10.1/x", pmid="9"))
+
+        assert self._rows(backend_conn) == [("By DOI", "10.1/x", "9", None)]
+        assert self._WARNING not in caplog.text
+
+    def test_the_record_id_follows_the_record_to_the_doi_row(self, backend_conn):
+        store_publication(backend_conn, _pub(title="Paper A", doi="10.1/x", pmid="5"))
+        store_publication(
+            backend_conn,
+            _pub(title="Paper B", doi="10.1/y", pmid="9"),
+            record_id=("openalex", "W1"),
+        )
+
+        store_publication(backend_conn, _pub(doi="10.1/x", pmid="9"), record_id=("openalex", "W1"))
+
+        assert _count(backend_conn, "publications") == 2
+        ph = placeholder(backend_conn)
+        owner = fetch_scalar(
+            backend_conn,
+            f"SELECT publication_id FROM publication_record_ids WHERE record_id = {ph}",
+            ("W1",),
+        )
+        assert owner == get_publication_by_doi(backend_conn, "10.1/x").id
+
+    def test_a_re_fetch_of_the_bad_link_changes_nothing_more(self, backend_conn):
+        store_publication(backend_conn, _pub(title="Paper A", doi="10.1/x", pmid="5"))
+        store_publication(backend_conn, _pub(title="Paper B", doi="10.1/y", pmid="9"))
+        store_publication(backend_conn, _pub(doi="10.1/x", pmid="9"))
+        before = self._rows(backend_conn)
+
+        store_publication(backend_conn, _pub(doi="10.1/x", pmid="9"))
+
+        assert self._rows(backend_conn) == before

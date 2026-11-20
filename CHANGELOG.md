@@ -8,6 +8,16 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A record whose DOI and PMID name two stored papers no longer merges one
+  into the other** (#803). When a record's DOI found one row and its PMID
+  another, `store_publication` consolidated them even when each already held
+  a different value of the other identifier, so one wrong DOI-PMID link (an
+  OpenAlex or Europe PMC cross-reference error) deleted a paper's DOI, PMID
+  and title for good, with no log line. Both rows are now kept, the record
+  merges into the DOI's row without its PMID, and a WARNING names both rows.
+  A DOI row with no PMID and a PMID row with no DOI are still consolidated.
+  **Data**: nothing stored moves; papers already merged away stay merged.
+  Rust's `store_publication` does the same.
 - **A record with neither DOI nor PMID is stored once, not again on every
   re-fetch** (#794). `store_publication` deduplicated by DOI and PMID alone,
   so a record with neither (an OpenAlex work, or a Europe PMC preprint,

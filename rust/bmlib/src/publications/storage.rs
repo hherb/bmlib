@@ -756,6 +756,11 @@ fn identifiers_conflict(
 
 /// [`store_publication`], also keyed by the source's own ID for the record.
 ///
+/// A DOI row and a PMID row found apart are consolidated into the DOI's,
+/// unless each holds a different value of the other identifier: then they are
+/// two papers and the record's link is wrong (#803). Both are kept, the record
+/// merges into the DOI's row without its PMID, and a WARNING names both rows.
+///
 /// `record_id` is `(source, id)` (an OpenAlex work `"W123"`, a Europe PMC
 /// `"PPR:PPR123"`). It finds the row again when the record carries neither DOI
 /// nor PMID (#794), and is kept beside the row; a row may hold several. Rows
@@ -824,6 +829,34 @@ pub fn store_publication_with_record_id(
             rows.push((id, row));
         }
     }
+    // A DOI row and a PMID row that each hold a different value of the other
+    // identifier are two papers, and the record's link between them is wrong
+    // (#803): neither outranks the other, so the PMID row is kept apart and
+    // the record merges into the DOI row without its PMID.
+    let mut stripped = None;
+    if let [(doi_id, doi_row), (pmid_id, pmid_row)] = rows.as_slice() {
+        if identifiers_conflict(pmid_row, pub_, &[doi_row])? {
+            let text = |row: &crate::db::Row, key: &str| -> Result<String, DbError> {
+                Ok(row.get(key)?.as_str().unwrap_or("None").to_string())
+            };
+            log::warn!(
+                "DOI {} and PMID {} name two papers; the record merges into publication \
+                 {doi_id} (doi {}, pmid {}), and publication {pmid_id} (doi {}, pmid {}) \
+                 is kept apart",
+                pub_.doi.as_deref().unwrap_or("None"),
+                pub_.pmid.as_deref().unwrap_or("None"),
+                text(doi_row, "doi")?,
+                text(doi_row, "pmid")?,
+                text(pmid_row, "doi")?,
+                text(pmid_row, "pmid")?,
+            );
+            stripped = Some(Publication {
+                pmid: None,
+                ..pub_.clone()
+            });
+            rows.truncate(1);
+        }
+    }
     let mut moved_from = None;
     if let Some(row) = &by_record_id {
         let id = row.get_i64("id")?;
@@ -860,7 +893,8 @@ pub fn store_publication_with_record_id(
 
     let (pub_id, outcome) = match &existing {
         Some(row) => {
-            merge_publication(&mut *tx, row, pub_, &now).map_err(ReplaceError::Db)?;
+            let incoming = stripped.as_ref().unwrap_or(pub_);
+            merge_publication(&mut *tx, row, incoming, &now).map_err(ReplaceError::Db)?;
             (row.get_i64("id")?, StoreOutcome::Merged)
         }
         None => (

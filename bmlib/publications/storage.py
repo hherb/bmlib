@@ -39,6 +39,7 @@ relies on this to batch a whole day of records into a single commit.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 from collections.abc import Sequence
@@ -557,6 +558,12 @@ def store_publication(
     from different sources — which disagree on DOI case and prefixes — resolves
     to a single row. ``pub`` is mutated in place to hold the canonical forms.
 
+    A DOI row and a PMID row found apart are consolidated into the DOI's,
+    unless each holds a different value of the other identifier: then they are
+    two papers and the record's link is wrong (#803). Both are kept, the
+    record merges into the DOI's row without its PMID, and a WARNING names
+    both rows.
+
     The whole store (row consolidation, insert/merge, full-text sources, grants
     and affiliations) is one atomic transaction. Standalone calls commit on
     return; calls made inside a caller's ``transaction(conn)`` block join it,
@@ -631,6 +638,27 @@ def store_publication(
         for row in found[:2]:
             if row is not None and all(row["id"] != kept["id"] for kept in rows):
                 rows.append(row)
+        # A DOI row and a PMID row that each hold a different value of the other
+        # identifier are two papers, and the record's link between them is
+        # wrong (#803): neither outranks the other, so the PMID row is kept
+        # apart and the record merges into the DOI row without its PMID.
+        incoming = pub
+        if len(rows) == 2 and _identifiers_conflict(rows[1], [pub, rows[0]]):
+            doi_row, pmid_row = rows
+            rows = [doi_row]
+            logger.warning(
+                "DOI %s and PMID %s name two papers; the record merges into publication"
+                " %s (doi %s, pmid %s), and publication %s (doi %s, pmid %s) is kept apart",
+                pub.doi,
+                pub.pmid,
+                doi_row["id"],
+                doi_row["doi"],
+                doi_row["pmid"],
+                pmid_row["id"],
+                pmid_row["doi"],
+                pmid_row["pmid"],
+            )
+            incoming = dataclasses.replace(pub, pmid=None)
         by_record_id = found[2]
         moved_from = None
         if by_record_id is not None and all(by_record_id["id"] != kept["id"] for kept in rows):
@@ -651,7 +679,7 @@ def store_publication(
             )
 
         if existing is not None:
-            _merge_publication(conn, existing, pub, now)
+            _merge_publication(conn, existing, incoming, now)
             pub_id = existing["id"]
             result = "merged"
         else:

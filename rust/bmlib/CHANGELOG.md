@@ -11,6 +11,11 @@ The Python library is documented separately, in the repository's
 
 ### Fixed
 
+- **A record whose DOI and PMID name two stored papers no longer merges one
+  into the other** (#803), as in Python. When the DOI row and the PMID row
+  each hold a different value of the other identifier, both are kept, the
+  record merges into the DOI's row without its PMID, and a WARNING names both
+  rows; before, `store_publication` folded one paper into the other.
 - **A record with neither DOI nor PMID is stored once, not again on every
   re-fetch** (#794), as in Python. `FetchedRecord::source_record_id` (filled
   by the OpenAlex and Europe PMC normalisers) is stored by `sync()` through the
