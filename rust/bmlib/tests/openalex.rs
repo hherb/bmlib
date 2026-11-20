@@ -178,6 +178,7 @@ fn run(case: &Value) -> Value {
                 "is_open_access": record.is_open_access,
                 "license": record.license,
                 "fulltext_sources": record.fulltext_sources,
+                "source_record_id": record.source_record_id,
             })
         }
         "fetch" => {

@@ -60,7 +60,7 @@ use crate::publications::models::{
     AuthorAffiliation, DownloadDay, FetchResult, FetchedRecord, Grant, PartCheckpoint, Publication,
     SyncReport,
 };
-use crate::publications::storage::store_publication;
+use crate::publications::storage::store_publication_with_record_id;
 use crate::pyvalue::repr_str;
 
 /// The last day the window may name.
@@ -1286,8 +1286,7 @@ pub fn record_to_fulltext_sources(record: &FetchedRecord) -> Option<Vec<FullText
 ///
 /// Runs inside the caller's transaction, so a record that fails rolls back to
 /// its own savepoint without losing the batch. One bad record must not lose the
-/// batch, so the per-record error is caught — which is exactly why the failure
-/// count is reported rather than logged and dropped.
+/// batch, so the per-record error is caught, logged at ERROR and counted.
 ///
 /// # Errors
 ///
@@ -1305,13 +1304,38 @@ pub fn store_records(
         let fts = record_to_fulltext_sources(record).unwrap_or_default();
         let grants = stamp_grant_source(&record.grants, source);
         let affiliations = stamp_affiliation_source(&record.author_affiliations, source);
-        match store_publication(&mut *db, &mut pub_, &fts, &grants, &affiliations) {
-            Ok(outcome) => match outcome.as_str() {
-                "added" => added += 1,
-                "merged" => merged += 1,
-                _ => {}
-            },
-            Err(_) => failed += 1,
+        let record_id = record
+            .source_record_id
+            .as_deref()
+            .map(|id| (record.source.as_str(), id));
+        match store_publication_with_record_id(
+            &mut *db,
+            &mut pub_,
+            &fts,
+            &grants,
+            &affiliations,
+            record_id,
+        ) {
+            Ok(outcome) => {
+                if pub_.doi.is_none() && pub_.pmid.is_none() && record.source_record_id.is_none() {
+                    // Nothing finds the row again, so each re-fetch adds another.
+                    log::warn!(
+                        "Record from {source} has no DOI, PMID or record ID: stored unkeyed, a \
+                         re-fetch stores it again ({:?})",
+                        record.title
+                    );
+                }
+                match outcome.as_str() {
+                    "added" => added += 1,
+                    "merged" => merged += 1,
+                    _ => {}
+                }
+            }
+            Err(e) => {
+                // One bad record must not lose the batch; Python logs it too.
+                log::error!("Failed to store record from {source}: {e}");
+                failed += 1;
+            }
         }
     }
     Ok((added, merged, failed))

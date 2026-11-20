@@ -43,9 +43,9 @@ over `serde_json::Value`. `DownloadDay::from_json` refuses a row with no
 ## Storing a paper
 
 `ensure_schema` creates `publications`, `fulltext_sources`, `download_days`,
-`download_day_parts`, `retraction_notices`, `publication_grants` and
-`publication_affiliations`, and adds columns a database written by an older
-bmlib lacks. Call it once after upgrading: `store_publication` names every
+`download_day_parts`, `retraction_notices`, `publication_grants`,
+`publication_affiliations` and `publication_record_ids` *(unreleased)*, and
+adds columns a database written by an older bmlib lacks. Call it once after upgrading: `store_publication` names every
 column in its `INSERT`.
 
 `store_publication(db, &mut pub_, fulltext_sources, grants, affiliations)`
@@ -53,8 +53,23 @@ normalises the DOI (prefix stripped, lower-cased) and PMID in place, looks the
 paper up by each, and either inserts (`StoreOutcome::Added`) or merges
 (`StoreOutcome::Merged`): source lists are unioned, an empty field is filled,
 **an existing value is never overwritten**, and `is_open_access` latches on.
-Everything — merge, full-text sources, grants, affiliations — is one
-transaction.
+Everything — merge, record IDs, full-text sources, grants, affiliations — is
+one transaction.
+
+A record with neither DOI nor PMID (an OpenAlex work or a Europe PMC preprint
+or AGR record that lacks both) is found again by the source's own ID instead
+(#794):
+`store_publication_with_record_id(db, &mut pub_, …, Some((source, id)))`
+*(unreleased)*, which `sync()` calls with the record's `source_record_id`.
+Rows the DOI, the PMID and the record ID find apart are consolidated into one,
+the DOI's row kept first, then the PMID's. **A DOI or PMID outranks a record
+ID**: a row the ID finds holding a different DOI or PMID is another paper, kept
+apart, and the ID moves to the row the record lands on, with a WARNING. An ID
+another writer stored since the lookup fails the store. An empty source or ID
+is `ReplaceError::EmptyRecordId`, before anything is written; `sync()` counts
+such a record as failed. A database an older bmlib wrote gains the table empty,
+so rows it already duplicated stay, and each such record gains one more row on
+its first re-fetch after the upgrade.
 
 ```rust
 use bmlib::db::open_memory;

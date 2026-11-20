@@ -100,6 +100,27 @@ class TestTheMeasuredRecord:
         assert record.fulltext_sources == []
         assert record.extras == {}
 
+    def test_the_record_id_is_europe_pmcs_source_and_id(self):
+        # The key that finds a preprint with no DOI or PMID again (#794).
+        assert normalize_europepmc(RECORD).source_record_id == "PPR:PPR1325930"
+
+    @pytest.mark.parametrize(
+        ("source", "record_id", "expected"),
+        [
+            ("AGR", "AGR123", "AGR:AGR123"),
+            ("MED", "33301246", "MED:33301246"),
+            ("PMC", "PMC7745181", "PMC:PMC7745181"),
+            (None, "PPR1", None),
+            ("", "PPR1", None),
+            ("PPR", None, None),
+            ("PPR", "", None),
+            ("PPR", 1325930, None),
+        ],
+    )
+    def test_the_record_id_needs_both_parts(self, source, record_id, expected):
+        raw = _with(source=source, id=record_id)
+        assert normalize_europepmc(raw).source_record_id == expected
+
     def test_a_journal_title_is_preferred_to_the_server(self):
         raw = _with(journalInfo={"journal": {"title": "The Lancet"}})
         assert normalize_europepmc(raw).journal == "The Lancet"

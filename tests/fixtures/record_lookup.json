@@ -94,7 +94,8 @@
         "affiliation": "A University",
         "position": 0
        }
-      ]
+      ],
+      "source_record_id": null
      },
      "published_version": null,
      "pubmed": {
@@ -206,7 +207,8 @@
         "affiliation": "A University",
         "position": 0
        }
-      ]
+      ],
+      "source_record_id": null
      },
      "published_version": null,
      "pubmed": {
@@ -300,7 +302,8 @@
         "affiliation": "A University",
         "position": 0
        }
-      ]
+      ],
+      "source_record_id": null
      },
      "published_version": null,
      "pubmed": {
@@ -370,7 +373,8 @@
       ],
       "extras": {},
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "W1"
      },
      "published_version": null,
      "pubmed": {
@@ -478,7 +482,8 @@
         "affiliation": "A University",
         "position": 0
        }
-      ]
+      ],
+      "source_record_id": null
      },
      "published_version": null,
      "pubmed": {
@@ -586,7 +591,8 @@
         "affiliation": "A University",
         "position": 0
        }
-      ]
+      ],
+      "source_record_id": null
      },
      "published_version": null,
      "pubmed": {
@@ -656,7 +662,8 @@
       ],
       "extras": {},
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "W1"
      },
      "published_version": null,
      "pubmed": {
@@ -764,7 +771,8 @@
         "affiliation": "A University",
         "position": 0
        }
-      ]
+      ],
+      "source_record_id": null
      },
      "published_version": null,
      "pubmed": {
@@ -905,7 +913,8 @@
         "affiliation": "A University",
         "position": 0
        }
-      ]
+      ],
+      "source_record_id": null
      },
      "published_version": null,
      "pubmed": {
@@ -998,7 +1007,8 @@
         "affiliation": "A University",
         "position": 0
        }
-      ]
+      ],
+      "source_record_id": null
      },
      "published_version": null,
      "pubmed": {
@@ -1197,7 +1207,8 @@
         "affiliation": "A University",
         "position": 0
        }
-      ]
+      ],
+      "source_record_id": null
      },
      "published_version": null,
      "pubmed": {
@@ -1279,7 +1290,8 @@
       ],
       "extras": {},
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "W1"
      },
      "published_version": null,
      "pubmed": {
@@ -1360,7 +1372,8 @@
       ],
       "extras": {},
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "W1"
      },
      "published_version": null,
      "pubmed": {
@@ -1442,7 +1455,8 @@
       ],
       "extras": {},
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "W1"
      },
      "published_version": null,
      "pubmed": {
@@ -1524,7 +1538,8 @@
       ],
       "extras": {},
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "W1"
      },
      "published_version": null,
      "pubmed": {
@@ -1606,7 +1621,8 @@
       ],
       "extras": {},
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "W1"
      },
      "published_version": null,
      "pubmed": {
@@ -1688,7 +1704,8 @@
       ],
       "extras": {},
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "W1"
      },
      "published_version": null,
      "pubmed": {
@@ -1775,7 +1792,8 @@
         "affiliation": "A University",
         "position": 0
        }
-      ]
+      ],
+      "source_record_id": null
      },
      "published_version": null,
      "pubmed": {
@@ -1867,7 +1885,8 @@
        "ppr_id": "PPR1325930"
       },
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "PPR:PPR1325930"
      },
      "published_version": null,
      "pubmed": {
@@ -1935,7 +1954,8 @@
        "ppr_id": "PPR1325930"
       },
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "PPR:PPR1325930"
      },
      "published_version": null,
      "pubmed": {
@@ -2228,7 +2248,8 @@
         "affiliation": "A University",
         "position": 0
        }
-      ]
+      ],
+      "source_record_id": null
      },
      "published_version": null,
      "pubmed": {
@@ -2303,7 +2324,8 @@
       ],
       "extras": {},
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "W1"
      },
      "published_version": {
       "pmid": "32511329",
@@ -2389,7 +2411,8 @@
       ],
       "extras": {},
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "W1"
      },
      "published_version": null,
      "pubmed": {
@@ -2471,7 +2494,8 @@
       ],
       "extras": {},
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "W1"
      },
      "published_version": null,
      "pubmed": {
@@ -2575,7 +2599,8 @@
        "ppr_id": "PPR1325930"
       },
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "PPR:PPR1325930"
      },
      "published_version": null,
      "pubmed": {
@@ -2665,7 +2690,8 @@
        "ppr_id": "PPR1325930"
       },
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "PPR:PPR1325930"
      },
      "published_version": {
       "pmid": "77",
@@ -2777,7 +2803,8 @@
         "affiliation": "A University",
         "position": 0
        }
-      ]
+      ],
+      "source_record_id": null
      },
      "published_version": null,
      "pubmed": {
@@ -2879,7 +2906,8 @@
         "affiliation": "A University",
         "position": 0
        }
-      ]
+      ],
+      "source_record_id": null
      },
      "published_version": null,
      "pubmed": {
@@ -2967,7 +2995,8 @@
         "affiliation": "A University",
         "position": 0
        }
-      ]
+      ],
+      "source_record_id": null
      },
      "published_version": null,
      "pubmed": {
@@ -3062,7 +3091,8 @@
         "affiliation": "A University",
         "position": 0
        }
-      ]
+      ],
+      "source_record_id": null
      },
      "published_version": null,
      "pubmed": {
@@ -3144,7 +3174,8 @@
       ],
       "extras": {},
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "W1"
      },
      "published_version": null,
      "pubmed": {
@@ -3252,7 +3283,8 @@
         "affiliation": "A University",
         "position": 0
        }
-      ]
+      ],
+      "source_record_id": null
      },
      "published_version": null,
      "pubmed": {
@@ -3361,7 +3393,8 @@
         "affiliation": "A University",
         "position": 0
        }
-      ]
+      ],
+      "source_record_id": null
      },
      "published_version": null,
      "pubmed": {
@@ -3470,7 +3503,8 @@
         "affiliation": "A University",
         "position": 0
        }
-      ]
+      ],
+      "source_record_id": null
      },
      "published_version": null,
      "pubmed": {
@@ -3545,7 +3579,8 @@
       ],
       "extras": {},
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "W1"
      },
      "published_version": {
       "pmid": "32511329",
@@ -3619,7 +3654,8 @@
       ],
       "extras": {},
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "W1"
      },
      "published_version": null,
      "pubmed": {
@@ -3689,7 +3725,8 @@
       ],
       "extras": {},
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "W1"
      },
      "published_version": null,
      "pubmed": {
@@ -3771,7 +3808,8 @@
       ],
       "extras": {},
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "W1"
      },
      "published_version": null,
      "pubmed": {
@@ -3937,7 +3975,8 @@
        "ppr_id": "PPR1325930"
       },
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "PPR:PPR1325930"
      },
      "published_version": null,
      "pubmed": {
@@ -4029,7 +4068,8 @@
        "ppr_id": "PPR1325930"
       },
       "grants": [],
-      "author_affiliations": []
+      "author_affiliations": [],
+      "source_record_id": "PPR:PPR1325930"
      },
      "published_version": null,
      "pubmed": {

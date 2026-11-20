@@ -114,6 +114,7 @@ fn record_json(record: &FetchedRecord) -> Value {
             "id": a.id, "publication_id": a.publication_id, "source": a.source,
             "author": a.author, "affiliation": a.affiliation, "position": a.position,
         })).collect::<Vec<_>>(),
+        "source_record_id": record.source_record_id,
     })
 }
 

@@ -147,6 +147,15 @@ fn pmc_id_from_url(url: &str) -> Option<String> {
         .then(|| format!("PMC{digits}"))
 }
 
+/// `W` + ASCII digits from the last path segment of the work's `id` URL
+/// (`https://openalex.org/W123`): the one key a work with neither DOI nor PMID
+/// carries (#794).
+fn work_id_from_url(url: &str) -> Option<String> {
+    let segment = url.trim_end_matches('/').rsplit('/').next()?;
+    let digits = segment.strip_prefix('W')?;
+    (!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())).then(|| segment.to_string())
+}
+
 fn nested<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
     value.get(key).filter(|v| !v.is_null())
 }
@@ -261,6 +270,7 @@ pub fn normalize(raw: &Value) -> Option<FetchedRecord> {
     record.doi = doi;
     record.pmid = pmid;
     record.pmc_id = pmc_id;
+    record.source_record_id = text(raw, "id").and_then(|url| work_id_from_url(&url));
     record.abstract_text = abstract_text;
     record.authors = authors;
     record.journal = journal;

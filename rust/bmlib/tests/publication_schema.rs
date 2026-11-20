@@ -100,8 +100,8 @@ fn both_dialects_create_the_same_objects() {
             .collect()
     }
     assert_eq!(objects(SCHEMA_SQL), objects(SCHEMA_SQL_POSTGRESQL));
-    // And there are fourteen of them, which is what Python's `;` count says.
-    assert_eq!(objects(SCHEMA_SQL).len(), 14);
+    // And there are sixteen of them, which is what Python's `;` count says.
+    assert_eq!(objects(SCHEMA_SQL).len(), 16);
 }
 
 /// The unique indexes on `doi` and `pmid` are **partial** (`WHERE … IS NOT
@@ -136,6 +136,7 @@ fn ensure_schema_is_idempotent() {
         "retraction_notices",
         "publication_grants",
         "publication_affiliations",
+        "publication_record_ids",
     ] {
         let columns = existing_columns(&mut conn, table).expect("catalog read");
         assert!(!columns.is_empty(), "{table} was not created");

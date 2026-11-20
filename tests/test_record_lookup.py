@@ -614,6 +614,7 @@ class TestSerialisation:
         [
             ("title", 5, "FetchedRecord.title is not text"),
             ("pmid", ["x"], "FetchedRecord.pmid is not text or None"),
+            ("source_record_id", 5, "FetchedRecord.source_record_id is not text or None"),
             ("authors", "abc", "FetchedRecord.authors is not a list of text"),
             ("keywords", [1], "FetchedRecord.keywords is not a list of text"),
             ("is_open_access", "false", "FetchedRecord.is_open_access is not a boolean"),

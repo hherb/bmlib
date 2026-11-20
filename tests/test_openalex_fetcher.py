@@ -94,6 +94,7 @@ def _make_raw_work(
         open_access = {"is_oa": True}
 
     return {
+        "id": "https://openalex.org/W2741809807",
         "doi": doi,
         "ids": {"pmid": pmid},
         "title": title,
@@ -168,6 +169,33 @@ class TestThePmcidIsRead:
     )
     def test_an_unreadable_pmcid_is_none(self, pmcid):
         assert self._with_pmcid(pmcid).pmc_id is None
+
+
+class TestTheWorkIdIsRead:
+    """The OpenAlex work ID is the record's key when it has no DOI or PMID (#794)."""
+
+    def test_the_work_id_is_kept_without_its_url(self):
+        assert _normalize(_make_raw_work()).source_record_id == "W2741809807"
+
+    def test_it_is_kept_beside_a_doi_and_pmid(self):
+        record = _normalize(_make_raw_work())
+        assert (record.doi, record.pmid) == ("10.1234/test.2024", "12345678")
+        assert record.source_record_id == "W2741809807"
+
+    @pytest.mark.parametrize(
+        "work_id",
+        [None, "", 2741809807, "https://openalex.org/A123", "https://openalex.org/W", "W١٢٣"],
+        ids=["null", "empty", "integer", "an-author", "no-digits", "non-ascii-digits"],
+    )
+    def test_an_unreadable_work_id_is_none(self, work_id):
+        raw = _make_raw_work()
+        raw["id"] = work_id
+        assert _normalize(raw).source_record_id is None
+
+    def test_a_bare_work_id_is_read_too(self):
+        raw = _make_raw_work()
+        raw["id"] = "W2741809807"
+        assert _normalize(raw).source_record_id == "W2741809807"
 
 
 class TestAWrongTypedFieldCostsThatField:

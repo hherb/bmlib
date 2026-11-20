@@ -18,8 +18,10 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -500,6 +502,84 @@ class TestSync:
 
         assert report.records_added == 1
         assert report.records_merged == 1
+
+    def test_a_keyless_record_is_found_again_by_its_record_id(self):
+        """A record with no DOI or PMID is stored once, by its source's ID (#794)."""
+        conn = _fresh_conn()
+        yesterday = date.today() - timedelta(days=1)
+        record = replace(
+            _sample_raw_record(doi=None, source="source_a"), source_record_id="PPR:PPR1"
+        )
+
+        report = sync(
+            conn,
+            sources=["source_a"],
+            date_from=yesterday,
+            date_to=yesterday,
+            email="test@example.com",
+            _fetcher_override={"source_a": _make_fake_fetcher([record, record, record])},
+        )
+
+        assert (report.records_added, report.records_merged) == (1, 2)
+        assert fetch_scalar(conn, "SELECT COUNT(*) FROM publications") == 1
+        rows = fetch_all(conn, "SELECT source, record_id FROM publication_record_ids")
+        assert [tuple(row) for row in rows] == [("source_a", "PPR:PPR1")]
+
+    def test_an_empty_record_id_fails_the_record(self):
+        """``""`` is refused, as in Rust: stored unkeyed it would duplicate (#794)."""
+        conn = _fresh_conn()
+        yesterday = date.today() - timedelta(days=1)
+        record = replace(_sample_raw_record(doi=None, source="source_a"), source_record_id="")
+
+        report = sync(
+            conn,
+            sources=["source_a"],
+            date_from=yesterday,
+            date_to=yesterday,
+            email="test@example.com",
+            _fetcher_override={"source_a": _make_fake_fetcher([record])},
+        )
+
+        assert (report.records_added, report.records_failed) == (0, 1)
+        assert fetch_scalar(conn, "SELECT COUNT(*) FROM publications") == 0
+
+    def test_an_unkeyed_record_is_stored_and_reported(self, caplog):
+        """No DOI, PMID or record ID: stored, and the coming duplicate is named."""
+        conn = _fresh_conn()
+        yesterday = date.today() - timedelta(days=1)
+        record = _sample_raw_record(doi=None, source="source_a")
+
+        with caplog.at_level(logging.WARNING, logger="bmlib.publications.sync"):
+            report = sync(
+                conn,
+                sources=["source_a"],
+                date_from=yesterday,
+                date_to=yesterday,
+                email="test@example.com",
+                _fetcher_override={"source_a": _make_fake_fetcher([record])},
+            )
+
+        assert report.records_added == 1
+        assert "has no DOI, PMID or record ID: stored unkeyed" in caplog.text
+
+    def test_a_keyed_record_is_not_reported_unkeyed(self, caplog):
+        conn = _fresh_conn()
+        yesterday = date.today() - timedelta(days=1)
+        record = replace(
+            _sample_raw_record(doi=None, source="source_a"), source_record_id="PPR:PPR1"
+        )
+
+        with caplog.at_level(logging.WARNING, logger="bmlib.publications.sync"):
+            sync(
+                conn,
+                sources=["source_a"],
+                date_from=yesterday,
+                date_to=yesterday,
+                email="test@example.com",
+                _fetcher_override={"source_a": _make_fake_fetcher([record])},
+            )
+
+        assert "stored unkeyed" not in caplog.text
 
     def test_sync_defaults(self):
         """sync with no sources/dates uses every non-opt-in source and yesterday-today."""

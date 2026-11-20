@@ -40,6 +40,7 @@ relies on this to batch a whole day of records into a single commit.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
@@ -55,6 +56,8 @@ from bmlib.db import (
     transaction,
 )
 from bmlib.publications.models import AuthorAffiliation, FullTextSource, Grant, Publication
+
+logger = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
@@ -469,12 +472,13 @@ def get_author_affiliations(conn: Any, publication_id: int) -> list[AuthorAffili
 def _consolidate_rows(conn: Any, keep: Any, drop: Any, now: str) -> None:
     """Merge the *drop* row into the *keep* row, then delete *drop*.
 
-    Used when an incoming record carries both a DOI and a PMID that currently
-    point at two different existing rows (a "split identity" that arises when a
-    work is indexed by one identifier before its cross-reference to the other
-    exists). Without this, the subsequent ``COALESCE`` merge would try to write
-    the drop row's identifier onto the keep row and hit the UNIQUE constraint,
-    aborting the write and leaving the duplicates stranded forever.
+    Used when an incoming record carries identifiers (DOI, PMID, record ID)
+    that currently point at different existing rows (a "split identity" that
+    arises when a work is indexed by one identifier before its cross-reference
+    to the other exists). Without this, a DOI/PMID split makes the subsequent
+    ``COALESCE`` merge write the drop row's identifier onto the keep row and hit
+    the UNIQUE constraint, aborting the write and leaving the duplicates
+    stranded forever; a keyless row the record ID finds would stay a duplicate.
 
     Ordering matters: the drop row is deleted *before* its identifier is merged
     onto the keep row, so the unique index is free when the merge runs (both
@@ -505,12 +509,36 @@ def _consolidate_rows(conn: Any, keep: Any, drop: Any, now: str) -> None:
     # row before it is deleted, or the foreign key stops the DELETE.
     _relocate_child_rows(conn, "publication_grants", keep_id, drop_id)
     _relocate_child_rows(conn, "publication_affiliations", keep_id, drop_id)
+    # Record IDs all move: UNIQUE(source, record_id) means the keep row holds
+    # none of the drop row's, and a row may hold several of one source's.
+    execute(
+        conn,
+        f"UPDATE publication_record_ids SET publication_id = {ph} WHERE publication_id = {ph}",
+        (keep_id, drop_id),
+    )
 
     # Snapshot the drop row's data, delete the row (freeing its unique
     # identifier), then fold its data into the keep row.
     drop_pub = _row_to_publication(drop)
     execute(conn, f"DELETE FROM publications WHERE id = {ph}", (drop_id,))
     _merge_publication(conn, keep, drop_pub, now)
+
+
+def _identifiers_conflict(row: Any, others: Sequence[Any]) -> bool:
+    """Whether *row* holds a DOI or PMID that differs from one of *others*'.
+
+    *others* are the incoming :class:`Publication` and the rows its DOI and
+    PMID found; a missing value on either side is no conflict.
+    """
+
+    def value(item: Any, key: str) -> Any:
+        return getattr(item, key) if isinstance(item, Publication) else item[key]
+
+    return any(
+        row[key] is not None
+        and any(value(o, key) is not None and value(o, key) != row[key] for o in others)
+        for key in ("doi", "pmid")
+    )
 
 
 def store_publication(
@@ -520,8 +548,9 @@ def store_publication(
     *,
     grants: Sequence[Grant] | None = None,
     affiliations: Sequence[AuthorAffiliation] | None = None,
+    record_id: tuple[str, str] | None = None,
 ) -> str:
-    """Store a publication, de-duplicating by DOI then PMID.
+    """Store a publication, de-duplicating by DOI, then PMID, then record ID.
 
     DOIs and PMIDs are normalized (see :func:`_normalize_doi` /
     :func:`_normalize_pmid`) before lookup and storage so the same work fetched
@@ -545,14 +574,31 @@ def store_publication(
             :func:`_replace_child_rows`). Every row must name its source.
         affiliations: Author affiliations, with the same replace-per-source
             rule.
+        record_id: ``(source, id)``, the source's own ID for the record (an
+            OpenAlex work ``"W123"``, a Europe PMC ``"PPR:PPR123"``). It finds
+            the row again when the record carries neither DOI nor PMID (#794),
+            and is kept beside the row; a row may hold several. Rows the DOI,
+            the PMID and the record ID find apart are consolidated into one,
+            the DOI's row kept first, then the PMID's. A DOI or PMID outranks
+            it: a row the ID finds holding a different DOI or PMID is another
+            paper, kept apart, and the ID moves to this record's row with a
+            WARNING. An ID another writer stored since the lookup raises the
+            driver's integrity error, rolling the store back.
 
     Returns:
         ``"added"`` for a new record, or ``"merged"`` if an existing record was
         found and updated.
 
     Raises:
-        ValueError: If a grant or affiliation names no source.
+        ValueError: If a grant or affiliation names no source, or *record_id*
+            is not a tuple of two non-empty strings.
     """
+    if record_id is not None and not (
+        isinstance(record_id, tuple)
+        and len(record_id) == 2
+        and all(isinstance(part, str) and part for part in record_id)
+    ):
+        raise ValueError(f"record_id must be (source, id), two non-empty strings: {record_id!r}")
     now = _now_iso()
     ph = placeholder(conn)
 
@@ -561,31 +607,48 @@ def store_publication(
 
     with transaction(conn):
         # Look up by each identifier independently so we can detect a split
-        # identity (DOI and PMID pointing at two different existing rows).
-        row_by_doi = (
+        # identity (two or three identifiers pointing at different rows).
+        found = [
             fetch_one(conn, f"SELECT * FROM publications WHERE doi = {ph}", (pub.doi,))
             if pub.doi
-            else None
-        )
-        row_by_pmid = (
+            else None,
             fetch_one(conn, f"SELECT * FROM publications WHERE pmid = {ph}", (pub.pmid,))
             if pub.pmid
-            else None
-        )
-
-        if (
-            row_by_doi is not None
-            and row_by_pmid is not None
-            and row_by_doi["id"] != row_by_pmid["id"]
-        ):
-            # Split identity: consolidate the two rows into one (keep the DOI
-            # row), then re-read it before merging the incoming record.
-            _consolidate_rows(conn, row_by_doi, row_by_pmid, now)
-            existing = fetch_one(
-                conn, f"SELECT * FROM publications WHERE id = {ph}", (row_by_doi["id"],)
+            else None,
+            fetch_one(
+                conn,
+                "SELECT p.* FROM publications p JOIN publication_record_ids r"
+                f" ON r.publication_id = p.id WHERE r.source = {ph} AND r.record_id = {ph}",
+                record_id,
             )
-        else:
-            existing = row_by_doi if row_by_doi is not None else row_by_pmid
+            if record_id
+            else None,
+        ]
+        # One entry per row, in priority order: a row two lookups find (every
+        # re-fetch of a keyed record) would be deleted if consolidated into
+        # itself, so each row appears once.
+        rows: list[Any] = []
+        for row in found[:2]:
+            if row is not None and all(row["id"] != kept["id"] for kept in rows):
+                rows.append(row)
+        by_record_id = found[2]
+        moved_from = None
+        if by_record_id is not None and all(by_record_id["id"] != kept["id"] for kept in rows):
+            if _identifiers_conflict(by_record_id, [pub, *rows]):
+                # A DOI or PMID outranks a source's ID: the row the ID named is
+                # another paper, kept as it is, and the ID moves to the record.
+                moved_from = by_record_id
+            else:
+                rows.append(by_record_id)
+
+        existing = rows[0] if rows else None
+        for drop in rows[1:]:
+            # Split identity: consolidate into the first row found, then re-read
+            # it, since the merge reads the keep row's current lists.
+            _consolidate_rows(conn, existing, drop, now)
+            existing = fetch_one(
+                conn, f"SELECT * FROM publications WHERE id = {ph}", (rows[0]["id"],)
+            )
 
         if existing is not None:
             _merge_publication(conn, existing, pub, now)
@@ -594,6 +657,36 @@ def store_publication(
         else:
             pub_id = _insert_publication(conn, pub, now)
             result = "added"
+
+        if record_id and moved_from is not None:
+            logger.warning(
+                "Record ID %s:%s moves from publication %s (doi %s, pmid %s) to %s"
+                " (doi %s, pmid %s); the two are kept apart",
+                *record_id,
+                moved_from["id"],
+                moved_from["doi"],
+                moved_from["pmid"],
+                pub_id,
+                pub.doi,
+                pub.pmid,
+            )
+            execute(
+                conn,
+                f"UPDATE publication_record_ids SET publication_id = {ph}"
+                f" WHERE source = {ph} AND record_id = {ph}",
+                (pub_id, *record_id),
+            )
+        elif record_id and by_record_id is None:
+            # A plain INSERT: an ID another writer stored since the lookup must
+            # fail this store, not leave its row unkeyed. A found ID is already
+            # on this row, or consolidation moved it here.
+            execute(
+                conn,
+                "INSERT INTO publication_record_ids"
+                " (publication_id, source, record_id, created_at)"
+                f" VALUES ({placeholders(conn, 4)})",
+                (pub_id, *record_id, now),
+            )
 
         # Store any fulltext sources
         if fulltext_sources:

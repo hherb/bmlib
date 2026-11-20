@@ -169,3 +169,30 @@ fn a_wrong_typed_field_costs_that_field() {
 fn a_record_that_is_not_an_object_is_none() {
     assert!(normalize(&json!([1])).is_none());
 }
+
+/// Europe PMC's own key, `"{source}:{id}"`: the one a preprint with no DOI or
+/// PMID carries (#794).
+#[test]
+fn the_record_id_is_europe_pmcs_source_and_id() {
+    assert_eq!(
+        normalize(&record())
+            .expect("object")
+            .source_record_id
+            .as_deref(),
+        Some("PPR:PPR1325930")
+    );
+    for (source, id, expected) in [
+        (json!("AGR"), json!("AGR123"), Some("AGR:AGR123")),
+        (json!("MED"), json!("33301246"), Some("MED:33301246")),
+        (Value::Null, json!("PPR1"), None),
+        (json!(""), json!("PPR1"), None),
+        (json!("PPR"), Value::Null, None),
+        (json!("PPR"), json!(""), None),
+        (json!("PPR"), json!(1_325_930), None),
+    ] {
+        let mut raw = with("source", source);
+        raw["id"] = id;
+        let record = normalize(&raw).expect("object");
+        assert_eq!(record.source_record_id.as_deref(), expected);
+    }
+}
