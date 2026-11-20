@@ -113,6 +113,12 @@ from bmlib.quality.pico_models import (
     PicoPrepared,
     PicoSuitability,
 )
+from bmlib.quality.prisma2020_checklist import (
+    CHECKLIST,
+    KEY_ITEMS,
+    ChecklistItem,
+    Section,
+)
 from bmlib.quality.rob2_agent import (
     NOT_APPLICABLE,
     ROB2_DOMAIN_PROMPT,
@@ -191,6 +197,11 @@ __all__ = [
     "PicoPrepared",
     "PicoSuitability",
     "verify_quotes",
+    # The PRISMA 2020 checklist
+    "CHECKLIST",
+    "KEY_ITEMS",
+    "ChecklistItem",
+    "Section",
     # The evidence ladder and the number
     "LADDER_VERSION",
     "EffectScale",

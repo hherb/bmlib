@@ -158,6 +158,7 @@ bmlib/
 │   ├── _condense.py         # condense_text — the Cochrane map-reduce over any prompts (private)
 │   ├── pico_models.py       # PicoExtraction, PicoPart, PicoSuitability, PicoPrepared, PicoError, part states
 │   ├── pico_agent.py        # PicoAgent — suitability check and PICO extraction, quotes verified by find_passage
+│   ├── prisma2020_checklist.py # The PRISMA 2020 checklist as data (42 rows: wording, guidance, key, not-applicable, reply estimate); Rust prisma2020_checklist.rs, contract fixtures/prisma2020_checklist.json
 │   ├── rob2_algorithm.py    # RoB 2 decision rules (2019 guidance tables), pure; Rust rob2_algorithm.rs, contract fixtures/rob2_algorithm.json
 │   ├── evidence_ladder.py   # Evidence ladder (RoB + imprecision to a level and weight), pure; Rust evidence_ladder.rs, contract fixtures/evidence_ladder.json
 │   ├── design_agent.py      # Design proposal (study design + RCT layout, quotes verified), QueryCondenser seam; Rust design_agent.rs, contract fixtures/design_replies.json
@@ -350,7 +351,7 @@ uvx ruff@0.15.20 check . && uvx ruff@0.15.20 format --check .
 | `embed/`             | `test_embed_vectors.py` (shared `embedding_contract.json`), `test_embed_model.py`, `test_embed_live.py` (the live tests need `BMLIB_EMBED_MODEL`, else skipped; the `Embedder`'s own rules run model-free against a fake llama object), `test_embed_store.py` (both backends, a fake embedder), `test_vector_store_contract.py` (shared `vector_store.json`, written by `scripts/make_vector_store_fixture.py`) |
 | `scripts/convert_embedding_model.py` | `test_convert_embedding_model.py` |
 | `context_processor/` | `test_context_processor.py`, `test_llm_chunk_processor.py` |
-| `quality/`           | `test_quality.py`, `test_cochrane.py`, `test_cochrane_assessor.py`, `test_extractors.py`, `test_quality_narrowing.py` (the `_json_fields` rule and every reader that uses it), `test_pico_agent.py`, `test_extractor_sampler.py` (fails on any edit to `extractors.py` until the committed corpora are re-measured, #368) |
+| `quality/`           | `test_quality.py`, `test_cochrane.py`, `test_cochrane_assessor.py`, `test_extractors.py`, `test_quality_narrowing.py` (the `_json_fields` rule and every reader that uses it), `test_pico_agent.py`, `test_prisma2020_checklist.py` (the shared `prisma2020_checklist.json`; Rust: `tests/prisma2020_checklist_contract.rs`), `test_extractor_sampler.py` (fails on any edit to `extractors.py` until the committed corpora are re-measured, #368) |
 | `library/`           | `test_library_files.py`, `test_library_scan.py`, `test_library_save.py`, `test_library_contract.py` (the shared `library_cases.json` and `library/sample/`; Rust: `tests/library_contract.rs`, `tests/library_save.rs`) |
 | `secrets.py`         | `test_secrets.py` (the shared `secret_key_list.json`, and each platform's store faked), `test_secrets_interop.py` (Rust and Python on one real item; CI's `keychain-interop` job, else skipped) |
 | `templates/`         | `test_templates.py`                                        |
