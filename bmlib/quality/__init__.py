@@ -119,6 +119,13 @@ from bmlib.quality.prisma2020_checklist import (
     ChecklistItem,
     ChecklistSection,
 )
+from bmlib.quality.prisma2020_models import (
+    ItemAssessment,
+    PartAssessment,
+    Suitability,
+    read_part_reply,
+    shown_judgement,
+)
 from bmlib.quality.prisma2020_parts import (
     PART_OVERHEAD_CHARS,
     PartPlan,
@@ -214,6 +221,11 @@ __all__ = [
     "PartsError",
     "part_query",
     "plan_parts",
+    "ItemAssessment",
+    "PartAssessment",
+    "Suitability",
+    "read_part_reply",
+    "shown_judgement",
     # The evidence ladder and the number
     "LADDER_VERSION",
     "EffectScale",

@@ -55,7 +55,10 @@ def test_unbacked_claim_is_not_reported(claim: Judgement) -> None:
 
 
 def test_backed_claim_stands() -> None:
-    assert shown_judgement(Judgement.PARTLY_REPORTED, 1, False) == (Judgement.PARTLY_REPORTED, False)
+    assert shown_judgement(Judgement.PARTLY_REPORTED, 1, False) == (
+        Judgement.PARTLY_REPORTED,
+        False,
+    )
 
 
 def test_not_applicable_needs_the_flag() -> None:

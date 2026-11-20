@@ -138,15 +138,18 @@ fn extra_item_is_ignored() {
 
 #[test]
 fn unknown_judgement_is_unreadable() {
-    let error = read_part_reply(&reply(vec![entry("7", "maybe", &[])]), &["7"], TEXT, 0.85)
-        .unwrap_err();
+    let error =
+        read_part_reply(&reply(vec![entry("7", "maybe", &[])]), &["7"], TEXT, 0.85).unwrap_err();
     assert!(error.contains("maybe"), "{error}");
 }
 
 #[test]
 fn duplicate_id_is_unreadable() {
     let error = read_part_reply(
-        &reply(vec![entry("7", "reported", &[]), entry("7", "reported", &[])]),
+        &reply(vec![
+            entry("7", "reported", &[]),
+            entry("7", "reported", &[]),
+        ]),
         &["7"],
         TEXT,
         0.85,
@@ -163,7 +166,11 @@ fn items_must_be_a_list() {
 
 #[test]
 fn suitable_is_sr_or_ma() {
-    for (sr, ma, suitable) in [(true, false, true), (false, true, true), (false, false, false)] {
+    for (sr, ma, suitable) in [
+        (true, false, true),
+        (false, true, true),
+        (false, false, false),
+    ] {
         let result = read_suitability(&json!({
             "is_systematic_review": sr, "is_meta_analysis": ma,
             "document_type": "x", "variant": null, "rationale": "r", "confidence": 0.9
@@ -187,7 +194,8 @@ fn variant_kept_as_given() {
 
 #[test]
 fn suitability_flag_must_be_boolean() {
-    let error = read_suitability(&json!({"is_systematic_review": "yes", "is_meta_analysis": false}))
-        .unwrap_err();
+    let error =
+        read_suitability(&json!({"is_systematic_review": "yes", "is_meta_analysis": false}))
+            .unwrap_err();
     assert!(error.contains("is_systematic_review"), "{error}");
 }
