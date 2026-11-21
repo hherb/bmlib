@@ -39,6 +39,7 @@ relies on this to batch a whole day of records into a single commit.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 from collections.abc import Sequence
@@ -557,6 +558,12 @@ def store_publication(
     from different sources — which disagree on DOI case and prefixes — resolves
     to a single row. ``pub`` is mutated in place to hold the canonical forms.
 
+    A DOI row and a PMID row found apart are consolidated into the DOI's,
+    unless either holds a different value of the other identifier: then they
+    are two papers and the record's link is wrong (#803). Both are kept, the
+    record merges into the DOI's row without its PMID or PMCID, and a WARNING
+    names both rows and the record's source.
+
     The whole store (row consolidation, insert/merge, full-text sources, grants
     and affiliations) is one atomic transaction. Standalone calls commit on
     return; calls made inside a caller's ``transaction(conn)`` block join it,
@@ -579,7 +586,8 @@ def store_publication(
             the row again when the record carries neither DOI nor PMID (#794),
             and is kept beside the row; a row may hold several. Rows the DOI,
             the PMID and the record ID find apart are consolidated into one,
-            the DOI's row kept first, then the PMID's. A DOI or PMID outranks
+            the DOI's row kept first, then the PMID's, except a DOI row and a
+            PMID row that name two papers (above). A DOI or PMID outranks
             it: a row the ID finds holding a different DOI or PMID is another
             paper, kept apart, and the ID moves to this record's row with a
             WARNING. An ID another writer stored since the lookup raises the
@@ -631,6 +639,30 @@ def store_publication(
         for row in found[:2]:
             if row is not None and all(row["id"] != kept["id"] for kept in rows):
                 rows.append(row)
+        # A DOI row and a PMID row, either of which holds a different value of
+        # the other identifier, are two papers, and the record's link between
+        # them is wrong (#803): neither outranks the other, so the PMID row is
+        # kept apart and the record merges into the DOI row without its PMID,
+        # and without its PMCID, which came with the same link.
+        incoming = pub
+        if len(rows) == 2 and _identifiers_conflict(rows[1], [pub, rows[0]]):
+            doi_row, pmid_row = rows
+            rows = [doi_row]
+            logger.warning(
+                "DOI %s and PMID %s from %s name two papers; the record merges into"
+                " publication %s (doi %s, pmid %s) without its PMID or PMCID, and"
+                " publication %s (doi %s, pmid %s) is kept apart",
+                pub.doi,
+                pub.pmid,
+                pub.first_seen_source,
+                doi_row["id"],
+                doi_row["doi"],
+                doi_row["pmid"],
+                pmid_row["id"],
+                pmid_row["doi"],
+                pmid_row["pmid"],
+            )
+            incoming = dataclasses.replace(pub, pmid=None, pmcid=None)
         by_record_id = found[2]
         moved_from = None
         if by_record_id is not None and all(by_record_id["id"] != kept["id"] for kept in rows):
@@ -651,7 +683,7 @@ def store_publication(
             )
 
         if existing is not None:
-            _merge_publication(conn, existing, pub, now)
+            _merge_publication(conn, existing, incoming, now)
             pub_id = existing["id"]
             result = "merged"
         else:
@@ -659,6 +691,8 @@ def store_publication(
             result = "added"
 
         if record_id and moved_from is not None:
+            # The row as stored: the record's own DOI or PMID may not be on it.
+            dest = fetch_one(conn, f"SELECT doi, pmid FROM publications WHERE id = {ph}", (pub_id,))
             logger.warning(
                 "Record ID %s:%s moves from publication %s (doi %s, pmid %s) to %s"
                 " (doi %s, pmid %s); the two are kept apart",
@@ -667,8 +701,8 @@ def store_publication(
                 moved_from["doi"],
                 moved_from["pmid"],
                 pub_id,
-                pub.doi,
-                pub.pmid,
+                dest["doi"],
+                dest["pmid"],
             )
             execute(
                 conn,

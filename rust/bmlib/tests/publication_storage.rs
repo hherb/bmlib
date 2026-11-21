@@ -29,6 +29,17 @@ use bmlib::publications::storage::{
     store_publication, store_publication_with_record_id, ReplaceError, StoreOutcome,
 };
 
+mod common;
+
+/// The messages `storage` logged at WARNING on this thread since `start()`.
+fn warnings() -> Vec<String> {
+    common::log_capture::take("bmlib::publications::storage")
+        .into_iter()
+        .filter(|record| record.level == log::Level::Warn)
+        .map(|record| record.message)
+        .collect()
+}
+
 fn db() -> Box<dyn Db> {
     let mut conn = open_memory().expect("in-memory sqlite");
     ensure_schema(&mut conn).expect("schema");
@@ -307,10 +318,12 @@ fn a_split_identity_consolidates_into_one_row() {
     let mut both = pub_with("Both", "third");
     both.doi = Some("10.1/x".to_string());
     both.pmid = Some("777".to_string());
+    common::log_capture::start();
     assert_eq!(
         store_publication(&mut *db, &mut both, &[], &[], &[]).expect("consolidate"),
         StoreOutcome::Merged
     );
+    assert_eq!(warnings(), Vec::<String>::new());
 
     assert_eq!(
         count(&mut *db, "SELECT COUNT(*) FROM publications"),
@@ -1055,4 +1068,142 @@ fn sync_fails_a_record_with_an_empty_record_id() {
 
     assert_eq!(counts, (0, 0, 1));
     assert_eq!(rows(&mut *db), (0, 0));
+}
+
+// A record whose DOI and PMID find two rows, either of which holds a different
+// value of the other identifier, names two papers (#803): neither row is folded
+// into the other, and the record merges into the DOI's row without its PMID or
+// PMCID.
+
+/// The #803 line, for publications 1 and 2 with the given identifiers.
+fn two_papers(doi_row: (&str, &str), pmid_row: (&str, &str)) -> String {
+    format!(
+        "DOI 10.1/x and PMID 9 from openalex name two papers; the record merges into \
+         publication 1 (doi {}, pmid {}) without its PMID or PMCID, and publication 2 \
+         (doi {}, pmid {}) is kept apart",
+        doi_row.0, doi_row.1, pmid_row.0, pmid_row.1
+    )
+}
+
+#[test]
+fn a_doi_and_a_pmid_naming_two_keyed_papers_never_merge_them() {
+    let mut db = db();
+    keyed(&mut *db, Some("10.1/x"), Some("5"), "Paper A", None);
+    keyed(&mut *db, Some("10.1/y"), Some("9"), "Paper B", None);
+    let mut bad = pub_with("Bad link", "openalex");
+    bad.doi = Some("10.1/x".into());
+    bad.pmid = Some("9".into());
+    bad.pmcid = Some("PMC9".into());
+    bad.journal = Some("Cell".into());
+
+    common::log_capture::start();
+    let outcome = store_publication(&mut *db, &mut bad, &[], &[], &[]).expect("store");
+
+    assert_eq!(outcome, StoreOutcome::Merged);
+    assert_eq!(
+        papers(&mut *db),
+        [
+            paper("Paper A", Some("10.1/x"), Some("5")),
+            paper("Paper B", Some("10.1/y"), Some("9"))
+        ]
+    );
+    assert_eq!(
+        count(
+            &mut *db,
+            "SELECT COUNT(*) FROM publications WHERE journal = 'Cell' AND doi = '10.1/x'"
+        ),
+        1
+    );
+    // The PMCID came with the wrong link, so it is not given to Paper A.
+    assert_eq!(
+        count(
+            &mut *db,
+            "SELECT COUNT(*) FROM publications WHERE pmcid IS NOT NULL"
+        ),
+        0
+    );
+    assert_eq!(bad.pmid.as_deref(), Some("9"));
+    assert_eq!(warnings(), [two_papers(("10.1/x", "5"), ("10.1/y", "9"))]);
+}
+
+/// The plain merge would write PMID 9 onto the DOI row, which the PMID row
+/// already holds.
+#[test]
+fn a_doi_row_without_a_pmid_does_not_take_the_other_papers() {
+    let mut db = db();
+    keyed(&mut *db, Some("10.1/x"), None, "Paper A", None);
+    keyed(&mut *db, Some("10.1/y"), Some("9"), "Paper B", None);
+
+    common::log_capture::start();
+    keyed(&mut *db, Some("10.1/x"), Some("9"), "P", None);
+
+    assert_eq!(
+        papers(&mut *db),
+        [
+            paper("Paper A", Some("10.1/x"), None),
+            paper("Paper B", Some("10.1/y"), Some("9"))
+        ]
+    );
+    assert_eq!(
+        warnings(),
+        [two_papers(("10.1/x", "None"), ("10.1/y", "9"))]
+    );
+}
+
+#[test]
+fn a_pmid_row_without_a_doi_is_kept_when_the_doi_row_has_a_pmid() {
+    let mut db = db();
+    keyed(&mut *db, Some("10.1/x"), Some("5"), "Paper A", None);
+    keyed(&mut *db, None, Some("9"), "Paper B", None);
+
+    keyed(&mut *db, Some("10.1/x"), Some("9"), "P", None);
+
+    assert_eq!(
+        papers(&mut *db),
+        [
+            paper("Paper A", Some("10.1/x"), Some("5")),
+            paper("Paper B", None, Some("9"))
+        ]
+    );
+}
+
+#[test]
+fn the_record_id_follows_the_record_to_the_doi_row() {
+    let mut db = db();
+    keyed(&mut *db, Some("10.1/x"), Some("5"), "Paper A", None);
+    keyed(
+        &mut *db,
+        Some("10.1/y"),
+        Some("9"),
+        "Paper B",
+        Some(("openalex", "W1")),
+    );
+
+    common::log_capture::start();
+    keyed(
+        &mut *db,
+        Some("10.1/x"),
+        Some("9"),
+        "P",
+        Some(("openalex", "W1")),
+    );
+
+    assert_eq!(
+        papers(&mut *db),
+        [
+            paper("Paper A", Some("10.1/x"), Some("5")),
+            paper("Paper B", Some("10.1/y"), Some("9"))
+        ]
+    );
+    assert_eq!(owner(&mut *db, "W1"), 1);
+    // The move names the identifiers the DOI row holds, not the record's.
+    assert_eq!(
+        warnings(),
+        [
+            two_papers(("10.1/x", "5"), ("10.1/y", "9")),
+            "Record ID openalex:W1 moves from publication 2 (doi 10.1/y, pmid 9) to 1 \
+             (doi 10.1/x, pmid 5); the two are kept apart"
+                .to_string()
+        ]
+    );
 }
