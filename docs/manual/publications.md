@@ -607,10 +607,12 @@ An incoming record's DOI, PMID and record ID can point at **different existing r
 
 **A DOI or PMID outranks a record ID.** The record ID's row joins only when its DOI and PMID are each missing or equal to the record's and to the rows its DOI and PMID found. A row holding a different one is another paper (OpenAlex moving a work's ID to its journal version, say): it is kept as it is, the record is stored by its DOI or PMID alone, the ID is re-pointed at the row the record lands on, and a WARNING names both rows. Merging them would delete one paper's DOI and title.
 
-When `store_publication()` detects this, it consolidates before merging:
+**A DOI and a PMID that name two papers are never merged** *(unreleased)*. When either the DOI row or the PMID row holds a different value of the other identifier (the DOI row has PMID 5, or the PMID row DOI `10.1/y`), the record's DOI-PMID link is wrong, and neither identifier outranks the other (#803). Both rows are kept as they are, the record merges into the DOI row without its PMID or PMCID (the PMCID came with the same link), and a WARNING names both rows and the record's source. A DOI row with no PMID beside a PMID row with no DOI is the ordinary split identity, consolidated below.
+
+When `store_publication()` detects a split identity, it consolidates before merging:
 
 1. The **DOI row is kept**, else the PMID row; every other row found is dropped, one at a time, in that order (the PMID row, then the record ID's, if it joins). A row two identifiers find is one row, and is never consolidated into itself.
-2. The drop row's full-text sources are re-pointed at the keep row with `UPDATE OR IGNORE` (silently skipping any `(publication_id, url)` pair the keep row already has); leftover duplicates on the drop row are then deleted.
+2. The drop row's full-text sources are re-pointed at the keep row, skipping any `(publication_id, url)` pair the keep row already has (an anti-join, the same on both backends); leftover duplicates on the drop row are then deleted.
 3. The drop row's record IDs all move to the keep row (the pair is unique, so the keep row holds none of them). Its grants and affiliations move to the keep row **per source**: a source the keep row already has wins and the drop row's rows for it are discarded, while a source only the drop row saw moves across. That is the same "fill, never overwrite" rule the field merge follows, at source granularity — merging two rows' accounts of what PubMed said would produce a set PubMed never asserted, while a source the keep row has never seen is real information it should gain.
 4. The drop row's data is snapshotted, the drop row is deleted — freeing its unique identifier — and the snapshot is merged into the keep row.
 5. The keep row is re-read, and the incoming record is merged into it as usual. The call returns `"merged"`.
