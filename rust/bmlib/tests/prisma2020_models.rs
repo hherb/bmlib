@@ -160,10 +160,46 @@ fn extra_item_is_ignored() {
     )
     .unwrap();
     assert_eq!(part.items.len(), 1);
+    assert_eq!(part.unasked, vec!["99"]);
+    assert_eq!(part.to_json()["unasked"], json!(["99"]));
     let records = common::log_capture::take("bmlib.quality.prisma2020_models");
     assert!(records
         .iter()
         .any(|r| r.level == log::Level::Warn && r.message.contains("99")));
+}
+
+#[test]
+fn unasked_ids_keep_the_reply_s_order_and_spelling() {
+    // #807: an app shows these, so they are the reply's own ids, off the
+    // checklist or not, an integer read as its digits as an asked one is.
+    let mut five = entry("5", "reported", &[]);
+    five["id"] = json!(5);
+    let part = read_part_reply(
+        &reply(vec![
+            entry("99", "reported", &[]),
+            entry("7", "reported", &[QUOTE]),
+            five,
+            entry("13a", "not_reported", &[]),
+        ]),
+        &["7"],
+        TEXT,
+        0.85,
+    )
+    .unwrap();
+    assert_eq!(part.unasked, vec!["99", "5", "13a"]);
+}
+
+#[test]
+fn a_reply_of_only_asked_items_lists_none_unasked() {
+    let part = read_part_reply(
+        &reply(vec![entry("7", "reported", &[QUOTE])]),
+        &["7", "8"],
+        TEXT,
+        0.85,
+    )
+    .unwrap();
+    assert!(part.unasked.is_empty());
+    assert_eq!(part.to_json()["unasked"], json!([]));
 }
 
 #[test]

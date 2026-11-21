@@ -90,10 +90,16 @@ class ItemAssessment:
 
 @dataclass
 class PartAssessment:
-    """The items of one part, the asked ids the reply left out, and run notes."""
+    """The items of one part, the asked ids the reply left out, and run notes.
+
+    ``unasked`` lists the ids the reply answered although they were not asked,
+    in the reply's order and as it spelled them (an integer read as its
+    digits); their answers are not read (#807).
+    """
 
     items: list[ItemAssessment] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
+    unasked: list[str] = field(default_factory=list)
     condensed_from_chars: int | None = None
     condensation_status: str | None = None
     notes: list[str] = field(default_factory=list)
@@ -103,6 +109,7 @@ class PartAssessment:
         return {
             "items": [i.to_dict() for i in self.items],
             "missing": list(self.missing),
+            "unasked": list(self.unasked),
             "condensed_from_chars": self.condensed_from_chars,
             "condensation_status": self.condensation_status,
             "notes": list(self.notes),
@@ -174,8 +181,9 @@ def read_part_reply(
     """Read a part's reply and verify every item's quotes against *text*.
 
     Items come back in the order of *asked*.  An item the reply lacks is listed
-    in ``missing``; one it adds (not in *asked*) is dropped with a WARNING.  An
-    integer id is read as its decimal digits (``7`` as ``"7"``).
+    in ``missing``; one it adds (not in *asked*) is listed in ``unasked``, its
+    answer unread, with a WARNING.  An integer id is read as its decimal digits
+    (``7`` as ``"7"``).
 
     Raises:
         UnreadableReplyError: A ``ValueError`` saying that ``items`` is not a
@@ -202,10 +210,11 @@ def read_part_reply(
         if item_id in by_id:
             raise UnreadableReplyError(f"duplicate item id {item_id!r}")
         by_id[item_id] = entry
-    for extra in by_id.keys() - set(asked):
+    unasked = [item_id for item_id in by_id if item_id not in asked]
+    for extra in unasked:
         logger.warning("PRISMA reply has item %r, which was not asked; ignored", extra)
 
-    part = PartAssessment()
+    part = PartAssessment(unasked=unasked)
     for item_id in asked:
         row = checklist_item(item_id)
         if row is None:

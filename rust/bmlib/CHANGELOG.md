@@ -31,6 +31,8 @@ The Python library is documented separately, in the repository's
   plus `InvalidItems` (`"invalid_items"`, Python's `ValueError`) and `Parts`
   (`"parts"`, `From<PartsError>`). The default `max_tokens` is
   `full_text_agent::DEFAULT_MAX_TOKENS` (16384), a part's reply being long.
+  `PartAssessment::unasked` lists the ids a reply answered that were not
+  asked, in the reply's order (#807).
 
 ### Fixed
 

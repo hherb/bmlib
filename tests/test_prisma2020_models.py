@@ -110,7 +110,28 @@ def test_extra_item_is_ignored(caplog: pytest.LogCaptureFixture) -> None:
     with caplog.at_level(logging.WARNING, logger="bmlib.quality.prisma2020_models"):
         part = read_part_reply(reply, ["7"], TEXT, 0.85)
     assert [row.id for row in part.items] == ["7"]
+    assert part.unasked == ["99"]
+    assert part.to_dict()["unasked"] == ["99"]
     assert any(r.levelno == logging.WARNING and "99" in r.getMessage() for r in caplog.records)
+
+
+def test_unasked_ids_keep_the_reply_s_order_and_spelling() -> None:
+    # #807: an app shows these, so they are the reply's own ids, off the
+    # checklist or not, an integer read as its digits as an asked one is.
+    reply = _reply(
+        _entry("99", "reported"),
+        _entry("7", "reported", [QUOTE]),
+        {**_entry("5", "reported"), "id": 5},
+        _entry("13a", "not_reported"),
+    )
+    part = read_part_reply(reply, ["7"], TEXT, 0.85)
+    assert part.unasked == ["99", "5", "13a"]
+
+
+def test_a_reply_of_only_asked_items_lists_none_unasked() -> None:
+    part = read_part_reply(_reply(_entry("7", "reported", [QUOTE])), ["7", "8"], TEXT, 0.85)
+    assert part.unasked == []
+    assert part.to_dict()["unasked"] == []
 
 
 def test_unknown_judgement_is_unreadable() -> None:
