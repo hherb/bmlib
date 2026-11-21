@@ -42,6 +42,10 @@
 //! | `quality/rob2_d5_checks.py` | [`rob2_d5_checks`] | ported (evidence weight, D5 from facts) |
 //! | `quality/rob2_d5_facts.py` | [`rob2_d5_facts`] | ported (evidence weight, D5 from facts) |
 //! | `quality/evidence_weight.py` | [`evidence_weight`] | ported (evidence weight, piece 6) |
+//! | `quality/prisma2020_checklist.py` | [`prisma2020_checklist`] | on par (PRISMA 2020, the checklist) |
+//! | `quality/prisma2020_parts.py` | [`prisma2020_parts`] | on par (PRISMA 2020, the split) |
+//! | `quality/prisma2020_models.py` | [`prisma2020_models`] | on par (PRISMA 2020, reading a reply) |
+//! | `quality/prisma2020_agent.py` | [`prisma2020_agent`] | on par (PRISMA 2020, the agent) |
 //!
 //! The three LLM tiers do not own a client. Each takes a
 //! [`agent_chat::JsonChat`] — the message-carrying form of
@@ -92,6 +96,10 @@ pub mod metadata_filter;
 pub mod outcome_agent;
 pub mod pico_agent;
 pub mod pico_models;
+pub mod prisma2020_agent;
+pub mod prisma2020_checklist;
+pub mod prisma2020_models;
+pub mod prisma2020_parts;
 pub mod quality_agent;
 pub mod rob2_agent;
 pub mod rob2_algorithm;
@@ -168,6 +176,18 @@ pub use pico_models::{
     PicoCitation, PicoContradictedQuote, PicoError, PicoExtraction, PicoPart, PicoPartState,
     PicoPrepared, PicoSuitability,
 };
+// The two suitability prompts stay under `prisma2020_agent`: PICO's share
+// their names.
+pub use prisma2020_agent::{
+    part_prompt_chars, Prisma2020Agent, PrismaCondenser, PrismaError, PrismaPrepared,
+    PART_RESPONSE_FORMAT, PART_TASK_PROMPT, PRISMA_CONDENSE_CONSOLIDATION_PROMPT,
+    PRISMA_CONDENSE_EXTRACTION_PROMPT, PRISMA_SYSTEM_PROMPT, SUITABILITY_CONDENSE_QUERY,
+};
+pub use prisma2020_checklist::{ChecklistItem, ChecklistSection, CHECKLIST, KEY_ITEMS};
+pub use prisma2020_models::{
+    read_part_reply, shown_judgement, ItemAssessment, PartAssessment, Suitability,
+};
+pub use prisma2020_parts::{part_query, plan_parts, PartPlan, PartsError, PART_OVERHEAD_CHARS};
 pub use quality_agent::{QualityAgent, ASSESSMENT_SYSTEM_PROMPT, ASSESSMENT_USER_TEMPLATE};
 pub use rob2_agent::{
     domain_prompt, escalation_message, read_domain_reply, read_escalation_reply, rob2_overall,

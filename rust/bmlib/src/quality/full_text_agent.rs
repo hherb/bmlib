@@ -118,9 +118,9 @@ impl QueryCondenser for LlmQueryCondenser<'_> {
 
 /// A [`QueryCondenser`] pinned to one query, as the plain [`Condenser`]
 /// `condense_checked` takes.
-struct Bound<'c> {
-    inner: &'c mut dyn QueryCondenser,
-    query: &'c str,
+pub(crate) struct Bound<'c> {
+    pub(crate) inner: &'c mut dyn QueryCondenser,
+    pub(crate) query: &'c str,
 }
 
 impl Condenser for Bound<'_> {

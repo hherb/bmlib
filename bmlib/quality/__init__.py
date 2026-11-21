@@ -113,6 +113,34 @@ from bmlib.quality.pico_models import (
     PicoPrepared,
     PicoSuitability,
 )
+from bmlib.quality.prisma2020_agent import (
+    Prisma2020Agent,
+    PrismaCondenser,
+    PrismaError,
+    PrismaErrorKind,
+    PrismaPrepared,
+    part_prompt_chars,
+)
+from bmlib.quality.prisma2020_checklist import (
+    CHECKLIST,
+    KEY_ITEMS,
+    ChecklistItem,
+    ChecklistSection,
+)
+from bmlib.quality.prisma2020_models import (
+    ItemAssessment,
+    PartAssessment,
+    Suitability,
+    read_part_reply,
+    shown_judgement,
+)
+from bmlib.quality.prisma2020_parts import (
+    PART_OVERHEAD_CHARS,
+    PartPlan,
+    PartsError,
+    part_query,
+    plan_parts,
+)
 from bmlib.quality.rob2_agent import (
     NOT_APPLICABLE,
     ROB2_DOMAIN_PROMPT,
@@ -191,6 +219,27 @@ __all__ = [
     "PicoPrepared",
     "PicoSuitability",
     "verify_quotes",
+    # The PRISMA 2020 checklist
+    "Prisma2020Agent",
+    "PrismaCondenser",
+    "PrismaError",
+    "PrismaErrorKind",
+    "PrismaPrepared",
+    "part_prompt_chars",
+    "CHECKLIST",
+    "KEY_ITEMS",
+    "ChecklistItem",
+    "ChecklistSection",
+    "PART_OVERHEAD_CHARS",
+    "PartPlan",
+    "PartsError",
+    "part_query",
+    "plan_parts",
+    "ItemAssessment",
+    "PartAssessment",
+    "Suitability",
+    "read_part_reply",
+    "shown_judgement",
     # The evidence ladder and the number
     "LADDER_VERSION",
     "EffectScale",

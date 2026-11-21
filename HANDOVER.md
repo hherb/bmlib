@@ -1,5 +1,86 @@
 # HANDOVER — bmlib development
 
+_Last updated: 2026-11-21 (**the PRISMA 2020 agent, on
+`feat/prisma2020-agent`, PR open**; merged with main after #794/#802).
+**0.14.0 is tagged and released on GitHub** (`v0.14.0` on `e7b7c98a`, PR
+#801); `release.yml` run 44306259452 **waits at the `pypi` gate for the
+maintainer**, so PyPI still serves 0.13.0. **Crate 0.5.0 is not yet on
+crates.io**: publish it once PyPI has 0.14.0, from a clean worktree of
+`e7b7c98a` (`HANDOVER_RUST.md`, *Publishing to crates.io*: remake the token
+link first, remove it after)._
+
+## This branch: the PRISMA 2020 agent (StudyAnalyzer plan PRISMA 1)
+
+- **What**: the checklist as data, the split, the reply reader and
+  `Prisma2020Agent`, Rust and Python on par (CHANGELOG *Unreleased*, both
+  files). The plan is StudyAnalyzer's
+  `docs/superpowers/plans/2026-11-20-prisma-1-bmlib-agent.md`, the design its
+  `docs/superpowers/specs/2026-11-18-prisma2020-tab-design.md`.
+- **Held together by** `tests/fixtures/prisma2020_checklist.json`,
+  `tests/fixtures/prisma2020_parts.json` and the 18-case whole-agent oracle
+  `rust/oracle/dump_prisma2020_agent.py` (listed in
+  `scripts/rerun_rust_oracle.py`), which compares results, error kinds,
+  messages sent and condensation queries.
+- **Shared code, not copies**: PicoAgent's ask, prepare and budget check are
+  now crate functions in `pico_agent.rs` (`ask_json`, `prepare_text`,
+  `sent_within`, `wrapped_prompt`) that both agents call; the PICO oracle is
+  unchanged and clean. Rust's agent takes `full_text_agent::QueryCondenser`
+  (the plan asked for a new trait of that name; the existing seam is the same
+  one, its arguments `(query, text, label, config)`). Python's agent builds on
+  `_FullTextAgent`.
+- **Decisions to know**: a condensation (suitability's too) runs with
+  `continue_on_error(false)`, and a digest whose status is not `completed`
+  (`partial`, `truncated`) is refused as `condensation_failed`, so the
+  suitability check is stricter than PICO's, which keeps a partial digest with
+  a note. Unknown, repeated or no item ids are `PrismaError::InvalidItems` in
+  Rust and `ValueError` in Python, before any request, and so is a digest
+  `prepared` for other items (`PrismaPrepared::condensed_for`; the whole
+  paper serves any items), so §6.5's one-item re-check cannot reuse its
+  part's digest. The default `max_tokens` is 16384.
+- **Licence**: CC BY 4.0, confirmed on
+  https://www.prisma-statement.org/prisma-2020-checklist and named in the PR
+  body with the `may_be_not_applicable` choices.
+
+## A record with neither DOI nor PMID is stored once (#794, merged as #802)
+
+- **The defect was wider than the issue**: besides Europe PMC's preprints,
+  PMC-only, AGR, CBA and patent records, every **OpenAlex work with no DOI
+  and no PMID** gained a row on every re-fetch (the fetcher keeps no DOI
+  filter and dropped the `W…` ID). PubMed and bioRxiv always carry a key.
+- **The fix, both languages (the maintainer's choice of design)**: a new child
+  table `publication_record_ids(publication_id, source, record_id,
+  UNIQUE(source, record_id))`; `FetchedRecord.source_record_id` (declared
+  last) filled by the OpenAlex (`W` + ASCII digits) and Europe PMC
+  (`"{source}:{id}"`) normalisers; `store_publication(..., record_id=)`
+  (Rust: `store_publication_with_record_id`, so `store_publication` keeps its
+  signature) looks up by DOI, PMID, then record ID and consolidates every
+  distinct row found into the first. **A row two lookups find is one row**:
+  consolidating it into itself deletes it (the mutant was caught only by the
+  re-fetch test, in both languages).
+- **The finalcheck review (2026-11-20) found two defects, both fixed in both
+  languages.** A row found only by its record ID was consolidated even when
+  its DOI or PMID differed from the record's, so a stored preprint could be
+  merged away when OpenAlex moved its ID to the journal version: a DOI or PMID
+  now outranks a record ID (the rows stay apart, the ID moves, a WARNING names
+  both). And `ON CONFLICT DO NOTHING` let a concurrent writer leave an unkeyed
+  duplicate: the insert is now plain and fails the store. `sync()` refuses an
+  empty `source_record_id` in Python as Rust did, and both log a WARNING for a
+  record stored with no key at all.
+- **Deferred to #803 (open):** the same merge-away in the *older* DOI-row and
+  PMID-row consolidation. A record whose DOI and PMID name two rows that each
+  already hold a different PMID or DOI folds one paper into the other. It is
+  reproduced on `main` and predates #794. Neither identifier outranks the
+  other, so it needs its own decision. Also not pinned: Rust has no test of the
+  concurrent-writer insert (Python's
+  `test_an_id_stored_meanwhile_by_another_writer_fails_the_store` blinds the
+  lookup with monkeypatch; Rust would need a `Db` wrapper). The code mirrors
+  Python's.
+- **Data**: the table arrives empty on an existing database; rows already
+  duplicated stay, and each such record gains one more row on its first
+  re-fetch after the upgrade. Refusing keyless records was rejected (it loses
+  records).
+- `tests/fixtures/record_lookup.json` regenerated (only the new key moved);
+  seven OpenAlex oracle cases added to both case copies.
 _Last updated: 2026-11-21 (**#803, the PR on
 `fix/split-identity-consolidation-803`**). **0.14.0 is tagged and released on
 GitHub** (`v0.14.0` on `e7b7c98a`, PR #801); `release.yml` run 44306259452

@@ -9,6 +9,29 @@ The Python library is documented separately, in the repository's
 
 ## [Unreleased]
 
+### Added
+
+- **A PRISMA 2020 reporting agent** (as in Python; the argument is the root
+  `CHANGELOG.md`'s). `quality::prisma2020_checklist` (`CHECKLIST`, `item`,
+  `KEY_ITEMS`, `ChecklistItem`, `ChecklistSection`), `prisma2020_parts`
+  (`plan_parts`, `PartPlan`, `PartsError`, `part_query`,
+  `PART_OVERHEAD_CHARS`), `prisma2020_models` (`read_part_reply`,
+  `shown_judgement`, `ItemAssessment`, `PartAssessment`, `Suitability`, and,
+  by module path only since rob2's and PICO's share the names, `Judgement` and
+  `read_suitability`) and `prisma2020_agent`: `Prisma2020Agent::new(chat)`
+  with `PicoAgent`'s builders (`with_condenser`, taking the existing
+  `QueryCondenser` seam, `with_stop`, `with_temperature`, `with_max_tokens`,
+  `with_max_retries`, `with_condense_config`), `check_suitability`,
+  `prepare_part` and `assess_part` (a digest condensed for other items is
+  `InvalidItems`); `PrismaPrepared` (with `condensed_for`);
+  `PrismaCondenser::new(model, temperature, max_tokens)` with
+  `with_progress`; `part_prompt_chars`; the prompt constants
+  (`SUITABILITY_TASK_PROMPT` and `SUITABILITY_RESPONSE_FORMAT` by module path
+  only). `PrismaError` has `PicoError`'s variants and kinds,
+  plus `InvalidItems` (`"invalid_items"`, Python's `ValueError`) and `Parts`
+  (`"parts"`, `From<PartsError>`). The default `max_tokens` is
+  `full_text_agent::DEFAULT_MAX_TOKENS` (16384), a part's reply being long.
+
 ### Fixed
 
 - **A record whose DOI and PMID name two stored papers no longer merges one
