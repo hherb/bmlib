@@ -173,7 +173,8 @@ def read_part_reply(
     """Read a part's reply and verify every item's quotes against *text*.
 
     Items come back in the order of *asked*.  An item the reply lacks is listed
-    in ``missing``; one it adds (not in *asked*) is dropped with a WARNING.
+    in ``missing``; one it adds (not in *asked*) is dropped with a WARNING.  An
+    integer id is read as its decimal digits (``7`` as ``"7"``).
 
     Raises:
         ValueError: When ``items`` is not a list, an entry is not an object, an
@@ -188,6 +189,10 @@ def read_part_reply(
         if not isinstance(entry, dict):
             raise ValueError(f"an item is a {type(entry).__name__}, not an object")
         item_id = entry.get("id")
+        # ``"id": 7`` reads as "7" (ruling 8): a re-ask for that slip would
+        # cost the whole part.  ``bool`` is an ``int`` to Python, not an id.
+        if isinstance(item_id, int) and not isinstance(item_id, bool):
+            item_id = str(item_id)
         if not isinstance(item_id, str):
             raise ValueError(f"an item's id is a {type(item_id).__name__}, not text")
         if item_id in by_id:

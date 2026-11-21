@@ -12,6 +12,7 @@
 // GNU Affero General Public License for more details.
 //
 // You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 //! Splitting the PRISMA 2020 checklist into parts a model's reply can hold.
 //!

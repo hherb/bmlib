@@ -231,7 +231,8 @@ fn text_field(value: Option<&Value>, name: &str) -> Result<String, String> {
 /// Read a part's reply and verify every item's quotes against `text`.
 ///
 /// Items come back in the order of `asked`. An item the reply lacks is listed
-/// in `missing`; one it adds (not in `asked`) is dropped with a WARN.
+/// in `missing`; one it adds (not in `asked`) is dropped with a WARN. An
+/// integer id is read as its decimal digits (`7` as `"7"`).
 ///
 /// # Errors
 ///
@@ -251,7 +252,7 @@ pub fn read_part_reply(
                 .map_or("NoneType", crate::agents::json_type_name)
         )
     })?;
-    let mut by_id: HashMap<&str, &Value> = HashMap::new();
+    let mut by_id: HashMap<String, &Value> = HashMap::new();
     for entry in entries {
         if !entry.is_object() {
             return Err(format!(
@@ -259,15 +260,21 @@ pub fn read_part_reply(
                 crate::agents::json_type_name(entry)
             ));
         }
-        let id = entry
-            .get("id")
-            .and_then(Value::as_str)
-            .ok_or("an item's id is not text")?;
-        if by_id.insert(id, entry).is_some() {
+        let id = match entry.get("id") {
+            Some(Value::String(id)) => id.clone(),
+            // `"id": 7` reads as "7" (ruling 8): a re-ask for that slip would
+            // cost the whole part.
+            Some(Value::Number(number)) if number.is_i64() || number.is_u64() => {
+                number.to_string()
+            }
+            _ => return Err("an item's id is not text".to_string()),
+        };
+        if by_id.contains_key(&id) {
             return Err(format!("duplicate item id {id:?}"));
         }
+        by_id.insert(id, entry);
     }
-    for id in by_id.keys().filter(|id| !asked.contains(id)) {
+    for id in by_id.keys().filter(|id| !asked.contains(&id.as_str())) {
         log::warn!(
             target: "bmlib.quality.prisma2020_models",
             "PRISMA reply has item {id:?}, which was not asked; ignored"

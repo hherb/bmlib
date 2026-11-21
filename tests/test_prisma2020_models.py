@@ -107,6 +107,20 @@ def test_duplicate_id_is_unreadable() -> None:
         read_part_reply(_reply(_entry("7", "reported"), _entry("7", "reported")), ["7"], TEXT, 0.85)
 
 
+def test_integer_id_is_read_as_its_digits() -> None:
+    # Ruling 8: ``"id": 7`` is the likeliest model slip; a re-ask would cost a part.
+    entry = {**_entry("7", "reported", [QUOTE]), "id": 7}
+    part = read_part_reply(_reply(entry), ["7"], TEXT, 0.85)
+    assert [row.id for row in part.items] == ["7"]
+    assert part.missing == []
+
+
+@pytest.mark.parametrize("bad", [True, 7.0, None, ["7"]])
+def test_other_id_types_are_unreadable(bad: object) -> None:
+    with pytest.raises(ValueError, match="id"):
+        read_part_reply(_reply({**_entry("7", "reported"), "id": bad}), ["7"], TEXT, 0.85)
+
+
 def test_items_must_be_a_list() -> None:
     with pytest.raises(ValueError, match="items"):
         read_part_reply({"items": "no"}, ["7"], TEXT, 0.85)

@@ -159,6 +159,29 @@ fn duplicate_id_is_unreadable() {
 }
 
 #[test]
+fn integer_id_is_read_as_its_digits() {
+    // Ruling 8: `"id": 7` is the likeliest model slip; a re-ask would cost a part.
+    let mut item = entry("7", "reported", &[QUOTE]);
+    item["id"] = json!(7);
+    let part = read_part_reply(&reply(vec![item]), &["7"], TEXT, 0.85).expect("read");
+    assert_eq!(
+        part.items.iter().map(|row| row.id).collect::<Vec<_>>(),
+        ["7"]
+    );
+    assert!(part.missing.is_empty());
+}
+
+#[test]
+fn other_id_types_are_unreadable() {
+    for bad in [json!(true), json!(7.0), Value::Null, json!(["7"])] {
+        let mut item = entry("7", "reported", &[]);
+        item["id"] = bad.clone();
+        let error = read_part_reply(&reply(vec![item]), &["7"], TEXT, 0.85).unwrap_err();
+        assert!(error.contains("id"), "{bad}: {error}");
+    }
+}
+
+#[test]
 fn items_must_be_a_list() {
     let error = read_part_reply(&json!({"items": "no"}), &["7"], TEXT, 0.85).unwrap_err();
     assert!(error.contains("items"), "{error}");
