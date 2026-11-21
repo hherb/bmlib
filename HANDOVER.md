@@ -10,22 +10,29 @@ once PyPI has 0.14.0, from a clean worktree of `e7b7c98a` (`HANDOVER_RUST.md`,
 
 ## This session: a DOI and a PMID naming two papers never merge them (#803, PR open)
 
-- **The defect** (PR #802's review, older than #794): a record whose DOI
-  found one row and whose PMID found another consolidated them even when each
-  held a different value of the other identifier, so one wrong DOI-PMID link
+- **The defect** (PR #802's review, older than #794): a record whose DOI found
+  one row and whose PMID found another consolidated them even when either held
+  a different value of the other identifier, so one wrong DOI-PMID link
   deleted a paper (`COALESCE`, no log line). Reproduced in both languages on
   `main`: four of the six new Python tests and all four new Rust tests failed.
 - **The fix, both languages (the maintainer's choice, 2026-11-21)**: both rows
-  are kept, the record merges into the DOI row **without its PMID** (the
-  plain merge would write it onto the DOI row under `UNIQUE`; a mutation that
-  drops the strip is caught by
+  are kept, the record merges into the DOI row **without its PMID** or PMCID
+  (the plain merge would write it onto the DOI row under `UNIQUE`; a mutation
+  that drops the strip is caught by
   `test_a_doi_row_without_a_pmid_does_not_take_the_other_paper_s`), and a
-  WARNING names both rows. A one-sided split (DOI row without a PMID, PMID
-  row without a DOI) is still consolidated. The record ID follows the record
-  to the DOI row. Reasoning in `docs/DECISIONS.md`.
+  WARNING names both rows and the record's source. A split where neither row
+  holds the other identifier (DOI row without a PMID, PMID row without a DOI)
+  is still consolidated. The record ID follows the record to the DOI row, and
+  its move WARNING now names the identifiers that row holds. Reasoning in
+  `docs/DECISIONS.md`.
+- **Deferred to #806 (open, found in this PR's review)**: the same wrong link
+  when the DOI or PMID finds **one** row holding a different value of the
+  other identifier. It merges silently (`COALESCE` drops the record's
+  identifier), and the second paper, which has no row, is never stored. Needs
+  the maintainer's choice of remedy.
 - **Data**: nothing stored moves; papers already merged away stay merged.
-- The manual's consolidation step 2 said `UPDATE OR IGNORE`; the code uses
-  an anti-join on both backends. The manual now says so.
+- The manual's consolidation step 2 said `UPDATE OR IGNORE`; the code uses an
+  anti-join on both backends. The manual now says so.
 
 ## Earlier: a record with neither DOI nor PMID is stored once (#794, PR #802, merged)
 
@@ -299,8 +306,9 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**124 open** (2026-11-21; #803 closes with this session's PR, #755 stays open
-for its decisions): Europe PMC's **#792** and **#793** (PR #790's review,
+**125 open** (2026-11-21; #803 closes with this session's PR, #755 stays open
+for its decisions): **#806** (PR #804's review: the one-row wrong link, above),
+Europe PMC's **#792** and **#793** (PR #790's review,
 above), the library's #755, #762 and **#778** (PR #777's review follow-ups,
 above), **#776** (PR #775's
 MECA follow-ups) and **#759** (measure the `/details` settle period) are the

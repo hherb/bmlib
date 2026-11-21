@@ -6022,24 +6022,27 @@ and read 0 moves again.
 ## publications — a DOI and a PMID naming two papers never merge them (#803)
 
 - **The record merges into the DOI row, the PMID row is kept apart, and
-  nothing fails.** When the DOI row and the PMID row each hold a different
+  nothing fails.** When either the DOI row or the PMID row holds a different
   value of the other identifier, the record's DOI-PMID link is wrong (an
   OpenAlex or Europe PMC cross-reference error), and neither identifier
   outranks the other. Consolidating, as before, folded one paper into the
-  other through `COALESCE`, deleting its DOI, PMID and title for good, its
-  day long settled. Failing the record instead (the other option the issue
-  offered) would re-offer its day on every run for as long as the source
-  keeps the bad link. The DOI row is chosen because the DOI row is already
-  the one kept in a consolidation; the record's PMID is left off it, since the
-  PMID row holds it under `UNIQUE`. It reads like a missed merge and repeats
-  its WARNING on every re-fetch of the bad record; that is the cost. A DOI row
-  with no PMID beside a PMID row with no DOI is still consolidated: nothing
-  says they are two papers. The record ID, if any, follows the record to the
-  DOI row (the #794 rule above, applied to the kept-apart row). Pinned on both
-  backends by `TestADoiAndAPmidNamingTwoPapersNeverMergeThem` in
-  `tests/test_backends.py` (the one-sided cases and the still-consolidated
-  case among them), and in Rust's `publication_storage.rs` by
-  `a_doi_and_a_pmid_naming_two_keyed_papers_never_merge_them` and its three
+  other through `COALESCE`, deleting its DOI, PMID and title for good, its day
+  long settled. Failing the record instead (the other option the issue
+  offered) would re-offer its day on every run for as long as the source keeps
+  the bad link. The DOI row is chosen because the DOI row is already the one
+  kept in a consolidation; the record's PMID is left off it, since the PMID
+  row holds it under `UNIQUE`. Its PMCID is left off too: it came with the
+  same link, and on the DOI row it could fetch the other paper's full text;
+  the row that owns it gets it from its own records. It reads like a missed
+  merge and repeats its WARNING on every re-fetch of the bad record; that is
+  the cost. A DOI row with no PMID beside a PMID row with no DOI is still
+  consolidated: nothing says they are two papers. The record ID, if any,
+  follows the record to the DOI row (the #794 rule above, applied to the
+  kept-apart row). Pinned on both backends by
+  `TestADoiAndAPmidNamingTwoPapersNeverMergeThem` in `tests/test_backends.py`
+  (the cases where only one row holds the other identifier, and the
+  still-consolidated case, among them), and in Rust's `publication_storage.rs`
+  by `a_doi_and_a_pmid_naming_two_keyed_papers_never_merge_them` and its three
   siblings.
 
 ## fulltext — a JATS contributor's affiliations (#145)

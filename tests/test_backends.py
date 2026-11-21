@@ -2340,11 +2340,22 @@ class TestARecordIdDeduplicates:
 
 
 class TestADoiAndAPmidNamingTwoPapersNeverMergeThem:
-    """A record whose DOI and PMID find two rows that each hold a different
-    value of the other identifier names two papers (#803): neither row is
-    folded into the other, and the record merges into the DOI's row."""
+    """A record whose DOI and PMID find two rows, either of which holds a
+    different value of the other identifier, names two papers (#803): neither
+    row is folded into the other, and the record merges into the DOI's row
+    without its PMID or PMCID."""
 
     _WARNING = "name two papers; the record merges into publication"
+
+    @staticmethod
+    def _warning(conn, doi_row: tuple, pmid_row: tuple, record: str) -> str:
+        """The #803 line for rows given as (doi, pmid), the record as text."""
+        ids = [get_publication_by_doi(conn, row[0]).id for row in (doi_row, pmid_row)]
+        return (
+            f"{record} name two papers; the record merges into publication {ids[0]}"
+            f" (doi {doi_row[0]}, pmid {doi_row[1]}) without its PMID or PMCID, and"
+            f" publication {ids[1]} (doi {pmid_row[0]}, pmid {pmid_row[1]}) is kept apart"
+        )
 
     @pytest.fixture(autouse=True)
     def _schema(self, backend_conn):
@@ -2361,7 +2372,7 @@ class TestADoiAndAPmidNamingTwoPapersNeverMergeThem:
     def test_two_fully_keyed_papers_stay_apart(self, backend_conn, caplog):
         store_publication(backend_conn, _pub(title="Paper A", doi="10.1/x", pmid="5"))
         store_publication(backend_conn, _pub(title="Paper B", doi="10.1/y", pmid="9"))
-        bad = _pub(title="Bad link", doi="10.1/x", pmid="9", journal="Cell")
+        bad = _pub(title="Bad link", doi="10.1/x", pmid="9", pmcid="PMC9", journal="Cell")
 
         with caplog.at_level(logging.WARNING, logger="bmlib.publications.storage"):
             result = store_publication(
@@ -2382,20 +2393,35 @@ class TestADoiAndAPmidNamingTwoPapersNeverMergeThem:
             ("http://x/1",),
         )
         assert owner == get_publication_by_doi(backend_conn, "10.1/x").id
+        # The PMCID came with the wrong link, so it is not given to Paper A.
+        assert get_publication_by_doi(backend_conn, "10.1/x").pmcid is None
         assert bad.pmid == "9"  # the caller's record keeps its own PMID
-        assert self._WARNING in caplog.text
+        assert [r.getMessage() for r in caplog.records] == [
+            self._warning(
+                backend_conn, ("10.1/x", "5"), ("10.1/y", "9"), "DOI 10.1/x and PMID 9 from pubmed"
+            )
+        ]
 
-    def test_a_doi_row_without_a_pmid_does_not_take_the_other_paper_s(self, backend_conn):
+    def test_a_doi_row_without_a_pmid_does_not_take_the_other_paper_s(self, backend_conn, caplog):
         # The plain merge would write PMID 9 onto the DOI row, which the PMID
         # row already holds.
         store_publication(backend_conn, _pub(title="Paper A", doi="10.1/x"))
         store_publication(backend_conn, _pub(title="Paper B", doi="10.1/y", pmid="9"))
 
-        store_publication(backend_conn, _pub(doi="10.1/x", pmid="9"))
+        with caplog.at_level(logging.WARNING, logger="bmlib.publications.storage"):
+            store_publication(backend_conn, _pub(doi="10.1/x", pmid="9"))
 
         assert self._rows(backend_conn) == [
             ("Paper A", "10.1/x", None, None),
             ("Paper B", "10.1/y", "9", None),
+        ]
+        assert [r.getMessage() for r in caplog.records] == [
+            self._warning(
+                backend_conn,
+                ("10.1/x", None),
+                ("10.1/y", "9"),
+                "DOI 10.1/x and PMID 9 from pubmed",
+            )
         ]
 
     def test_a_pmid_row_without_a_doi_is_kept_when_the_doi_row_has_a_pmid(self, backend_conn):
@@ -2419,7 +2445,7 @@ class TestADoiAndAPmidNamingTwoPapersNeverMergeThem:
         assert self._rows(backend_conn) == [("By DOI", "10.1/x", "9", None)]
         assert self._WARNING not in caplog.text
 
-    def test_the_record_id_follows_the_record_to_the_doi_row(self, backend_conn):
+    def test_the_record_id_follows_the_record_to_the_doi_row(self, backend_conn, caplog):
         store_publication(backend_conn, _pub(title="Paper A", doi="10.1/x", pmid="5"))
         store_publication(
             backend_conn,
@@ -2427,9 +2453,25 @@ class TestADoiAndAPmidNamingTwoPapersNeverMergeThem:
             record_id=("openalex", "W1"),
         )
 
-        store_publication(backend_conn, _pub(doi="10.1/x", pmid="9"), record_id=("openalex", "W1"))
+        with caplog.at_level(logging.WARNING, logger="bmlib.publications.storage"):
+            store_publication(
+                backend_conn, _pub(doi="10.1/x", pmid="9"), record_id=("openalex", "W1")
+            )
 
-        assert _count(backend_conn, "publications") == 2
+        assert self._rows(backend_conn) == [
+            ("Paper A", "10.1/x", "5", None),
+            ("Paper B", "10.1/y", "9", None),
+        ]
+        a_id = get_publication_by_doi(backend_conn, "10.1/x").id
+        b_id = get_publication_by_doi(backend_conn, "10.1/y").id
+        # The move names the identifiers the DOI row holds, not the record's.
+        assert [r.getMessage() for r in caplog.records] == [
+            self._warning(
+                backend_conn, ("10.1/x", "5"), ("10.1/y", "9"), "DOI 10.1/x and PMID 9 from pubmed"
+            ),
+            f"Record ID openalex:W1 moves from publication {b_id} (doi 10.1/y, pmid 9)"
+            f" to {a_id} (doi 10.1/x, pmid 5); the two are kept apart",
+        ]
         ph = placeholder(backend_conn)
         owner = fetch_scalar(
             backend_conn,

@@ -162,13 +162,13 @@ assert!(matches!(unnamed, Err(ReplaceError::MissingSource(_))));
 
 When a record's DOI and PMID point at two different stored rows, the rows are
 consolidated into the DOI's row before the merge, moving each child-row source
-the kept row lacks. Unless each row holds a different value of the other
+the kept row lacks. Unless either row holds a different value of the other
 identifier *(unreleased)*: then they are two papers and the record's link is
 wrong (#803), so both are kept, the record merges into the DOI's row without
-its PMID, and a WARNING names both. `get_publication_by_pmid`, `get_grants` (insertion order)
-and `get_author_affiliations` (by `position`) read back; `add_fulltext_source`
-adds one location and returns `false` for a `(publication, url)` pair already
-held.
+its PMID or PMCID, and a WARNING names both rows and the record's source.
+`get_publication_by_pmid`, `get_grants` (insertion order) and
+`get_author_affiliations` (by `position`) read back; `add_fulltext_source` adds
+one location and returns `false` for a `(publication, url)` pair already held.
 
 ## Fetchers and the registry
 

@@ -757,18 +757,20 @@ fn identifiers_conflict(
 /// [`store_publication`], also keyed by the source's own ID for the record.
 ///
 /// A DOI row and a PMID row found apart are consolidated into the DOI's,
-/// unless each holds a different value of the other identifier: then they are
-/// two papers and the record's link is wrong (#803). Both are kept, the record
-/// merges into the DOI's row without its PMID, and a WARNING names both rows.
+/// unless either holds a different value of the other identifier: then they
+/// are two papers and the record's link is wrong (#803). Both are kept, the
+/// record merges into the DOI's row without its PMID or PMCID, and a WARNING
+/// names both rows and the record's source.
 ///
 /// `record_id` is `(source, id)` (an OpenAlex work `"W123"`, a Europe PMC
 /// `"PPR:PPR123"`). It finds the row again when the record carries neither DOI
 /// nor PMID (#794), and is kept beside the row; a row may hold several. Rows
 /// the DOI, the PMID and the record ID find apart are consolidated into one,
-/// the DOI's row kept first, then the PMID's. A DOI or PMID outranks it: a row
-/// the ID finds holding a different DOI or PMID is another paper, kept apart,
-/// and the ID moves to this record's row with a WARNING. Python's
-/// `store_publication` takes it as `record_id=`.
+/// the DOI's row kept first, then the PMID's, except a DOI row and a PMID row
+/// that name two papers (above). A DOI or PMID outranks it: a row the ID finds
+/// holding a different DOI or PMID is another paper, kept apart, and the ID
+/// moves to this record's row with a WARNING. Python's `store_publication`
+/// takes it as `record_id=`.
 ///
 /// # Errors
 ///
@@ -829,10 +831,11 @@ pub fn store_publication_with_record_id(
             rows.push((id, row));
         }
     }
-    // A DOI row and a PMID row that each hold a different value of the other
-    // identifier are two papers, and the record's link between them is wrong
-    // (#803): neither outranks the other, so the PMID row is kept apart and
-    // the record merges into the DOI row without its PMID.
+    // A DOI row and a PMID row, either of which holds a different value of the
+    // other identifier, are two papers, and the record's link between them is
+    // wrong (#803): neither outranks the other, so the PMID row is kept apart
+    // and the record merges into the DOI row without its PMID, and without its
+    // PMCID, which came with the same link.
     let mut stripped = None;
     if let [(doi_id, doi_row), (pmid_id, pmid_row)] = rows.as_slice() {
         if identifiers_conflict(pmid_row, pub_, &[doi_row])? {
@@ -840,11 +843,12 @@ pub fn store_publication_with_record_id(
                 Ok(row.get(key)?.as_str().unwrap_or("None").to_string())
             };
             log::warn!(
-                "DOI {} and PMID {} name two papers; the record merges into publication \
-                 {doi_id} (doi {}, pmid {}), and publication {pmid_id} (doi {}, pmid {}) \
-                 is kept apart",
+                "DOI {} and PMID {} from {} name two papers; the record merges into \
+                 publication {doi_id} (doi {}, pmid {}) without its PMID or PMCID, and \
+                 publication {pmid_id} (doi {}, pmid {}) is kept apart",
                 pub_.doi.as_deref().unwrap_or("None"),
                 pub_.pmid.as_deref().unwrap_or("None"),
+                pub_.first_seen_source,
                 text(doi_row, "doi")?,
                 text(doi_row, "pmid")?,
                 text(pmid_row, "doi")?,
@@ -852,6 +856,7 @@ pub fn store_publication_with_record_id(
             );
             stripped = Some(Publication {
                 pmid: None,
+                pmcid: None,
                 ..pub_.clone()
             });
             rows.truncate(1);
@@ -905,17 +910,24 @@ pub fn store_publication_with_record_id(
 
     if let Some((source, id)) = record_id {
         if let Some(old) = &moved_from {
-            let text = |key: &str| -> Result<String, DbError> {
-                Ok(old.get(key)?.as_str().unwrap_or("None").to_string())
+            let text = |row: &crate::db::Row, key: &str| -> Result<String, DbError> {
+                Ok(row.get(key)?.as_str().unwrap_or("None").to_string())
             };
+            // The row as stored: the record's own DOI or PMID may not be on it.
+            let dest = fetch_one(
+                &mut *tx,
+                "SELECT doi, pmid FROM publications WHERE id = ?",
+                &[DbValue::Int(pub_id)],
+            )?
+            .ok_or_else(|| DbError::Backend(format!("publication {pub_id} vanished mid-store")))?;
             log::warn!(
                 "Record ID {source}:{id} moves from publication {} (doi {}, pmid {}) to {pub_id} \
                  (doi {}, pmid {}); the two are kept apart",
                 old.get_i64("id")?,
-                text("doi")?,
-                text("pmid")?,
-                pub_.doi.as_deref().unwrap_or("None"),
-                pub_.pmid.as_deref().unwrap_or("None"),
+                text(old, "doi")?,
+                text(old, "pmid")?,
+                text(&dest, "doi")?,
+                text(&dest, "pmid")?,
             );
             execute(
                 &mut *tx,
