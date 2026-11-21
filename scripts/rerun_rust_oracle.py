@@ -89,6 +89,11 @@ CORPORA: list[tuple[str, str | None, str]] = [
     ("dump_passage_match.py", "passage_match_cases.json", "passage_match_expected.json"),
     ("dump_pdf_text.py", "pdf_text_cases.json", "pdf_text_expected.json"),
     ("dump_pico_agent.py", "pico_agent_cases.json", "pico_agent_expected.json"),
+    (
+        "dump_prisma2020_agent.py",
+        "prisma2020_agent_cases.json",
+        "prisma2020_agent_expected.json",
+    ),
     ("dump_protocol.py", "protocol_cases.json", "protocol_expected.json"),
     ("dump_pubmed.py", "pubmed_cases.json", "pubmed_expected.json"),
     ("dump_pubmed_part.py", "pubmed_part_cases.json", "pubmed_part_expected.json"),

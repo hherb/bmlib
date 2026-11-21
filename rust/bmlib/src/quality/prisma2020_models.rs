@@ -264,9 +264,7 @@ pub fn read_part_reply(
             Some(Value::String(id)) => id.clone(),
             // `"id": 7` reads as "7" (ruling 8): a re-ask for that slip would
             // cost the whole part.
-            Some(Value::Number(number)) if number.is_i64() || number.is_u64() => {
-                number.to_string()
-            }
+            Some(Value::Number(number)) if number.is_i64() || number.is_u64() => number.to_string(),
             _ => return Err("an item's id is not text".to_string()),
         };
         if by_id.contains_key(&id) {

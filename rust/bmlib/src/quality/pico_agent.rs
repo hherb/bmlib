@@ -35,6 +35,7 @@ use crate::quality::cochrane_assessor::{
     clamped_confidence, condense_checked, Condenser, LlmCondenser,
     DEFAULT_CONDENSE_THRESHOLD_CHARS, DEFAULT_MAX_RETRIES, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE,
 };
+use crate::quality::full_text_agent::Sampling;
 use crate::quality::pico_models::{
     PicoCitation, PicoContradictedQuote, PicoError, PicoExtraction, PicoPart, PicoPartState,
     PicoPrepared, PicoSuitability,
@@ -699,75 +700,23 @@ impl<'a> PicoAgent<'a> {
         text: &str,
         stage: &str,
     ) -> Result<PicoPrepared, PicoError> {
-        // Quotes are located in the text as passed, unstripped, so an offset
-        // indexes the string the caller will highlight.
-        let original = text.to_string();
-        let title = python_strip(title).to_string();
-        let text = python_strip(text);
-        if title.is_empty() && text.is_empty() {
-            return Err(PicoError::EmptyInput);
-        }
-        // `len(text)` is a character count, not a byte count.
-        let length = text.chars().count();
-        if length <= self.condense_config.max_context_chars {
-            return Ok(prepared(title, original, None, None, Vec::new()));
-        }
-
-        self.check_stop()?;
-        let label: String = title.chars().take(60).collect();
-        let stop = self.stop;
-        let Some(condenser) = self.condenser.as_mut() else {
-            return Err(PicoError::CondensationFailed(
-                "no condenser configured".to_string(),
-            ));
-        };
-        let condensed =
-            condense_checked(&mut **condenser, text, &label, &self.condense_config, stage);
-        // A run stopped part-way can end in a partial digest, which is no
-        // digest of the paper, as well as in a failure.
-        if stopped(stop) {
-            return Err(stopped_over(condensed.err().map(|refusal| refusal.reason)));
-        }
-        let (digest, notes, status) = condensed.map_err(|refusal| {
-            let message = format!(
-                "a {length}-character text could not be condensed to fit {} characters: {}",
-                self.condense_config.max_context_chars, refusal.reason
-            );
-            // A failed request is one, as on a short paper (#616).
-            match refusal.request {
-                Some(request) => PicoError::RequestFailed {
-                    message,
-                    retryable: request.retryable,
-                    status: request.status,
-                },
-                None => PicoError::CondensationFailed(message),
-            }
-        })?;
-        Ok(prepared(
+        let condenser = self
+            .condenser
+            .as_mut()
+            .map(|condenser| &mut **condenser as &mut dyn Condenser);
+        prepare_text(
+            condenser,
             title,
-            original,
-            Some(digest),
-            Some(status.as_str().to_string()),
-            notes,
-        ))
+            text,
+            &self.condense_config,
+            stage,
+            self.stop,
+        )
     }
 
-    /// What `prepared` sends, refused unless this agent would have made it:
-    /// over its budget, or condensed though it would send the text whole.
+    /// What `prepared` sends, refused unless this agent would have made it.
     fn sent<'p>(&self, prepared: &'p PicoPrepared) -> Result<&'p str, PicoError> {
-        let sent = prepared.sent();
-        let chars = sent.chars().count();
-        let budget = self.condense_config.max_context_chars;
-        if chars > budget {
-            return Err(PicoError::PreparedOverBudget { chars, budget });
-        }
-        if prepared.digest().is_some() {
-            let chars = python_strip(prepared.text()).chars().count();
-            if chars <= budget {
-                return Err(PicoError::PreparedUnderBudget { chars, budget });
-            }
-        }
-        Ok(sent)
+        sent_within(prepared, self.condense_config.max_context_chars)
     }
 
     fn ask<T>(
@@ -779,80 +728,203 @@ impl<'a> PicoAgent<'a> {
         read: impl Fn(&Value) -> Result<T, String>,
         label: &str,
     ) -> Result<T, PicoError> {
-        let prompt =
-            format!("{task}\n\nPaper Title: {title}\n\nPaper Text:\n{text}\n\n{response_format}");
-        let messages = vec![
-            LLMMessage::system(PICO_SYSTEM_PROMPT),
-            LLMMessage::user(prompt),
-        ];
-
-        let mut problem = String::new();
-        for _attempt in 0..READ_ATTEMPTS {
-            self.check_stop()?;
-            let data = match self.chat.chat_json(
-                &messages,
-                self.temperature,
-                self.max_tokens,
-                self.max_retries,
-                true,
-            ) {
-                Ok(outcome) => outcome.value,
-                // A stop set during the call wins over whatever it failed with.
-                Err(error) if stopped(self.stop) => {
-                    return Err(stopped_over(Some(error.to_string())))
-                }
-                Err(error @ ChatJsonError::Truncated { .. }) => {
-                    return Err(PicoError::Truncated(error.to_string()))
-                }
-                Err(
-                    error @ ChatJsonError::Transport {
-                        retryable, status, ..
-                    },
-                ) => {
-                    return Err(PicoError::RequestFailed {
-                        message: error.to_string(),
-                        retryable,
-                        status,
-                    })
-                }
-                Err(error) => return Err(PicoError::UnusableReply(error.to_string())),
-            };
-            match read(&data) {
-                Ok(result) => return Ok(result),
-                Err(message) => problem = message,
-            }
-        }
-        Err(PicoError::UnusableReply(format!(
-            "{label}: {READ_ATTEMPTS} replies could not be read: {problem}"
-        )))
+        let sampling = Sampling {
+            temperature: self.temperature,
+            max_tokens: self.max_tokens,
+            max_retries: self.max_retries,
+        };
+        ask_json(
+            &mut *self.chat,
+            PICO_SYSTEM_PROMPT,
+            &wrapped_prompt(task, response_format, title, text),
+            sampling,
+            self.stop,
+            label,
+            read,
+        )
     }
 }
 
-impl PicoAgent<'_> {
-    /// [`PicoError::Stopped`] once the stop is set.
-    fn check_stop(&self) -> Result<(), PicoError> {
-        if stopped(self.stop) {
-            Err(PicoError::Stopped(None))
-        } else {
-            Ok(())
+/// The user turn of a question: the task, the paper and the reply's format.
+///
+/// Concatenated, never formatted, so braces in a paper are text. Shared with
+/// the PRISMA 2020 agent.
+pub(crate) fn wrapped_prompt(task: &str, response_format: &str, title: &str, text: &str) -> String {
+    format!("{task}\n\nPaper Title: {title}\n\nPaper Text:\n{text}\n\n{response_format}")
+}
+
+/// Strip the input, refuse an empty one, and condense one over
+/// `config.max_context_chars` through `condenser`; never cut.
+///
+/// `stage` names the calls the digest is for in a degraded run's note. The
+/// stop is read before the condensation and after it, and wins over whatever
+/// the condensation failed with. Shared with the PRISMA 2020 agent.
+///
+/// # Errors
+///
+/// [`PicoError::EmptyInput`], [`PicoError::CondensationFailed`] (no
+/// condenser, or a refused digest), [`PicoError::RequestFailed`] (a request
+/// failed the map-reduce, #616) or [`PicoError::Stopped`].
+pub(crate) fn prepare_text(
+    condenser: Option<&mut dyn Condenser>,
+    title: &str,
+    text: &str,
+    config: &ProcessingConfig,
+    stage: &str,
+    stop: Option<&AtomicBool>,
+) -> Result<PicoPrepared, PicoError> {
+    // Quotes are located in the text as passed, unstripped, so an offset
+    // indexes the string the caller will highlight.
+    let original = text.to_string();
+    let title = python_strip(title).to_string();
+    let text = python_strip(text);
+    if title.is_empty() && text.is_empty() {
+        return Err(PicoError::EmptyInput);
+    }
+    // `len(text)` is a character count, not a byte count.
+    let length = text.chars().count();
+    if length <= config.max_context_chars {
+        return Ok(prepared(title, original, None, None, Vec::new()));
+    }
+
+    if stopped(stop) {
+        return Err(PicoError::Stopped(None));
+    }
+    let label: String = title.chars().take(60).collect();
+    let Some(condenser) = condenser else {
+        return Err(PicoError::CondensationFailed(
+            "no condenser configured".to_string(),
+        ));
+    };
+    let condensed = condense_checked(condenser, text, &label, config, stage);
+    // A run stopped part-way can end in a partial digest, which is no
+    // digest of the paper, as well as in a failure.
+    if stopped(stop) {
+        return Err(stopped_over(condensed.err().map(|refusal| refusal.reason)));
+    }
+    let (digest, notes, status) = condensed.map_err(|refusal| {
+        let message = format!(
+            "a {length}-character text could not be condensed to fit {} characters: {}",
+            config.max_context_chars, refusal.reason
+        );
+        // A failed request is one, as on a short paper (#616).
+        match refusal.request {
+            Some(request) => PicoError::RequestFailed {
+                message,
+                retryable: request.retryable,
+                status: request.status,
+            },
+            None => PicoError::CondensationFailed(message),
+        }
+    })?;
+    Ok(prepared(
+        title,
+        original,
+        Some(digest),
+        Some(status.as_str().to_string()),
+        notes,
+    ))
+}
+
+/// What `prepared` sends, refused unless an agent with `budget` would have
+/// made it: over the budget, or condensed though it would send the text whole.
+/// Shared with the PRISMA 2020 agent.
+///
+/// # Errors
+///
+/// [`PicoError::PreparedOverBudget`] or [`PicoError::PreparedUnderBudget`].
+pub(crate) fn sent_within(prepared: &PicoPrepared, budget: usize) -> Result<&str, PicoError> {
+    let sent = prepared.sent();
+    let chars = sent.chars().count();
+    if chars > budget {
+        return Err(PicoError::PreparedOverBudget { chars, budget });
+    }
+    if prepared.digest().is_some() {
+        let chars = python_strip(prepared.text()).chars().count();
+        if chars <= budget {
+            return Err(PicoError::PreparedUnderBudget { chars, budget });
         }
     }
+    Ok(sent)
+}
+
+/// Send one question and read the reply, asking again once if `read` refuses it.
+///
+/// The stop is read before each request, and a stop set during a request that
+/// failed wins over the failure. Shared with the PRISMA 2020 agent.
+///
+/// # Errors
+///
+/// [`PicoError::Stopped`], [`PicoError::Truncated`],
+/// [`PicoError::RequestFailed`], or [`PicoError::UnusableReply`] (an
+/// unparseable reply, or `read` refused every reply; the last message is
+/// carried, after `label`).
+pub(crate) fn ask_json<T>(
+    chat: &mut dyn JsonChat,
+    system_prompt: &str,
+    prompt: &str,
+    sampling: Sampling,
+    stop: Option<&AtomicBool>,
+    label: &str,
+    read: impl Fn(&Value) -> Result<T, String>,
+) -> Result<T, PicoError> {
+    let messages = vec![LLMMessage::system(system_prompt), LLMMessage::user(prompt)];
+
+    let mut problem = String::new();
+    for _attempt in 0..READ_ATTEMPTS {
+        if stopped(stop) {
+            return Err(PicoError::Stopped(None));
+        }
+        let data = match chat.chat_json(
+            &messages,
+            sampling.temperature,
+            sampling.max_tokens,
+            sampling.max_retries,
+            true,
+        ) {
+            Ok(outcome) => outcome.value,
+            // A stop set during the call wins over whatever it failed with.
+            Err(error) if stopped(stop) => return Err(stopped_over(Some(error.to_string()))),
+            Err(error @ ChatJsonError::Truncated { .. }) => {
+                return Err(PicoError::Truncated(error.to_string()))
+            }
+            Err(
+                error @ ChatJsonError::Transport {
+                    retryable, status, ..
+                },
+            ) => {
+                return Err(PicoError::RequestFailed {
+                    message: error.to_string(),
+                    retryable,
+                    status,
+                })
+            }
+            Err(error) => return Err(PicoError::UnusableReply(error.to_string())),
+        };
+        match read(&data) {
+            Ok(result) => return Ok(result),
+            Err(message) => problem = message,
+        }
+    }
+    Err(PicoError::UnusableReply(format!(
+        "{label}: {READ_ATTEMPTS} replies could not be read: {problem}"
+    )))
 }
 
 /// [`PicoError::Stopped`] over `failure`, dropped where it is no more than
 /// the stop's own refusal.
-fn stopped_over(failure: Option<String>) -> PicoError {
+pub(crate) fn stopped_over(failure: Option<String>) -> PicoError {
     PicoError::Stopped(failure.filter(|failure| !failure.contains(STOPPED_MESSAGE)))
 }
 
 /// Whether an optional stop is set.
-fn stopped(stop: Option<&AtomicBool>) -> bool {
+pub(crate) fn stopped(stop: Option<&AtomicBool>) -> bool {
     stop.is_some_and(|stop| stop.load(Ordering::SeqCst))
 }
 
 /// Refuse a `min_similarity` outside (0, 1]; NaN fails both comparisons, so it
 /// is refused too.
-fn check_similarity(min_similarity: f64) -> Result<(), PicoError> {
+pub(crate) fn check_similarity(min_similarity: f64) -> Result<(), PicoError> {
     if min_similarity > 0.0 && min_similarity <= 1.0 {
         Ok(())
     } else {
@@ -874,7 +946,7 @@ fn prepared(
 }
 
 /// Python's `repr(title[:60])`, for a log label.
-fn repr_prefix(title: &str) -> String {
+pub(crate) fn repr_prefix(title: &str) -> String {
     crate::pyvalue::repr_str(&title.chars().take(60).collect::<String>())
 }
 

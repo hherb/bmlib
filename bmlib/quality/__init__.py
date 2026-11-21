@@ -113,6 +113,14 @@ from bmlib.quality.pico_models import (
     PicoPrepared,
     PicoSuitability,
 )
+from bmlib.quality.prisma2020_agent import (
+    Prisma2020Agent,
+    PrismaCondenser,
+    PrismaError,
+    PrismaErrorKind,
+    PrismaPrepared,
+    part_prompt_chars,
+)
 from bmlib.quality.prisma2020_checklist import (
     CHECKLIST,
     KEY_ITEMS,
@@ -212,6 +220,12 @@ __all__ = [
     "PicoSuitability",
     "verify_quotes",
     # The PRISMA 2020 checklist
+    "Prisma2020Agent",
+    "PrismaCondenser",
+    "PrismaError",
+    "PrismaErrorKind",
+    "PrismaPrepared",
+    "part_prompt_chars",
     "CHECKLIST",
     "KEY_ITEMS",
     "ChecklistItem",

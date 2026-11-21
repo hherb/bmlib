@@ -17,7 +17,8 @@
 
 """Dump whole runs of bmlib's PRISMA 2020 agent over scripted model replies, for the Rust port.
 
-    .venv/bin/python rust/oracle/dump_prisma2020_agent.py < rust/oracle/prisma2020_agent_cases.json \\
+    .venv/bin/python rust/oracle/dump_prisma2020_agent.py \\
+        < rust/oracle/prisma2020_agent_cases.json \\
         > rust/bmlib/tests/data/prisma2020_agent_expected.json
 
 ``dump_pico_agent.py``'s pattern: each case scripts the model's replies (exact

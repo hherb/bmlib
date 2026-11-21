@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+from bmlib.quality._full_text_agent import UnreadableReplyError
 from bmlib.quality.cochrane_assessor import clamped_confidence
 from bmlib.quality.pico_agent import verify_quotes
 from bmlib.quality.pico_models import PicoCitation, PicoContradictedQuote
@@ -163,7 +164,7 @@ def _text(value: object, field_name: str) -> str:
     if value is None:
         return ""
     if not isinstance(value, str):
-        raise ValueError(f"{field_name} is a {type(value).__name__}, not text")
+        raise UnreadableReplyError(f"{field_name} is a {type(value).__name__}, not text")
     return value
 
 
@@ -177,26 +178,29 @@ def read_part_reply(
     integer id is read as its decimal digits (``7`` as ``"7"``).
 
     Raises:
-        ValueError: When ``items`` is not a list, an entry is not an object, an
-            id is absent or repeated, or a judgement is not one of the five
-            strings; the message names it, so a re-ask can.
+        UnreadableReplyError: A ``ValueError`` saying that ``items`` is not a
+            list, an entry is not an object, an id is absent or repeated, or a
+            judgement is not one of the five strings; the message names it, so
+            a re-ask can.
+        ValueError: An id of *asked* is not on the checklist (a caller's
+            mistake, not the model's).
     """
     entries = data.get("items")
     if not isinstance(entries, list):
-        raise ValueError(f"items is a {type(entries).__name__}, not a list")
+        raise UnreadableReplyError(f"items is a {type(entries).__name__}, not a list")
     by_id: dict[str, dict[str, Any]] = {}
     for entry in entries:
         if not isinstance(entry, dict):
-            raise ValueError(f"an item is a {type(entry).__name__}, not an object")
+            raise UnreadableReplyError(f"an item is a {type(entry).__name__}, not an object")
         item_id = entry.get("id")
         # ``"id": 7`` reads as "7" (ruling 8): a re-ask for that slip would
         # cost the whole part.  ``bool`` is an ``int`` to Python, not an id.
         if isinstance(item_id, int) and not isinstance(item_id, bool):
             item_id = str(item_id)
         if not isinstance(item_id, str):
-            raise ValueError(f"an item's id is a {type(item_id).__name__}, not text")
+            raise UnreadableReplyError(f"an item's id is a {type(item_id).__name__}, not text")
         if item_id in by_id:
-            raise ValueError(f"duplicate item id {item_id!r}")
+            raise UnreadableReplyError(f"duplicate item id {item_id!r}")
         by_id[item_id] = entry
     for extra in by_id.keys() - set(asked):
         logger.warning("PRISMA reply has item %r, which was not asked; ignored", extra)
@@ -214,7 +218,7 @@ def read_part_reply(
         try:
             claimed = Judgement(raw)
         except ValueError:
-            raise ValueError(f"item {item_id}: unknown judgement {raw!r}") from None
+            raise UnreadableReplyError(f"item {item_id}: unknown judgement {raw!r}") from None
         citations, not_found, contradicted, dropped = verify_quotes(
             entry.get("quotes"), text, min_similarity
         )
@@ -239,7 +243,7 @@ def _flag(data: dict[str, Any], name: str) -> bool:
     """A required boolean of the suitability reply."""
     value = data.get(name)
     if not isinstance(value, bool):
-        raise ValueError(f"{name} is a {type(value).__name__}, not a boolean")
+        raise UnreadableReplyError(f"{name} is a {type(value).__name__}, not a boolean")
     return value
 
 
@@ -247,8 +251,9 @@ def read_suitability(data: dict[str, Any]) -> Suitability:
     """Read a suitability reply; suitable means a systematic review or a meta-analysis.
 
     Raises:
-        ValueError: When ``is_systematic_review`` or ``is_meta_analysis`` is not
-            a boolean, or a text field is of another type.
+        UnreadableReplyError: A ``ValueError`` saying that
+            ``is_systematic_review`` or ``is_meta_analysis`` is not a boolean,
+            or a text field is of another type.
     """
     systematic = _flag(data, "is_systematic_review")
     meta = _flag(data, "is_meta_analysis")
