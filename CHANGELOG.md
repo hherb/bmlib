@@ -48,8 +48,8 @@ All notable changes to bmlib are documented here. The format is based on
     so a key item re-checked alone gets a digest of its own; the whole paper
     serves any items. `PrismaError` has `PicoError`'s kinds; bad item ids, a
     digest for other items, a bad `min_similarity` and a paper prepared for
-    another budget are a `ValueError` before any request. `PrismaCondenser` is the map-reduce over
-    the PRISMA condensation prompts.
+    another budget are a `ValueError` before any request. `PrismaCondenser`
+    is the map-reduce over the PRISMA condensation prompts.
 
 ## [0.14.0] — 2026-11-17
 

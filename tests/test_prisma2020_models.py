@@ -83,6 +83,22 @@ def test_backed_item_is_read_with_its_citation() -> None:
     assert row.to_dict()["judgement"] == "reported"
 
 
+def test_not_applicable_follows_each_rows_flag() -> None:
+    # The real rows: 7 may not be not_applicable, 13d may (it has a synthesis to lack).
+    text = (
+        "We did not assess the certainty of the evidence. "
+        "Because no study reported the outcome, no meta-analysis was done."
+    )
+    reply = _reply(
+        _entry("7", "not_applicable", ["We did not assess the certainty of the evidence"]),
+        _entry("13d", "not_applicable", ["no meta-analysis was done"]),
+    )
+    seven, thirteen_d = read_part_reply(reply, ["7", "13d"], text, 0.85).items
+    assert (seven.judgement, seven.unbacked) == (Judgement.NOT_REPORTED, True)
+    assert len(seven.citations) == 1
+    assert (thirteen_d.judgement, thirteen_d.unbacked) == (Judgement.NOT_APPLICABLE, False)
+
+
 def test_missing_item_is_listed() -> None:
     part = read_part_reply(_reply(_entry("7", "reported", [QUOTE])), ["7", "8"], TEXT, 0.85)
     assert part.missing == ["8"]

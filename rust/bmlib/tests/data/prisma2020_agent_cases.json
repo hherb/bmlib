@@ -104,6 +104,22 @@
   {
     "args": {
       "item_ids": [
+        "7",
+        "13d"
+      ],
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"items\": [{\"id\": \"7\", \"judgement\": \"not_applicable\", \"explanation\": \"No search.\", \"quotes\": [\"We did not assess the certainty of the evidence\"]}, {\"id\": \"13d\", \"judgement\": \"not_applicable\", \"explanation\": \"No meta-analysis.\", \"quotes\": [\"Because no study reported the outcome, no meta-analysis was done\"]}]}"
+      ],
+      "text": "Methods. We did not assess the certainty of the evidence. Because no study reported the outcome, no meta-analysis was done and heterogeneity was not explored.",
+      "title": "Inhaled steroids in asthma: a systematic review"
+    },
+    "fn": "part",
+    "name": "not_applicable"
+  },
+  {
+    "args": {
+      "item_ids": [
         "6",
         "7",
         "8"

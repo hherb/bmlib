@@ -104,6 +104,36 @@ fn backed_item_is_read_with_its_citation() {
 }
 
 #[test]
+fn not_applicable_follows_each_rows_flag() {
+    // The real rows: 7 may not be not_applicable, 13d may (it has a synthesis to lack).
+    let text = "We did not assess the certainty of the evidence. Because no study reported the outcome, no meta-analysis was done.";
+    let part = read_part_reply(
+        &reply(vec![
+            entry(
+                "7",
+                "not_applicable",
+                &["We did not assess the certainty of the evidence"],
+            ),
+            entry("13d", "not_applicable", &["no meta-analysis was done"]),
+        ]),
+        &["7", "13d"],
+        text,
+        0.85,
+    )
+    .expect("read");
+    let (seven, thirteen_d) = (&part.items[0], &part.items[1]);
+    assert_eq!(
+        (seven.judgement, seven.unbacked),
+        (Judgement::NotReported, true)
+    );
+    assert_eq!(seven.citations.len(), 1);
+    assert_eq!(
+        (thirteen_d.judgement, thirteen_d.unbacked),
+        (Judgement::NotApplicable, false)
+    );
+}
+
+#[test]
 fn missing_item_is_listed() {
     let part = read_part_reply(
         &reply(vec![entry("7", "reported", &[QUOTE])]),
