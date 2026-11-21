@@ -5996,6 +5996,29 @@ and read 0 moves again.
   caught lock failure adds three, all killed: the lock never taken, its
   failure propagating, and its line left out of `errors`.
 
+## publications — a record ID never merges two papers (#794, PR #802)
+
+- **A DOI or PMID outranks a source's record ID.** The row the record ID
+  finds joins the record's DOI or PMID row only when its DOI and PMID are each
+  missing or equal to the record's and to those rows'. One that differs is
+  kept apart, the record is stored by its DOI or PMID alone, the ID is
+  re-pointed at the row the record lands on, and a WARNING names both rows.
+  It reads like a missed merge, and may leave a stale row when OpenAlex only
+  corrected a wrong DOI; that is the deliberate cost. Merging deleted one
+  paper's DOI and title for good (PR #802's review: a bioRxiv preprint folded
+  into its journal version when OpenAlex moved its `W…` ID there, the
+  preprint's day long settled). A stale row loses nothing. Pinned on both
+  backends by `test_an_id_now_naming_another_doi_never_merges_two_papers`, its
+  PMID and new-DOI siblings, and `test_an_id_row_with_the_same_or_no_doi_still_joins`
+  for the other direction; Rust's `publication_storage.rs` has the same names.
+- **The record ID is inserted plainly, not `ON CONFLICT DO NOTHING`.** With
+  one writer the conflict cannot arise (a found ID is already on the row, or
+  consolidation moved it). With two writers it means another connection
+  stored the ID since this store's lookup. Ignoring it left this store's row
+  unkeyed, a duplicate for good; raising rolls the store back and fails the
+  record, the way a DOI race already does. Pinned by
+  `test_an_id_stored_meanwhile_by_another_writer_fails_the_store`.
+
 ## fulltext — a JATS contributor's affiliations (#145)
 
 `JATSAuthorInfo.affiliations` is read from `<aff>`. These choices read as

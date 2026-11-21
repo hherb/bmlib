@@ -650,6 +650,10 @@ class FetchedRecord:
     # rule and the test that pins it.
     grants: list[Grant] = field(default_factory=list)
     author_affiliations: list[AuthorAffiliation] = field(default_factory=list)
+    # The source's own ID for the record (an OpenAlex ``"W123"``, a Europe PMC
+    # ``"PPR:PPR123"``): ``sync()`` stores it as the key that finds a record
+    # with neither DOI nor PMID again (#794).
+    source_record_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise to a JSON-safe dictionary, one key per field in order."""
@@ -707,6 +711,7 @@ _OPTIONAL_TEXT_FIELDS = (
     "journal",
     "publication_date",
     "license",
+    "source_record_id",
 )
 
 

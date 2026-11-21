@@ -32,6 +32,22 @@ The Python library is documented separately, in the repository's
   (`"parts"`, `From<PartsError>`). The default `max_tokens` is
   `full_text_agent::DEFAULT_MAX_TOKENS` (16384), a part's reply being long.
 
+### Fixed
+
+- **A record with neither DOI nor PMID is stored once, not again on every
+  re-fetch** (#794), as in Python. `FetchedRecord::source_record_id` (filled
+  by the OpenAlex and Europe PMC normalisers) is stored by `sync()` through the
+  new `store_publication_with_record_id`, in the new `publication_record_ids`
+  table, and consolidates a keyless row into the DOI or PMID row once a record
+  links them, never a row whose DOI or PMID differs from the record's (the ID
+  moves instead, with a WARNING). An ID another writer stored since the lookup
+  fails the store, `store_records` logs each record it fails or stores with no
+  key, and a database an older bmlib wrote gains the table empty (each record
+  it already duplicated gains one more row on its first re-fetch after the
+  upgrade). `store_publication` keeps its signature. **Breaking** for a
+  struct literal of `FetchedRecord` (use `FetchedRecord::new`) and an
+  exhaustive `match` on `ReplaceError`, which gains `EmptyRecordId`.
+
 ## [0.5.0] - 2026-11-17
 
 Published with the Python library's 0.14.0, from the same merge commit. **The

@@ -150,10 +150,22 @@ def _author(author: Any) -> str | None:
     return _string(author, "fullName") or last
 
 
+def _record_id(raw: Any) -> str | None:
+    """Europe PMC's own key for a hit, ``"{source}:{id}"`` (``"PPR:PPR123"``).
+
+    Unique across Europe PMC's sources, and the one key an AGR, CBA or patent
+    record, or a preprint with no DOI, carries (#794).
+    """
+    source = _string(raw, "source")
+    record_id = _string(raw, "id")
+    return f"{source}:{record_id}" if source and record_id else None
+
+
 def normalize_europepmc(raw: dict[str, Any]) -> FetchedRecord:
     """Convert one Europe PMC ``resultType=core`` search hit to a record.
 
-    ``source="europepmc"``. A ``PPR`` accession is kept in
+    ``source="europepmc"``. The hit's ``source`` and ``id`` are its
+    ``source_record_id``, a ``PPR`` accession is kept in
     ``extras["ppr_id"]``, and a record Europe PMC holds the text of
     (``inEPMC`` ``"Y"``) gains an ``xml`` source for its ``fullTextXML``,
     addressed by its PMC ID, else its ``PPR`` accession — the only way
@@ -204,6 +216,7 @@ def normalize_europepmc(raw: dict[str, Any]) -> FetchedRecord:
         license=_string(raw, "license"),
         fulltext_sources=fulltext_sources,
         extras={"ppr_id": ppr_id} if ppr_id else {},
+        source_record_id=_record_id(raw),
     )
 
 

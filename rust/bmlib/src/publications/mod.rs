@@ -51,7 +51,8 @@ pub use retractions::{
 pub use schema::{ensure_schema, SCHEMA_SQL, SCHEMA_SQL_POSTGRESQL};
 pub use storage::{
     get_author_affiliations, get_grants, get_publication_by_doi, get_publication_by_pmid,
-    normalize_doi, normalize_pmid, store_publication, StoreOutcome,
+    normalize_doi, normalize_pmid, store_publication, store_publication_with_record_id,
+    StoreOutcome,
 };
 pub use sync::{
     day_was_over_when_fetched, days_needing_fetch, note_unreachable_days, read_aware_timestamp,

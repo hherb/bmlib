@@ -1180,6 +1180,10 @@ pub struct FetchedRecord {
     pub grants: Vec<Grant>,
     /// Author affiliations.
     pub author_affiliations: Vec<AuthorAffiliation>,
+    /// The source's own ID for the record (an OpenAlex `"W123"`, a Europe
+    /// PMC `"PPR:PPR123"`): `sync()` stores it as the key that finds a record
+    /// with neither DOI nor PMID again (#794).
+    pub source_record_id: Option<String>,
 }
 
 impl FetchedRecord {
@@ -1204,6 +1208,7 @@ impl FetchedRecord {
             extras: BTreeMap::new(),
             grants: Vec::new(),
             author_affiliations: Vec::new(),
+            source_record_id: None,
         }
     }
 }

@@ -67,7 +67,7 @@ use bmlib::publications::models::{FullTextSource, Grant, Publication};
 use bmlib::publications::schema::{ensure_schema, existing_columns};
 use bmlib::publications::storage::{
     add_fulltext_source, get_publication_by_doi, insert_publication, store_publication,
-    StoreOutcome,
+    store_publication_with_record_id, StoreOutcome,
 };
 use common::live_pg::TestDb;
 
@@ -426,6 +426,34 @@ impl bmlib::embed::store::ChunkEmbedder for ConstantEmbedder {
 }
 
 /// A unit vector along one axis.
+/// A keyless record is found again by its record ID, and a record that later
+/// gains a DOI folds the keyless row into the DOI row (#794) — the join and
+/// `ON CONFLICT` run on PostgreSQL too.
+#[test]
+fn a_record_id_dedups_and_consolidates() {
+    let Some(mut t) = TestDb::new() else { return };
+    let db = t.db();
+    ensure_schema(db).expect("schema");
+
+    let mut doi_row = Publication::new("By DOI", "pubmed");
+    doi_row.doi = Some("10.1/x".to_string());
+    store_publication(db, &mut doi_row, &[], &[], &[]).expect("store DOI row");
+    for _ in 0..2 {
+        let mut keyless = Publication::new("Keyless", "openalex");
+        store_publication_with_record_id(db, &mut keyless, &[], &[], &[], Some(("openalex", "W1")))
+            .expect("store keyless row");
+    }
+    assert_eq!(count(db, "SELECT COUNT(*) FROM publications"), 2);
+
+    let mut linked = Publication::new("Linked", "openalex");
+    linked.doi = Some("10.1/x".to_string());
+    store_publication_with_record_id(db, &mut linked, &[], &[], &[], Some(("openalex", "W1")))
+        .expect("store linked record");
+
+    assert_eq!(count(db, "SELECT COUNT(*) FROM publications"), 1);
+    assert_eq!(count(db, "SELECT COUNT(*) FROM publication_record_ids"), 1);
+}
+
 fn unit(axis: usize) -> Vec<f32> {
     let mut v = vec![0.0; bmlib::embed::EMBEDDING_DIM];
     v[axis % bmlib::embed::EMBEDDING_DIM] = 1.0;

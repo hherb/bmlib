@@ -156,6 +156,18 @@ CREATE TABLE IF NOT EXISTS publication_affiliations (
 
 CREATE INDEX IF NOT EXISTS idx_publication_affiliations_publication_id
     ON publication_affiliations (publication_id);
+
+CREATE TABLE IF NOT EXISTS publication_record_ids (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    publication_id  INTEGER NOT NULL REFERENCES publications(id),
+    source          TEXT NOT NULL,
+    record_id       TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    UNIQUE(source, record_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_publication_record_ids_publication_id
+    ON publication_record_ids (publication_id);
 ";
 
 /// The PostgreSQL DDL.
@@ -282,6 +294,18 @@ CREATE TABLE IF NOT EXISTS publication_affiliations (
 
 CREATE INDEX IF NOT EXISTS idx_publication_affiliations_publication_id
     ON publication_affiliations (publication_id);
+
+CREATE TABLE IF NOT EXISTS publication_record_ids (
+    id              SERIAL PRIMARY KEY,
+    publication_id  INTEGER NOT NULL REFERENCES publications(id),
+    source          TEXT NOT NULL,
+    record_id       TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    UNIQUE(source, record_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_publication_record_ids_publication_id
+    ON publication_record_ids (publication_id);
 ";
 
 /// Columns added after a table's first release.
