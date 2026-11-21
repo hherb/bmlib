@@ -6,6 +6,48 @@ All notable changes to bmlib are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **A PRISMA 2020 reporting agent** (StudyAnalyzer's PRISMA tab, design
+  `2026-11-18-prisma2020-tab-design.md`; both languages, held together by
+  `tests/fixtures/prisma2020_checklist.json`, `prisma2020_parts.json` and a
+  17-case whole-agent oracle, `rust/oracle/dump_prisma2020_agent.py`).
+  - `quality.prisma2020_checklist`: the 42 items and sub-items as data, the
+    checklist's wording verbatim (Page MJ et al., *BMJ* 2021;372:n71, CC BY
+    4.0), each with a rubric per judgement, a condensation hint, whether it is
+    one of the ten `KEY_ITEMS`, whether it may be `not_applicable`, and a
+    reply-size estimate.
+  - `quality.prisma2020_parts`: `plan_parts` packs items greedily, in order,
+    into parts whose replies fit a budget; an item too large for a part alone
+    is refused (`PartsError` `item_too_large`), never cut. `part_query` is a
+    part's condensation query.
+  - `quality.prisma2020_models`: `read_part_reply` judges each asked item
+    under the strict-evidence rule. Every quote is located by
+    `verify_quotes`, and a claim other than `not_reported` with no located
+    quote, or a `not_applicable` the item does not allow, is shown as
+    `not_reported` and flagged `unbacked`; a `not_reported` is never upgraded.
+    An item the reply leaves out is listed in `missing`, one it adds is
+    dropped with a WARNING, and an integer id reads as its digits (`7` as
+    `"7"`). `read_suitability` reads the suitability reply, its `variant` kept
+    as the model's string.
+  - `quality.prisma2020_agent`: `Prisma2020Agent` with `PicoAgent`'s options
+    (`num_ctx`, `stop`, `condense_progress`, and a `condenser`), whose caller
+    drives the parts. `check_suitability(title, text)` (a systematic review or
+    meta-analysis, a scoping, network, umbrella, rapid or living review
+    included), `prepare_part(title, text, item_ids)` (the whole paper when it
+    fits `max_context_chars`, else a digest made with the part's own
+    `part_query`) and `assess_part(prepared, item_ids, min_similarity=)`, whose
+    quotes are located in the paper, never the digest. `part_prompt_chars`
+    measures the longest prompt a part sends, for a caller's budget.
+    **Nothing is cut**: bmlibrarian's `full_text[:2000]` and `text[:3000]` are
+    not ported, and text over the budget is condensed or refused. A
+    condensation runs with `continue_on_error=False` and a digest whose run did
+    not complete is refused (`CONDENSATION_FAILED`), so no call is judged from
+    a partial digest. `PrismaError` has `PicoError`'s kinds; bad item ids, a
+    bad `min_similarity` and a paper prepared for another budget are a
+    `ValueError` before any request. `PrismaCondenser` is the map-reduce over
+    the PRISMA condensation prompts.
+
 ## [0.14.0] — 2026-11-17
 
 **The shared paper library and the evidence weight.** `bmlib.library` (Rust

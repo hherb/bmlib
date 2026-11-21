@@ -1,14 +1,41 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-17 (**release 0.14.0 / Rust crate 0.5.0, the PR on
-`release/0.14.0`**). **0.13.0 is on PyPI** (tag `v0.13.0` on `161849c0`) and
-**the crate 0.4.0 on crates.io** from the same commit. This PR makes
-`[Unreleased]` 0.14.0 / 0.5.0 (the maintainer's call, 2026-11-17: BMLibrarian
-Lite's desktop needs `bmlib.library` from PyPI). bmlibrarian_lite's Python
-suite passed against `main` at `525ea8c1` (9,201 tests), so the release does
-not break it._
+_Last updated: 2026-11-21 (**the PRISMA 2020 agent, on
+`feat/prisma2020-agent`; not pushed, no PR yet**). Release 0.14.0 / crate
+0.5.0 merged as #801 (`e7b7c98a`); the branch is based on it._
 
-## This session: release 0.14.0 / Rust crate 0.5.0 (PR open)
+## This branch: the PRISMA 2020 agent (StudyAnalyzer plan PRISMA 1)
+
+- **What**: the checklist as data, the split, the reply reader and
+  `Prisma2020Agent`, Rust and Python on par (CHANGELOG *Unreleased*, both
+  files). The plan is StudyAnalyzer's
+  `docs/superpowers/plans/2026-11-20-prisma-1-bmlib-agent.md`, the design its
+  `docs/superpowers/specs/2026-11-18-prisma2020-tab-design.md`.
+- **Held together by** `tests/fixtures/prisma2020_checklist.json`,
+  `tests/fixtures/prisma2020_parts.json` and the 17-case whole-agent oracle
+  `rust/oracle/dump_prisma2020_agent.py` (listed in
+  `scripts/rerun_rust_oracle.py`), which compares results, error kinds,
+  messages sent and condensation queries.
+- **Shared code, not copies**: PicoAgent's ask, prepare and budget check are
+  now crate functions in `pico_agent.rs` (`ask_json`, `prepare_text`,
+  `sent_within`, `wrapped_prompt`) that both agents call; the PICO oracle is
+  unchanged and clean. Rust's agent takes `full_text_agent::QueryCondenser`
+  (the plan asked for a new trait of that name; the existing seam is the same
+  one, its arguments `(query, text, label, config)`). Python's agent builds on
+  `_FullTextAgent`.
+- **Decisions to know**: a condensation (suitability's too) runs with
+  `continue_on_error(false)`, and a digest whose status is not `completed`
+  (`partial`, `truncated`) is refused as `condensation_failed`, so the
+  suitability check is stricter than PICO's, which keeps a partial digest with
+  a note. Unknown, repeated or no item ids are `PrismaError::InvalidItems` in
+  Rust and `ValueError` in Python, before any request. The default
+  `max_tokens` is 16384. `assess_part` does not check that `prepared` was
+  condensed for the same items; the caller keeps them together.
+- **Before the PR**: confirm the checklist's licence on prisma-statement.org
+  and name the page in the PR body, with the `may_be_not_applicable` choices
+  (plan, Step 7). The push and the PR wait for the maintainer.
+
+## Release 0.14.0 / Rust crate 0.5.0 (merged as #801)
 
 - **Housekeeping only; no library code changes.** Both CHANGELOGs are promoted,
   dated 2026-11-17 (re-date them if the merge slips). A script merged the
