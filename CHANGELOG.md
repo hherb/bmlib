@@ -43,9 +43,12 @@ All notable changes to bmlib are documented here. The format is based on
     not ported, and text over the budget is condensed or refused. A
     condensation runs with `continue_on_error=False` and a digest whose run did
     not complete is refused (`CONDENSATION_FAILED`), so no call is judged from
-    a partial digest. `PrismaError` has `PicoError`'s kinds; bad item ids, a
-    bad `min_similarity` and a paper prepared for another budget are a
-    `ValueError` before any request. `PrismaCondenser` is the map-reduce over
+    a partial digest. A `PrismaPrepared` digest records the items it was
+    condensed for (`condensed_for`), and `assess_part` refuses it for others,
+    so a key item re-checked alone gets a digest of its own; the whole paper
+    serves any items. `PrismaError` has `PicoError`'s kinds; bad item ids, a
+    digest for other items, a bad `min_similarity` and a paper prepared for
+    another budget are a `ValueError` before any request. `PrismaCondenser` is the map-reduce over
     the PRISMA condensation prompts.
 
 ## [0.14.0] — 2026-11-17

@@ -1711,6 +1711,52 @@ fn llm_query_condenser_takes_the_query_per_call() {
         .any(|p| p.starts_with("Extract VERBATIM") && p.contains("Needed: second need")));
 }
 
+/// One `PrismaCondenser` serves a different query on each call, over the
+/// PRISMA condensation prompts, and hands the run's progress to its callback.
+#[test]
+fn prisma_condenser_takes_the_query_per_call() {
+    use bmlib::quality::prisma2020_agent::{
+        PrismaCondenser, PRISMA_CONDENSE_CONSOLIDATION_PROMPT, PRISMA_CONDENSE_EXTRACTION_PROMPT,
+    };
+    use bmlib::quality::QueryCondenser;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    let model = MapReduceModel::new(&"M".repeat(100), "SHORT");
+    let reports = Arc::new(AtomicUsize::new(0));
+    let seen = Arc::clone(&reports);
+    let mut condenser = PrismaCondenser::new(&model, 0.1, 4096).with_progress(move |_| {
+        seen.fetch_add(1, Ordering::SeqCst);
+    });
+    let config = ProcessingConfig::default().with_max_context_chars(200);
+
+    for query in ["first need", "second need"] {
+        let result = condenser.condense(query, &"x".repeat(1_000), "a review", &config);
+        assert!(result.final_result.content.contains("SHORT"));
+    }
+
+    // The PRISMA prompts, not PICO's: each opens as its template does and
+    // keeps the line PICO's lacks.
+    let opening = |template: &str| template.lines().next().expect("a line").to_string();
+    let prisma_only = "database names, search strings";
+    let prompts = model.prompts();
+    for query in ["first need", "second need"] {
+        assert!(prompts.iter().any(
+            |p| p.starts_with(&opening(PRISMA_CONDENSE_EXTRACTION_PROMPT))
+                && p.contains(prisma_only)
+                && p.contains(&format!("Needed: {query}"))
+        ));
+    }
+    assert!(prompts.iter().any(
+        |p| p.starts_with(&opening(PRISMA_CONDENSE_CONSOLIDATION_PROMPT))
+            && p.contains(prisma_only)
+    ));
+    assert!(
+        reports.load(Ordering::SeqCst) > 0,
+        "no progress was reported"
+    );
+}
+
 #[test]
 fn llm_condenser_with_prompts_refuses_a_template_without_its_placeholders() {
     let model = MapReduceModel::new("d", "d");

@@ -22,7 +22,8 @@ The Python library is documented separately, in the repository's
   with `PicoAgent`'s builders (`with_condenser`, taking the existing
   `QueryCondenser` seam, `with_stop`, `with_temperature`, `with_max_tokens`,
   `with_max_retries`, `with_condense_config`), `check_suitability`,
-  `prepare_part` and `assess_part`; `PrismaPrepared`;
+  `prepare_part` and `assess_part` (a digest condensed for other items is
+  `InvalidItems`); `PrismaPrepared` (with `condensed_for`);
   `PrismaCondenser::new(model, temperature, max_tokens)` with
   `with_progress`; `part_prompt_chars`; the prompt constants
   (`SUITABILITY_TASK_PROMPT` and `SUITABILITY_RESPONSE_FORMAT` by module path

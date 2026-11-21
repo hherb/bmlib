@@ -386,33 +386,40 @@ impl std::error::Error for PrismaError {}
 /// Built by [`Prisma2020Agent::prepare_part`] for one part's items. It keeps
 /// the paper as passed, since quotes are located in the paper and never the
 /// digest. Hand it to [`Prisma2020Agent::assess_part`] with the same item ids,
-/// and to each retry, so a long paper is condensed once per part.
+/// and to each retry, so a long paper is condensed once per part. A digest
+/// records the items it was condensed for, and `assess_part` refuses it for
+/// any others; the whole paper serves any items.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PrismaPrepared(PicoPrepared);
+pub struct PrismaPrepared {
+    paper: PicoPrepared,
+    /// The item ids the digest was condensed for; empty when the text is sent
+    /// whole, or the digest is the suitability check's.
+    condensed_for: Vec<&'static str>,
+}
 
 impl PrismaPrepared {
     /// The title, stripped.
     #[must_use]
     pub fn title(&self) -> &str {
-        self.0.title()
+        self.paper.title()
     }
 
     /// The paper as passed, unstripped: citation offsets index it.
     #[must_use]
     pub fn text(&self) -> &str {
-        self.0.text()
+        self.paper.text()
     }
 
     /// What the model is sent: the digest, or the stripped text.
     #[must_use]
     pub fn sent(&self) -> &str {
-        self.0.sent()
+        self.paper.sent()
     }
 
     /// The stripped text's length in characters, when it was condensed.
     #[must_use]
     pub fn condensed_from_chars(&self) -> Option<usize> {
-        self.0
+        self.paper
             .condensed_from_chars()
             .and_then(|chars| usize::try_from(chars).ok())
     }
@@ -421,13 +428,20 @@ impl PrismaPrepared {
     /// when condensed.
     #[must_use]
     pub fn condensation_status(&self) -> Option<&str> {
-        self.0.condensation_status()
+        self.paper.condensation_status()
+    }
+
+    /// The item ids the digest was condensed for, in the order given; empty
+    /// when the text is sent whole or the digest is the suitability check's.
+    #[must_use]
+    pub fn condensed_for(&self) -> &[&'static str] {
+        &self.condensed_for
     }
 
     /// Notes on the condensation, carried into the result.
     #[must_use]
     pub fn notes(&self) -> &[String] {
-        self.0.notes()
+        self.paper.notes()
     }
 }
 
@@ -615,7 +629,13 @@ impl<'a> Prisma2020Agent<'a> {
         title: &str,
         text: &str,
     ) -> Result<Suitability, PrismaError> {
-        let prepared = self.prepare(title, text, SUITABILITY_CONDENSE_QUERY, SUITABILITY_STAGE)?;
+        let prepared = self.prepare(
+            title,
+            text,
+            SUITABILITY_CONDENSE_QUERY,
+            SUITABILITY_STAGE,
+            &[],
+        )?;
         let label = format!(
             "PRISMA 2020 suitability check of {}",
             repr_prefix(prepared.title())
@@ -651,7 +671,7 @@ impl<'a> Prisma2020Agent<'a> {
         item_ids: &[&'static str],
     ) -> Result<PrismaPrepared, PrismaError> {
         let query = part_query(&checklist_rows(item_ids)?);
-        self.prepare(title, text, &query, PART_STAGE)
+        self.prepare(title, text, &query, PART_STAGE, item_ids)
     }
 
     /// Judge the part of `item_ids` over `prepared`, locating every quote in
@@ -663,7 +683,8 @@ impl<'a> Prisma2020Agent<'a> {
     ///
     /// # Errors
     ///
-    /// [`PrismaError::InvalidSimilarity`], [`PrismaError::InvalidItems`],
+    /// [`PrismaError::InvalidSimilarity`], [`PrismaError::InvalidItems`] (a
+    /// digest condensed for other items included, design §6.5),
     /// [`PrismaError::PreparedOverBudget`] or
     /// [`PrismaError::PreparedUnderBudget`], before any request; otherwise
     /// [`PrismaError`] naming why no assessment could be made.
@@ -675,6 +696,15 @@ impl<'a> Prisma2020Agent<'a> {
     ) -> Result<PartAssessment, PrismaError> {
         check_similarity(min_similarity)?;
         let rows = checklist_rows(item_ids)?;
+        // A digest gathered for other items may lack what these need, so a
+        // re-check of one item must not reuse its part's (design §6.5).
+        if prepared.paper.digest().is_some() && prepared.condensed_for != item_ids {
+            return Err(PrismaError::InvalidItems(format!(
+                "the prepared paper was condensed for items {:?}, not {item_ids:?}: \
+                 prepare it for these items",
+                prepared.condensed_for
+            )));
+        }
         let label = format!(
             "PRISMA 2020 part {} of {}",
             PartPlan {
@@ -697,13 +727,15 @@ impl<'a> Prisma2020Agent<'a> {
     }
 
     /// Strip, refuse an empty input, and condense an oversized one for
-    /// `query`, refusing a digest whose run did not complete.
+    /// `query`, refusing a digest whose run did not complete; a digest
+    /// records `condensed_for`.
     fn prepare(
         &mut self,
         title: &str,
         text: &str,
         query: &str,
         stage: &str,
+        condensed_for: &[&'static str],
     ) -> Result<PrismaPrepared, PrismaError> {
         // A failed batch fails the condensation (design §6.3).
         let config = self.condense_config.clone().with_continue_on_error(false);
@@ -729,7 +761,15 @@ impl<'a> Prisma2020Agent<'a> {
                 )));
             }
         }
-        Ok(PrismaPrepared(prepared))
+        let condensed_for = if prepared.digest().is_some() {
+            condensed_for.to_vec()
+        } else {
+            Vec::new()
+        };
+        Ok(PrismaPrepared {
+            paper: prepared,
+            condensed_for,
+        })
     }
 
     /// Ask `task` over what `prepared` sends, refusing a paper prepared for
@@ -742,7 +782,7 @@ impl<'a> Prisma2020Agent<'a> {
         read: impl Fn(&Value) -> Result<T, String>,
         label: &str,
     ) -> Result<T, PrismaError> {
-        let sent = sent_within(&prepared.0, self.condense_config.max_context_chars)?;
+        let sent = sent_within(&prepared.paper, self.condense_config.max_context_chars)?;
         let sampling = Sampling {
             temperature: self.temperature,
             max_tokens: self.max_tokens,
@@ -841,6 +881,97 @@ mod tests {
             .expect_err("refused");
         assert_eq!(error.kind(), "condensation_failed");
         assert_eq!(condenser.0, [false]);
+    }
+
+    /// A condenser answering every query with one completed digest.
+    struct Completed;
+
+    impl QueryCondenser for Completed {
+        fn condense(
+            &mut self,
+            _query: &str,
+            _text: &str,
+            _label: &str,
+            _config: &ProcessingConfig,
+        ) -> ProcessingResult {
+            let mut result = ProcessingResult::failed("");
+            result.status = ProcessingStatus::Completed;
+            result.error_message = None;
+            result.final_result = crate::context_processor::ExtractionResult::new("a digest");
+            result
+        }
+    }
+
+    const LONG: &str = "a paper longer than its budget of ten characters";
+
+    #[test]
+    fn a_digest_for_other_items_is_refused_before_any_request() {
+        // design §6.5: a key item re-checked alone needs its own digest.
+        let mut chat = Silent;
+        let mut condenser = Completed;
+        let mut agent = Prisma2020Agent::new(&mut chat)
+            .with_condenser(&mut condenser)
+            .with_condense_config(ProcessingConfig::default().with_max_context_chars(10));
+        let prepared = agent
+            .prepare_part("A review", LONG, &["7", "8"])
+            .expect("condensed");
+        assert_eq!(prepared.condensed_for(), ["7", "8"]);
+        for other in [&["7"][..], &["8", "7"][..], &["7", "8", "9"][..]] {
+            let error = agent
+                .assess_part(&prepared, other, 0.9)
+                .expect_err("refused");
+            assert_eq!(error.kind(), "invalid_items", "{other:?}");
+        }
+        let suitability = agent
+            .prepare(
+                "A review",
+                LONG,
+                SUITABILITY_CONDENSE_QUERY,
+                SUITABILITY_STAGE,
+                &[],
+            )
+            .expect("condensed");
+        let error = agent
+            .assess_part(&suitability, &["7"], 0.9)
+            .expect_err("refused");
+        assert_eq!(error.kind(), "invalid_items");
+    }
+
+    /// A chat answering every request with an empty part, counting requests.
+    struct EmptyPart(usize);
+
+    impl JsonChat for EmptyPart {
+        fn chat_json(
+            &mut self,
+            _messages: &[crate::llm::LLMMessage],
+            _temperature: f64,
+            _max_tokens: i64,
+            _max_retries: usize,
+            _require_dict: bool,
+        ) -> Result<crate::agents::ChatJsonOutcome, crate::agents::ChatJsonError> {
+            self.0 += 1;
+            Ok(crate::agents::ChatJsonOutcome {
+                value: serde_json::json!({"items": []}),
+                attempts: 1,
+                repaired: false,
+            })
+        }
+    }
+
+    #[test]
+    fn a_whole_paper_serves_any_items() {
+        let mut chat = EmptyPart(0);
+        let mut agent = Prisma2020Agent::new(&mut chat);
+        let prepared = agent
+            .prepare_part("A review", LONG, &["7", "8"])
+            .expect("whole");
+        assert!(prepared.condensed_for().is_empty());
+        for subset in [&["7"][..], &["8"][..], &["13d", "7"][..]] {
+            let part = agent.assess_part(&prepared, subset, 0.9).expect("assessed");
+            assert_eq!(part.missing, subset);
+        }
+        drop(agent);
+        assert_eq!(chat.0, 3);
     }
 
     #[test]

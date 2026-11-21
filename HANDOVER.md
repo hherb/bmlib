@@ -28,9 +28,10 @@ _Last updated: 2026-11-21 (**the PRISMA 2020 agent, on
   (`partial`, `truncated`) is refused as `condensation_failed`, so the
   suitability check is stricter than PICO's, which keeps a partial digest with
   a note. Unknown, repeated or no item ids are `PrismaError::InvalidItems` in
-  Rust and `ValueError` in Python, before any request. The default
-  `max_tokens` is 16384. `assess_part` does not check that `prepared` was
-  condensed for the same items; the caller keeps them together.
+  Rust and `ValueError` in Python, before any request, and so is a digest
+  `prepared` for other items (`PrismaPrepared::condensed_for`; the whole
+  paper serves any items), so §6.5's one-item re-check cannot reuse its
+  part's digest. The default `max_tokens` is 16384.
 - **Before the PR**: confirm the checklist's licence on prisma-statement.org
   and name the page in the PR body, with the `may_be_not_applicable` choices
   (plan, Step 7). The push and the PR wait for the maintainer.

@@ -50,6 +50,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, TypeVar
 
@@ -90,10 +91,58 @@ logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
 
-#: A paper made ready for one call: :class:`~bmlib.quality.pico_models.PicoPrepared`
-#: itself, which keeps the paper (quotes are located in it) beside the digest.
-#: Rust's ``PrismaPrepared`` wraps the same value.
-PrismaPrepared = PicoPrepared
+
+@dataclass(frozen=True)
+class PrismaPrepared:
+    """A paper made ready for one part: the text whole, or its digest.
+
+    Built by :meth:`Prisma2020Agent.prepare_part`.  It keeps the paper as
+    passed, since quotes are located in the paper and never the digest.  A
+    digest records the items it was condensed for, and
+    :meth:`Prisma2020Agent.assess_part` refuses it for any others (design 6.5:
+    a key item re-checked alone needs its own digest); the whole paper serves
+    any items.  Rust's ``PrismaPrepared`` is the same.
+
+    Attributes:
+        paper: The prepared paper, checked as
+            :class:`~bmlib.quality.pico_models.PicoPrepared` checks it.
+        condensed_for: The item ids the digest was condensed for, in the order
+            given; empty when the text is sent whole.
+    """
+
+    paper: PicoPrepared
+    condensed_for: tuple[str, ...] = ()
+
+    @property
+    def title(self) -> str:
+        """The title, stripped."""
+        return self.paper.title
+
+    @property
+    def text(self) -> str:
+        """The paper as passed, unstripped: citation offsets index it."""
+        return self.paper.text
+
+    @property
+    def sent(self) -> str:
+        """What the model is sent: the digest, or the stripped text."""
+        return self.paper.sent
+
+    @property
+    def condensed_from_chars(self) -> int | None:
+        """The stripped text's length when it was condensed; ``None`` when not."""
+        return self.paper.condensed_from_chars
+
+    @property
+    def condensation_status(self) -> str | None:
+        """The condensation's status (always ``"completed"``), when condensed."""
+        return self.paper.condensation_status
+
+    @property
+    def notes(self) -> tuple[str, ...]:
+        """Notes on the condensation, carried into the result."""
+        return self.paper.notes
+
 
 # --- Prompts (byte-identical in the Rust port) ---
 
@@ -537,8 +586,10 @@ class Prisma2020Agent(_FullTextAgent):
                 whose run did not complete included), ``REQUEST_FAILED`` (a
                 condensation request, #616) or ``STOPPED``.
         """
-        query = part_query(_checklist_rows(item_ids))
-        return self._prepare(title, text, query, _PART_STAGE)
+        rows = _checklist_rows(item_ids)
+        paper = self._prepare(title, text, part_query(rows), _PART_STAGE)
+        condensed_for = tuple(row.id for row in rows) if paper.digest is not None else ()
+        return PrismaPrepared(paper, condensed_for)
 
     def assess_part(
         self, prepared: PrismaPrepared, item_ids: Sequence[str], *, min_similarity: float
@@ -551,17 +602,25 @@ class Prisma2020Agent(_FullTextAgent):
 
         Raises:
             ValueError: *min_similarity* is not a number in (0, 1], *item_ids*
-                are none, repeated or not on the checklist, or *prepared* was
-                made for another budget, before any request.
+                are none, repeated or not on the checklist, *prepared* is a
+                digest condensed for other items (Rust's ``InvalidItems``), or
+                it was made for another budget, before any request.
             PrismaError: Naming why no assessment could be made.
         """
         similarity = check_min_similarity(min_similarity)
         rows = _checklist_rows(item_ids)
         ids = [row.id for row in rows]
+        # A digest gathered for other items may lack what these need, so a
+        # re-check of one item must not reuse its part's (design 6.5).
+        if prepared.paper.digest is not None and prepared.condensed_for != tuple(ids):
+            raise ValueError(
+                f"the prepared paper was condensed for items {list(prepared.condensed_for)}, "
+                f"not {ids}: prepare it for these items"
+            )
         part = self._ask(
             _part_task(rows),
             PART_RESPONSE_FORMAT,
-            prepared,
+            prepared.paper,
             lambda data: read_part_reply(data, ids, prepared.text, similarity),
             f"PRISMA 2020 part {PartPlan(tuple(ids)).label()} of {prepared.title[:LABEL_CHARS]!r}",
         )

@@ -45,6 +45,7 @@ from bmlib.quality.prisma2020_agent import (
     Prisma2020Agent,
     PrismaError,
     PrismaErrorKind,
+    PrismaPrepared,
     part_prompt_chars,
 )
 from bmlib.quality.prisma2020_checklist import item
@@ -282,3 +283,27 @@ def test_part_prompt_chars_holds_the_longest_prompt() -> None:
     sent = sum(len(m.content) for m in agent.llm.chat.call_args.kwargs["messages"])
     assert sent - len("x") <= part_prompt_chars(IDS)
     assert part_prompt_chars(IDS) < part_prompt_chars([*IDS, "13d"])
+
+
+@pytest.mark.parametrize("other", [["7"], ["8", "7"], ["7", "8", "9"]])
+def test_a_digest_for_other_items_is_refused_before_any_request(other: list[str]) -> None:
+    # Design 6.5: a key item re-checked alone needs a digest of its own.
+    agent = make_agent(_part_reply(), condense_config=SMALL)
+    with condensing():
+        prepared = agent.prepare_part(TITLE, TEXT, ["7", "8"])
+        suitability = agent._prepare(TITLE, TEXT, SUITABILITY_CONDENSE_QUERY, "s")
+    assert prepared.condensed_for == ("7", "8")
+    with pytest.raises(ValueError, match="condensed for items"):
+        agent.assess_part(prepared, other, min_similarity=SIM)
+    with pytest.raises(ValueError, match="condensed for items"):
+        agent.assess_part(PrismaPrepared(suitability), ["7"], min_similarity=SIM)
+    assert agent.llm.chat.call_count == 0
+
+
+def test_a_whole_paper_serves_any_items() -> None:
+    agent = make_agent({"items": []})
+    prepared = agent.prepare_part(TITLE, TEXT, ["7", "8"])
+    assert prepared.condensed_for == ()
+    for subset in (["7"], ["8"], ["13d", "7"]):
+        assert agent.assess_part(prepared, subset, min_similarity=SIM).missing == subset
+    assert agent.llm.chat.call_count == 3
