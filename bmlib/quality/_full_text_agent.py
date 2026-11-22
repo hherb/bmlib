@@ -16,12 +16,14 @@
 
 """The base of the agents that put one question to the model over a paper's full text.
 
-The design proposal, the primary-outcome extraction and the RoB 2 agent all
-do the same plumbing: refuse a bad stop or window up front, condense a paper
-that does not fit once (for a query of their own), ask until the reply reads,
-and never send a request once the caller's stop is set.  That lives here once;
-each agent keeps its own prompts, its own reader and its own error kinds, by
-saying how a failure becomes its exception (:meth:`_FullTextAgent._error`).
+The design proposal, the primary-outcome extraction, the RoB 2 agent and the
+PRISMA 2020 agent all do the same plumbing: refuse a bad stop or window up
+front, condense a paper that does not fit once (for a query of their own), ask
+until the reply reads, and never send a request once the caller's stop is set.
+That lives here once; each agent keeps its own prompts, its own reader and its
+own error kinds, by saying how a failure becomes its exception
+(:meth:`_FullTextAgent._error`, and :meth:`_FullTextAgent._chat_error` for a
+failed request where its kinds are finer).
 
 Private: the agents are the API.  :class:`PicoAgent` predates this and keeps
 its own copy of the same rules.
@@ -146,8 +148,9 @@ class LlmQueryCondenser:
 class _FullTextAgent(BaseAgent):
     """An agent that asks one question over a paper, condensing it first if needed.
 
-    Subclasses implement :meth:`_error` and call :meth:`_condense_once` and
-    :meth:`_ask_until_readable`.
+    Subclasses implement :meth:`_error` (and may override :meth:`_chat_error`)
+    and call :meth:`_condense_once` (or :meth:`_condense`, to keep the notes and
+    status) and :meth:`_ask_until_readable`.
 
     Args:
         llm: The client requests go through.
@@ -232,7 +235,17 @@ class _FullTextAgent(BaseAgent):
             raise self._error(AgentFailure.STOPPED, STOPPED_MESSAGE) from cause
 
     def _condense_once(self, title: str, text: str, query: str, stage: str) -> str:
-        """Condense *text* for *query*, returning the digest.
+        """Condense *text* for *query* within ``condense_config``, returning the digest.
+
+        :meth:`_condense`'s rules; its notes and status are not kept.
+        """
+        digest, _notes, _status = self._condense(title, text, query, stage, self.condense_config)
+        return digest
+
+    def _condense(
+        self, title: str, text: str, query: str, stage: str, config: ProcessingConfig
+    ) -> tuple[str, list[str], ProcessingStatus]:
+        """Condense *text* for *query* within *config*: the digest, its notes and status.
 
         A bmlib defect or missing SDK behind a failed condensation propagates
         unwrapped; a stop wins over whatever else went wrong.
@@ -240,11 +253,11 @@ class _FullTextAgent(BaseAgent):
         self._raise_if_stopped()
         defect: BaseException | None = None
         try:
-            digest, _notes, _status = self.condenser.condense(
+            digest, notes, status = self.condenser.condense(
                 query,
                 text,
                 title[:LABEL_CHARS],
-                self.condense_config,
+                config,
                 stage=stage,
             )
         except ProcessingStoppedError as exc:
@@ -257,7 +270,7 @@ class _FullTextAgent(BaseAgent):
             else:
                 message = (
                     f"a {len(text)}-character text could not be condensed to fit "
-                    f"{self.condense_config.max_context_chars} characters: {exc}"
+                    f"{config.max_context_chars} characters: {exc}"
                 )
                 if cause is None:
                     raise self._error(AgentFailure.CONDENSATION_FAILED, message) from exc
@@ -268,10 +281,26 @@ class _FullTextAgent(BaseAgent):
                     http_status(cause),
                 ) from exc
         if defect is not None:
+            # Raised outside the handler, so it is not chained to its own effect.
             raise defect
         # A run stopped part-way can finish with a partial digest, which is no digest.
         self._raise_if_stopped()
-        return digest
+        return digest, notes, status
+
+    def _chat_error(self, exc: Exception) -> Exception:
+        """The error a failed ``chat_json`` call is reported as.
+
+        An unusable or cut-off reply is ``UNREADABLE``, anything else
+        ``REQUEST_FAILED``.  An agent with finer kinds overrides this.
+        """
+        if isinstance(exc, ChatJsonTruncatedError | ChatJsonError):
+            return self._error(AgentFailure.UNREADABLE, str(exc))
+        return self._error(
+            AgentFailure.REQUEST_FAILED,
+            str(exc),
+            is_retryable_request(exc),
+            http_status(exc),
+        )
 
     def _ask_until_readable(
         self,
@@ -301,14 +330,7 @@ class _FullTextAgent(BaseAgent):
                 raise
             except Exception as exc:
                 self._raise_if_stopped(exc)
-                if isinstance(exc, ChatJsonTruncatedError | ChatJsonError):
-                    raise self._error(AgentFailure.UNREADABLE, str(exc)) from exc
-                raise self._error(
-                    AgentFailure.REQUEST_FAILED,
-                    str(exc),
-                    is_retryable_request(exc),
-                    http_status(exc),
-                ) from exc
+                raise self._chat_error(exc) from exc
             try:
                 return read(data)
             except UnreadableReplyError as exc:

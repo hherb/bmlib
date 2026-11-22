@@ -31,6 +31,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bmlib.agents.base import JSON_CORRECTION_NOTE, ChatJsonError, ChatJsonTruncatedError
 from bmlib.context_processor import (
     ExtractionResult,
     LLMChunkProcessor,
@@ -39,14 +40,18 @@ from bmlib.context_processor import (
     ProcessingStatus,
 )
 from bmlib.llm.data_types import LLMResponse
+from bmlib.quality._condense import CondensationRefusedError
 from bmlib.quality.prisma2020_agent import (
+    PRISMA_CONDENSE_EXTRACTION_PROMPT,
     PRISMA_SYSTEM_PROMPT,
     SUITABILITY_CONDENSE_QUERY,
     Prisma2020Agent,
     PrismaError,
     PrismaErrorKind,
     PrismaPrepared,
+    _longest_prompt_chars,
     part_prompt_chars,
+    suitability_prompt_chars,
 )
 from bmlib.quality.prisma2020_checklist import item
 from bmlib.quality.prisma2020_models import Judgement
@@ -125,6 +130,13 @@ def condensing(content: str = DIGEST, status: ProcessingStatus = ProcessingStatu
 
 
 SMALL = ProcessingConfig(max_context_chars=150)
+
+
+def _status_error(status: int) -> ConnectionError:
+    """A provider failure answered with HTTP *status*."""
+    error = ConnectionError(f"HTTP {status}")
+    error.status_code = status  # type: ignore[attr-defined]
+    return error
 
 
 @pytest.fixture(autouse=True)
@@ -277,12 +289,143 @@ def test_a_part_prepared_for_another_budget_is_refused() -> None:
         make_agent(_part_reply()).assess_part(prepared, IDS, min_similarity=SIM)
 
 
+#: What a retry after an unparseable reply adds to the question (#717).
+_CORRECTION_CHARS = len("\n\n" + JSON_CORRECTION_NOTE)
+
+
+def _sent_chars(agent: Prisma2020Agent) -> list[int]:
+    """Each request's characters, the one-character paper ``"x"`` left out."""
+    return [
+        sum(len(m.content) for m in call.kwargs["messages"]) - len("x")
+        for call in agent.llm.chat.call_args_list
+    ]
+
+
+def _unparseable_first(agent: Prisma2020Agent) -> None:
+    """Make *agent*'s model answer one unparseable reply before its scripted ones."""
+    bad = LLMResponse(
+        content="not json", model="test:model", input_tokens=1, output_tokens=1, stop_reason="stop"
+    )
+    agent.llm.chat.side_effect = [bad, *agent.llm.chat.side_effect]
+
+
 def test_part_prompt_chars_holds_the_longest_prompt() -> None:
     agent = make_agent(_part_reply())
     agent.assess_part(agent.prepare_part("", "x", IDS), IDS, min_similarity=SIM)
-    sent = sum(len(m.content) for m in agent.llm.chat.call_args.kwargs["messages"])
-    assert sent - len("x") <= part_prompt_chars(IDS)
+    assert _sent_chars(agent) == [part_prompt_chars(IDS) - _CORRECTION_CHARS]
     assert part_prompt_chars(IDS) < part_prompt_chars([*IDS, "13d"])
+
+
+def test_suitability_prompt_chars_holds_the_check_prompt() -> None:
+    agent = make_agent(_SUITABLE)
+    agent.check_suitability("", "x")
+    assert _sent_chars(agent) == [suitability_prompt_chars() - _CORRECTION_CHARS]
+    assert suitability_prompt_chars() > len(PRISMA_SYSTEM_PROMPT)
+
+
+def test_the_measures_hold_a_retry_after_an_unparseable_reply() -> None:
+    # The retry carries JSON_CORRECTION_NOTE, so it is the longest request.
+    agent = make_agent(_SUITABLE)
+    _unparseable_first(agent)
+    agent.check_suitability("", "x")
+    measure = suitability_prompt_chars()
+    assert _sent_chars(agent) == [measure - _CORRECTION_CHARS, measure]
+
+    agent = make_agent(_part_reply())
+    _unparseable_first(agent)
+    agent.assess_part(agent.prepare_part("", "x", IDS), IDS, min_similarity=SIM)
+    measure = part_prompt_chars(IDS)
+    assert _sent_chars(agent) == [measure - _CORRECTION_CHARS, measure]
+
+
+def test_the_measure_holds_a_condensation_prompt_longer_than_the_question() -> None:
+    # No checklist query makes a condensation prompt the longest, so the
+    # shared helper is driven directly with a long one.
+    query = "q" * 5000
+    extraction = PRISMA_CONDENSE_EXTRACTION_PROMPT.replace("{query}", query)
+    assert _longest_prompt_chars("", "", query) == (
+        len(PRISMA_SYSTEM_PROMPT) + len(extraction.replace("{content}", "")) + _CORRECTION_CHARS
+    )
+
+
+@pytest.mark.parametrize(
+    ("raised", "kind", "retryable", "status"),
+    [
+        (ChatJsonTruncatedError("cut off"), PrismaErrorKind.TRUNCATED, False, None),
+        (ChatJsonError("no JSON"), PrismaErrorKind.UNUSABLE_REPLY, False, None),
+        (_status_error(401), PrismaErrorKind.REQUEST_FAILED, False, 401),
+        (_status_error(503), PrismaErrorKind.REQUEST_FAILED, True, 503),
+    ],
+)
+def test_a_failed_request_keeps_prismas_kinds(
+    raised: Exception, kind: PrismaErrorKind, retryable: bool, status: int | None
+) -> None:
+    agent = make_agent(_SUITABLE)
+    with (
+        patch.object(agent, "chat_json", side_effect=raised),
+        pytest.raises(PrismaError) as caught,
+    ):
+        agent.check_suitability(TITLE, TEXT)
+    assert (caught.value.kind, caught.value.retryable, caught.value.status) == (
+        kind,
+        retryable,
+        status,
+    )
+    assert caught.value.__cause__ is raised
+
+
+def test_two_unreadable_replies_are_an_unusable_reply() -> None:
+    agent = make_agent({})
+    with pytest.raises(PrismaError, match="2 replies could not be read") as caught:
+        agent.check_suitability(TITLE, TEXT)
+    assert caught.value.kind is PrismaErrorKind.UNUSABLE_REPLY
+    assert agent.llm.chat.call_count == 2
+
+
+def test_a_defect_behind_a_request_propagates_unwrapped() -> None:
+    agent = make_agent(_SUITABLE)
+    with (
+        patch.object(agent, "chat_json", side_effect=TypeError("a bmlib bug")),
+        pytest.raises(TypeError, match="a bmlib bug"),
+    ):
+        agent.check_suitability(TITLE, TEXT)
+
+
+class _Refusing:
+    """A condenser whose map-reduce is refused, behind *cause*."""
+
+    def __init__(self, cause: BaseException | None) -> None:
+        self.cause = cause
+
+    def condense(self, *args: Any, **kwargs: Any) -> Any:
+        raise CondensationRefusedError("the map-reduce failed") from self.cause
+
+
+def test_a_refused_condensation_carries_the_requests_status() -> None:
+    agent = make_agent(_SUITABLE, condenser=_Refusing(_status_error(401)), condense_config=SMALL)
+    with pytest.raises(PrismaError) as caught:
+        agent.check_suitability(TITLE, TEXT)
+    assert (caught.value.kind, caught.value.retryable, caught.value.status) == (
+        PrismaErrorKind.REQUEST_FAILED,
+        False,
+        401,
+    )
+
+
+def test_a_refused_condensation_without_a_request_failure_failed_the_condensation() -> None:
+    agent = make_agent(_SUITABLE, condenser=_Refusing(None), condense_config=SMALL)
+    with pytest.raises(PrismaError, match="could not be condensed") as caught:
+        agent.check_suitability(TITLE, TEXT)
+    assert caught.value.kind is PrismaErrorKind.CONDENSATION_FAILED
+
+
+def test_a_defect_behind_a_refused_condensation_propagates_unchained() -> None:
+    agent = make_agent(
+        _SUITABLE, condenser=_Refusing(TypeError("a bmlib bug")), condense_config=SMALL
+    )
+    with pytest.raises(TypeError, match="a bmlib bug") as caught:
+        agent.check_suitability(TITLE, TEXT)
+    assert caught.value.__context__ is None
 
 
 @pytest.mark.parametrize("other", [["7"], ["8", "7"], ["7", "8", "9"]])

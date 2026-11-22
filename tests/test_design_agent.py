@@ -26,6 +26,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bmlib.agents.base import ChatJsonError, ChatJsonTruncatedError
 from bmlib.citations import PassageContradiction
 from bmlib.context_processor import ProcessingConfig, ProcessingStatus
 from bmlib.llm.data_types import LLMResponse
@@ -331,6 +332,18 @@ class TestTheAgent:
 
         assert raised.value.kind is ProposalErrorKind.REQUEST_FAILED
         assert (raised.value.retryable, raised.value.status) == (retryable, status)
+
+    @pytest.mark.parametrize("raised", [ChatJsonTruncatedError("cut off"), ChatJsonError("no")])
+    def test_a_cut_off_or_unusable_reply_is_unreadable(self, raised: Exception) -> None:
+        # _FullTextAgent._chat_error's default, which PRISMA overrides.
+        agent = make_agent(reply())
+        with (
+            patch.object(agent, "chat_json", side_effect=raised),
+            pytest.raises(ProposalError) as caught,
+        ):
+            agent.propose("A trial", TEXT, min_similarity=SIM)
+        assert caught.value.kind is ProposalErrorKind.UNREADABLE
+        assert caught.value.__cause__ is raised
 
     def test_a_request_that_failed_the_condensation_carries_the_refusals_status(self) -> None:
         from bmlib.quality._condense import CondensationRefusedError

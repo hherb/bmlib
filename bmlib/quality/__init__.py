@@ -120,6 +120,7 @@ from bmlib.quality.prisma2020_agent import (
     PrismaErrorKind,
     PrismaPrepared,
     part_prompt_chars,
+    suitability_prompt_chars,
 )
 from bmlib.quality.prisma2020_checklist import (
     CHECKLIST,
@@ -226,6 +227,7 @@ __all__ = [
     "PrismaErrorKind",
     "PrismaPrepared",
     "part_prompt_chars",
+    "suitability_prompt_chars",
     "CHECKLIST",
     "KEY_ITEMS",
     "ChecklistItem",
