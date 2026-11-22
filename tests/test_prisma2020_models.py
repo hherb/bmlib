@@ -105,12 +105,79 @@ def test_missing_item_is_listed() -> None:
     assert [row.id for row in part.items] == ["7"]
 
 
-def test_extra_item_is_ignored(caplog: pytest.LogCaptureFixture) -> None:
+def test_extra_item_is_listed_unasked() -> None:
     reply = _reply(_entry("7", "reported", [QUOTE]), _entry("99", "reported"))
+    part = read_part_reply(reply, ["7"], TEXT, 0.85)
+    assert [row.id for row in part.items] == ["7"]
+    assert part.unasked == ["99"]
+    assert part.to_dict()["unasked"] == ["99"]
+
+
+def test_unasked_ids_keep_the_reply_s_order_and_spelling(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # #807: an app shows these, so they are the reply's own ids, off the
+    # checklist or not, an integer read as its digits as an asked one is.
+    reply = _reply(
+        _entry("99", "reported"),
+        _entry("7", "reported", [QUOTE]),
+        {**_entry("5", "reported"), "id": 5},
+        _entry("13a", "not_reported"),
+    )
     with caplog.at_level(logging.WARNING, logger="bmlib.quality.prisma2020_models"):
         part = read_part_reply(reply, ["7"], TEXT, 0.85)
+    assert part.unasked == ["99", "5", "13a"]
     assert [row.id for row in part.items] == ["7"]
-    assert any(r.levelno == logging.WARNING and "99" in r.getMessage() for r in caplog.records)
+    assert part.missing == []
+    assert [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == "bmlib.quality.prisma2020_models" and r.levelno == logging.WARNING
+    ] == [
+        f"PRISMA reply has item {item_id!r}, which was not asked; its answer is not read"
+        for item_id in ["99", "5", "13a"]
+    ]
+
+
+def test_an_unasked_answer_is_not_read() -> None:
+    # Checking it would turn a harmless extra into a re-ask of the whole part.
+    bad = {"id": "99", "judgement": "maybe", "explanation": 5, "quotes": 7}
+    part = read_part_reply(_reply(_entry("7", "reported", [QUOTE]), bad), ["7"], TEXT, 0.85)
+    assert [row.id for row in part.items] == ["7"]
+    assert part.unasked == ["99"]
+
+
+def test_an_unasked_id_given_twice_is_unreadable() -> None:
+    reply = _reply(_entry("99", "reported"), {**_entry("99", "reported"), "id": 99})
+    with pytest.raises(ValueError, match="duplicate item id '99'"):
+        read_part_reply(reply, ["7"], TEXT, 0.85)
+
+
+def test_a_negative_zero_id_is_read_as_0() -> None:
+    # serde_json reads the literal ``-0`` as ``-0.0``, which Rust reads as "0".
+    part = read_part_reply(_reply({**_entry("0", "reported"), "id": -0.0}), ["7"], TEXT, 0.85)
+    assert (part.unasked, part.missing) == (["0"], ["7"])
+
+
+@pytest.mark.parametrize("big", [2**64, -(2**63) - 1])
+def test_an_integer_id_outside_i64_and_u64_is_unreadable(big: int) -> None:
+    # serde_json holds it as a float, which Rust refuses.
+    with pytest.raises(ValueError, match="out of range"):
+        read_part_reply(_reply({**_entry("7", "reported"), "id": big}), ["7"], TEXT, 0.85)
+
+
+def test_the_integer_id_range_ends_are_read() -> None:
+    reply = _reply(
+        {**_entry("a", "reported"), "id": 2**64 - 1}, {**_entry("b", "reported"), "id": -(2**63)}
+    )
+    part = read_part_reply(reply, ["7"], TEXT, 0.85)
+    assert part.unasked == [str(2**64 - 1), str(-(2**63))]
+
+
+def test_a_reply_of_only_asked_items_lists_none_unasked() -> None:
+    part = read_part_reply(_reply(_entry("7", "reported", [QUOTE])), ["7", "8"], TEXT, 0.85)
+    assert part.unasked == []
+    assert part.to_dict()["unasked"] == []
 
 
 def test_unknown_judgement_is_unreadable() -> None:

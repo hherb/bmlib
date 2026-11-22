@@ -32,6 +32,7 @@ Rust's ``rust/bmlib/src/quality/prisma2020_models.rs`` is the same.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -90,10 +91,16 @@ class ItemAssessment:
 
 @dataclass
 class PartAssessment:
-    """The items of one part, the asked ids the reply left out, and run notes."""
+    """One part's items, the asked ids left out, the ids answered unasked, run notes.
+
+    ``unasked`` lists the ids the reply answered although they were not asked,
+    in the reply's order and as it spelled them (an integer read as its
+    digits); their answers are not read (#807).
+    """
 
     items: list[ItemAssessment] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
+    unasked: list[str] = field(default_factory=list)
     condensed_from_chars: int | None = None
     condensation_status: str | None = None
     notes: list[str] = field(default_factory=list)
@@ -103,6 +110,7 @@ class PartAssessment:
         return {
             "items": [i.to_dict() for i in self.items],
             "missing": list(self.missing),
+            "unasked": list(self.unasked),
             "condensed_from_chars": self.condensed_from_chars,
             "condensation_status": self.condensation_status,
             "notes": list(self.notes),
@@ -174,8 +182,9 @@ def read_part_reply(
     """Read a part's reply and verify every item's quotes against *text*.
 
     Items come back in the order of *asked*.  An item the reply lacks is listed
-    in ``missing``; one it adds (not in *asked*) is dropped with a WARNING.  An
-    integer id is read as its decimal digits (``7`` as ``"7"``).
+    in ``missing``; one it adds (not in *asked*) is listed in ``unasked``, its
+    answer unread, with a WARNING.  An integer id is read as its decimal digits
+    (``7`` as ``"7"``).
 
     Raises:
         UnreadableReplyError: A ``ValueError`` saying that ``items`` is not a
@@ -195,17 +204,27 @@ def read_part_reply(
         item_id = entry.get("id")
         # ``"id": 7`` reads as "7" (ruling 8): a re-ask for that slip would
         # cost the whole part.  ``bool`` is an ``int`` to Python, not an id.
+        # serde_json reads ``-0`` as the float ``-0.0`` and an integer past
+        # i64 / u64 as a float, so Rust reads the one as "0" and refuses the
+        # other, and so does this.
+        if isinstance(item_id, float) and item_id == 0.0 and math.copysign(1.0, item_id) < 0:
+            item_id = 0
         if isinstance(item_id, int) and not isinstance(item_id, bool):
+            if not -(2**63) <= item_id < 2**64:
+                raise UnreadableReplyError("an item's id is an integer out of range")
             item_id = str(item_id)
         if not isinstance(item_id, str):
             raise UnreadableReplyError(f"an item's id is a {type(item_id).__name__}, not text")
         if item_id in by_id:
             raise UnreadableReplyError(f"duplicate item id {item_id!r}")
         by_id[item_id] = entry
-    for extra in by_id.keys() - set(asked):
-        logger.warning("PRISMA reply has item %r, which was not asked; ignored", extra)
+    unasked = [item_id for item_id in by_id if item_id not in asked]
+    for extra in unasked:
+        logger.warning(
+            "PRISMA reply has item %r, which was not asked; its answer is not read", extra
+        )
 
-    part = PartAssessment()
+    part = PartAssessment(unasked=unasked)
     for item_id in asked:
         row = checklist_item(item_id)
         if row is None:

@@ -11,7 +11,7 @@ All notable changes to bmlib are documented here. The format is based on
 - **A PRISMA 2020 reporting agent** (StudyAnalyzer's PRISMA tab, design
   `2026-11-18-prisma2020-tab-design.md`; both languages, held together by
   `tests/fixtures/prisma2020_checklist.json`, `prisma2020_parts.json` and a
-  18-case whole-agent oracle, `rust/oracle/dump_prisma2020_agent.py`).
+  20-case whole-agent oracle, `rust/oracle/dump_prisma2020_agent.py`).
   - `quality.prisma2020_checklist`: the 42 items and sub-items as data, the
     checklist's wording verbatim (Page MJ et al., *BMJ* 2021;372:n71, CC BY
     4.0), each with a rubric per judgement, a condensation hint, whether it is
@@ -26,10 +26,12 @@ All notable changes to bmlib are documented here. The format is based on
     `verify_quotes`, and a claim other than `not_reported` with no located
     quote, or a `not_applicable` the item does not allow, is shown as
     `not_reported` and flagged `unbacked`; a `not_reported` is never upgraded.
-    An item the reply leaves out is listed in `missing`, one it adds is
-    dropped with a WARNING, and an integer id reads as its digits (`7` as
-    `"7"`). `read_suitability` reads the suitability reply, its `variant` kept
-    as the model's string.
+    An item the reply leaves out is listed in `missing`, and one it adds is
+    listed in `unasked` (#807, reply order, its answer unread) with a
+    WARNING, so an app can show it; an integer id reads as its digits (`7`
+    as `"7"`), a negative zero as `"0"`, and one outside i64 / u64 is
+    refused, as serde_json reads them. `read_suitability` reads the
+    suitability reply, its `variant` kept as the model's string.
   - `quality.prisma2020_agent`: `Prisma2020Agent` with `PicoAgent`'s options
     (`num_ctx`, `stop`, `condense_progress`, and a `condenser`), whose caller
     drives the parts. `check_suitability(title, text)` (a systematic review or

@@ -124,13 +124,19 @@ impl ItemAssessment {
     }
 }
 
-/// The items of one part, the asked ids the reply left out, and run notes.
+/// One part's items, the asked ids left out, the ids answered unasked, run notes.
+///
+/// `unasked` lists the ids the reply answered although they were not asked,
+/// in the reply's order and as it spelled them (an integer read as its
+/// digits); their answers are not read (#807).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct PartAssessment {
     /// The items read, in the order asked.
     pub items: Vec<ItemAssessment>,
     /// Asked ids the reply did not contain.
     pub missing: Vec<&'static str>,
+    /// Ids the reply answered that were not asked, in the reply's order.
+    pub unasked: Vec<String>,
     /// The paper's length before condensing, when it was condensed.
     pub condensed_from_chars: Option<usize>,
     /// How condensing went.
@@ -145,6 +151,7 @@ impl PartAssessment {
         json!({
             "items": self.items.iter().map(ItemAssessment::to_json).collect::<Vec<_>>(),
             "missing": self.missing,
+            "unasked": self.unasked,
             "condensed_from_chars": self.condensed_from_chars,
             "condensation_status": self.condensation_status,
             "notes": self.notes,
@@ -231,8 +238,9 @@ fn text_field(value: Option<&Value>, name: &str) -> Result<String, String> {
 /// Read a part's reply and verify every item's quotes against `text`.
 ///
 /// Items come back in the order of `asked`. An item the reply lacks is listed
-/// in `missing`; one it adds (not in `asked`) is dropped with a WARN. An
-/// integer id is read as its decimal digits (`7` as `"7"`).
+/// in `missing`; one it adds (not in `asked`) is listed in `unasked`, its
+/// answer unread, with a WARN. An integer id is read as its decimal digits
+/// (`7` as `"7"`).
 ///
 /// # Errors
 ///
@@ -253,6 +261,7 @@ pub fn read_part_reply(
         )
     })?;
     let mut by_id: HashMap<String, &Value> = HashMap::new();
+    let mut unasked = Vec::new();
     for entry in entries {
         if !entry.is_object() {
             return Err(format!(
@@ -265,21 +274,35 @@ pub fn read_part_reply(
             // `"id": 7` reads as "7" (ruling 8): a re-ask for that slip would
             // cost the whole part.
             Some(Value::Number(number)) if number.is_i64() || number.is_u64() => number.to_string(),
+            // serde_json reads `-0` as `-0.0`; Python reads it as the integer 0.
+            Some(Value::Number(number))
+                if number
+                    .as_f64()
+                    .is_some_and(|f| f == 0.0 && f.is_sign_negative()) =>
+            {
+                "0".to_string()
+            }
             _ => return Err("an item's id is not text".to_string()),
         };
         if by_id.contains_key(&id) {
             return Err(format!("duplicate item id {id:?}"));
         }
+        if !asked.contains(&id.as_str()) {
+            unasked.push(id.clone());
+        }
         by_id.insert(id, entry);
     }
-    for id in by_id.keys().filter(|id| !asked.contains(&id.as_str())) {
+    for id in &unasked {
         log::warn!(
             target: "bmlib.quality.prisma2020_models",
-            "PRISMA reply has item {id:?}, which was not asked; ignored"
+            "PRISMA reply has item {id:?}, which was not asked; its answer is not read"
         );
     }
 
-    let mut part = PartAssessment::default();
+    let mut part = PartAssessment {
+        unasked,
+        ..PartAssessment::default()
+    };
     for &asked_id in asked {
         let row =
             item(asked_id).ok_or_else(|| format!("item {asked_id:?} is not on the checklist"))?;

@@ -1,129 +1,59 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-21 (**the PRISMA 2020 agent, on
-`feat/prisma2020-agent`, PR open**; merged with main after #794/#802).
+_Last updated: 2026-11-22 (**#807, the PR on `feat/prisma-unasked-807`**).
 **0.14.0 is tagged and released on GitHub** (`v0.14.0` on `e7b7c98a`, PR
-#801); `release.yml` run 44306259452 **waits at the `pypi` gate for the
-maintainer**, so PyPI still serves 0.13.0. **Crate 0.5.0 is not yet on
-crates.io**: publish it once PyPI has 0.14.0, from a clean worktree of
-`e7b7c98a` (`HANDOVER_RUST.md`, *Publishing to crates.io*: remake the token
-link first, remove it after)._
+#801); `release.yml` run 44306259452 **still waits at the `pypi` gate for the
+maintainer** (checked 2026-11-22), so PyPI still serves 0.13.0. **Crate 0.5.0
+is not yet on crates.io**: publish it once PyPI has 0.14.0, from a clean
+worktree of `e7b7c98a` (`HANDOVER_RUST.md`, *Publishing to crates.io*: remake
+the token link first, remove it after)._
 
-## This branch: the PRISMA 2020 agent (StudyAnalyzer plan PRISMA 1)
+## This session: a PRISMA part lists the items it was not asked (#807, PR open)
 
-- **What**: the checklist as data, the split, the reply reader and
-  `Prisma2020Agent`, Rust and Python on par (CHANGELOG *Unreleased*, both
-  files). The plan is StudyAnalyzer's
-  `docs/superpowers/plans/2026-11-20-prisma-1-bmlib-agent.md`, the design its
-  `docs/superpowers/specs/2026-11-18-prisma2020-tab-design.md`.
-- **Held together by** `tests/fixtures/prisma2020_checklist.json`,
-  `tests/fixtures/prisma2020_parts.json` and the 18-case whole-agent oracle
-  `rust/oracle/dump_prisma2020_agent.py` (listed in
-  `scripts/rerun_rust_oracle.py`), which compares results, error kinds,
-  messages sent and condensation queries.
-- **Shared code, not copies**: PicoAgent's ask, prepare and budget check are
-  now crate functions in `pico_agent.rs` (`ask_json`, `prepare_text`,
-  `sent_within`, `wrapped_prompt`) that both agents call; the PICO oracle is
-  unchanged and clean. Rust's agent takes `full_text_agent::QueryCondenser`
-  (the plan asked for a new trait of that name; the existing seam is the same
-  one, its arguments `(query, text, label, config)`). Python's agent builds on
-  `_FullTextAgent`.
-- **Decisions to know**: a condensation (suitability's too) runs with
-  `continue_on_error(false)`, and a digest whose status is not `completed`
-  (`partial`, `truncated`) is refused as `condensation_failed`, so the
-  suitability check is stricter than PICO's, which keeps a partial digest with
-  a note. Unknown, repeated or no item ids are `PrismaError::InvalidItems` in
-  Rust and `ValueError` in Python, before any request, and so is a digest
-  `prepared` for other items (`PrismaPrepared::condensed_for`; the whole
-  paper serves any items), so §6.5's one-item re-check cannot reuse its
-  part's digest. The default `max_tokens` is 16384.
-- **Licence**: CC BY 4.0, confirmed on
-  https://www.prisma-statement.org/prisma-2020-checklist and named in the PR
-  body with the `may_be_not_applicable` choices.
+- **What**: `PartAssessment.unasked` (Python `list[str]`, Rust `Vec<String>`)
+  holds the ids a reply answered that its part did not ask, in the reply's
+  order and as the reply spelled them (an integer read as its digits, an id
+  off the checklist kept). Their answers are still not read, and the WARNING
+  stays. It is in `to_dict()` / `to_json()`, so every other `part`
+  expectation of the oracle gained `"unasked": []`.
+- **Parity, from the review**: Python now refuses an integer id outside i64 /
+  u64, and both languages read a negative zero (`-0`, `-0.0`) as `"0"`.
+  serde_json holds both as floats, so Rust refused them while Python read
+  them, the precedents being `retraction_status`'s range check and the
+  library records' negative zero.
+- **Shared contract**: the oracle's new `unasked` case replies with `"99"`,
+  an integer `5`, an unasked entry with an invalid body and `-0` around the
+  asked items, and `unasked_id_out_of_range` re-asks after a 21-digit id (20
+  cases now, in both case copies); Rust replays them clean. Unreleased, like
+  the agent, so no break; a Rust struct literal of `PartAssessment` now names
+  the field.
+- **StudyAnalyzer** shows it as a note (its PR #151's review asked for it).
 
-## A record with neither DOI nor PMID is stored once (#794, merged as #802)
+## Merged since the 0.14.0 release (all Unreleased; detail in the CHANGELOGs)
 
-- **The defect was wider than the issue**: besides Europe PMC's preprints,
-  PMC-only, AGR, CBA and patent records, every **OpenAlex work with no DOI
-  and no PMID** gained a row on every re-fetch (the fetcher keeps no DOI
-  filter and dropped the `W…` ID). PubMed and bioRxiv always carry a key.
-- **The fix, both languages (the maintainer's choice of design)**: a new child
-  table `publication_record_ids(publication_id, source, record_id,
-  UNIQUE(source, record_id))`; `FetchedRecord.source_record_id` (declared
-  last) filled by the OpenAlex (`W` + ASCII digits) and Europe PMC
-  (`"{source}:{id}"`) normalisers; `store_publication(..., record_id=)`
-  (Rust: `store_publication_with_record_id`, so `store_publication` keeps its
-  signature) looks up by DOI, PMID, then record ID and consolidates every
-  distinct row found into the first. **A row two lookups find is one row**:
-  consolidating it into itself deletes it (the mutant was caught only by the
-  re-fetch test, in both languages).
-- **The finalcheck review (2026-11-20) found two defects, both fixed in both
-  languages.** A row found only by its record ID was consolidated even when
-  its DOI or PMID differed from the record's, so a stored preprint could be
-  merged away when OpenAlex moved its ID to the journal version: a DOI or PMID
-  now outranks a record ID (the rows stay apart, the ID moves, a WARNING names
-  both). And `ON CONFLICT DO NOTHING` let a concurrent writer leave an unkeyed
-  duplicate: the insert is now plain and fails the store. `sync()` refuses an
-  empty `source_record_id` in Python as Rust did, and both log a WARNING for a
-  record stored with no key at all.
-- **Deferred to #803 (open):** the same merge-away in the *older* DOI-row and
-  PMID-row consolidation. A record whose DOI and PMID name two rows that each
-  already hold a different PMID or DOI folds one paper into the other. It is
-  reproduced on `main` and predates #794. Neither identifier outranks the
-  other, so it needs its own decision. Also not pinned: Rust has no test of the
-  concurrent-writer insert (Python's
-  `test_an_id_stored_meanwhile_by_another_writer_fails_the_store` blinds the
-  lookup with monkeypatch; Rust would need a `Db` wrapper). The code mirrors
-  Python's.
-- **Data**: the table arrives empty on an existing database; rows already
-  duplicated stay, and each such record gains one more row on its first
-  re-fetch after the upgrade. Refusing keyless records was rejected (it loses
-  records).
-- `tests/fixtures/record_lookup.json` regenerated (only the new key moved);
-  seven OpenAlex oracle cases added to both case copies.
-_Last updated: 2026-11-21 (**#803, the PR on
-`fix/split-identity-consolidation-803`**). **0.14.0 is tagged and released on
-GitHub** (`v0.14.0` on `e7b7c98a`, PR #801); `release.yml` run 44306259452
-**still waits at the `pypi` gate for the maintainer** (checked 2026-11-21), so
-PyPI still serves 0.13.0. **Crate 0.5.0 is not yet on crates.io**: publish it
-once PyPI has 0.14.0, from a clean worktree of `e7b7c98a` (`HANDOVER_RUST.md`,
-*Publishing to crates.io*: remake the token link first, remove it after)._
-
-## This session: a DOI and a PMID naming two papers never merge them (#803, PR open)
-
-- **The defect** (PR #802's review, older than #794): a record whose DOI found
-  one row and whose PMID found another consolidated them even when either held
-  a different value of the other identifier, so one wrong DOI-PMID link
-  deleted a paper (`COALESCE`, no log line). Reproduced in both languages on
-  `main`: four of the six new Python tests and all four new Rust tests failed.
-- **The fix, both languages (the maintainer's choice, 2026-11-21)**: both rows
-  are kept, the record merges into the DOI row **without its PMID** or PMCID
-  (the plain merge would write it onto the DOI row under `UNIQUE`; a mutation
-  that drops the strip is caught by
-  `test_a_doi_row_without_a_pmid_does_not_take_the_other_paper_s`), and a
-  WARNING names both rows and the record's source. A split where neither row
-  holds the other identifier (DOI row without a PMID, PMID row without a DOI)
-  is still consolidated. The record ID follows the record to the DOI row, and
-  its move WARNING now names the identifiers that row holds. Reasoning in
-  `docs/DECISIONS.md`.
-- **Deferred to #806 (open, found in this PR's review)**: the same wrong link
-  when the DOI or PMID finds **one** row holding a different value of the
-  other identifier. It merges silently (`COALESCE` drops the record's
-  identifier), and the second paper, which has no row, is never stored. Needs
-  the maintainer's choice of remedy.
-- **Data**: nothing stored moves; papers already merged away stay merged.
-- The manual's consolidation step 2 said `UPDATE OR IGNORE`; the code uses an
-  anti-join on both backends. The manual now says so.
-
-## Earlier: a record with neither DOI nor PMID is stored once (#794, PR #802, merged)
-
-New table `publication_record_ids`, `FetchedRecord.source_record_id`,
-`store_publication(..., record_id=)` (Rust
-`store_publication_with_record_id`); a DOI or PMID outranks a record ID. Detail
-in the CHANGELOG and PR #802. **Not pinned**: Rust has no test of the
-concurrent-writer insert (Python's
-`test_an_id_stored_meanwhile_by_another_writer_fails_the_store` blinds the
-lookup with monkeypatch; Rust would need a `Db` wrapper).
+- **The PRISMA 2020 agent** (PR #805; StudyAnalyzer plan PRISMA 1): the
+  checklist as data, `plan_parts`, `read_part_reply` (the strict-evidence
+  rule) and `Prisma2020Agent`, both languages, held together by
+  `prisma2020_checklist.json`, `prisma2020_parts.json` and the whole-agent
+  oracle `rust/oracle/dump_prisma2020_agent.py`. PicoAgent's ask, prepare and
+  budget check are shared crate functions in `pico_agent.rs`. A condensation
+  runs with `continue_on_error(false)`, and a digest whose run did not complete
+  is refused (`condensation_failed`), so suitability is stricter than PICO's;
+  a digest serves only the items it was `condensed_for`. Licence CC BY 4.0.
+- **A DOI and a PMID naming two papers never merge them** (#803, PR #804):
+  both rows are kept, the record merges into the DOI row without its PMID or
+  PMCID, and a WARNING names both. Papers already merged away stay merged.
+  **#806 (open, the maintainer's choice of remedy)** is the one-row case: a
+  DOI or PMID finding one row that holds a different value of the other
+  identifier still merges silently.
+- **A record with neither DOI nor PMID is stored once** (#794, PR #802): the
+  `publication_record_ids` table, `FetchedRecord.source_record_id`,
+  `store_publication(..., record_id=)` (Rust
+  `store_publication_with_record_id`); a DOI or PMID outranks a record ID.
+  The table arrives empty, so rows already duplicated stay, and each such
+  record gains one more row on its first re-fetch after the upgrade. **Not
+  pinned**: Rust has no test of the concurrent-writer insert (Python's
+  `test_an_id_stored_meanwhile_by_another_writer_fails_the_store`).
 
 ## What 0.14.0 costs StudyAnalyzer (and any downstream)
 
@@ -241,51 +171,15 @@ PDF-beside option off is not covered (the `shortcut:` in `_check_cache`).
 
 ## Release 0.13.0 / Rust crate 0.4.0 (released 2026-11-10)
 
-PR #736, merged as `161849c0` and tagged `v0.13.0`; PyPI and crates.io
-carry it. Detail: PR #736 and the CHANGELOGs.
-
-**Left open past the release**: #694 (bmlib-ffi forwards no log records), #495 (Rust
-JATS reader aborts on deep nesting), #722 (Rust `sync()` logs few of Python's
-lines), #733 (pricing rows name retired models, so the new defaults cost the
-fallback estimate), #734 (Rust's DeepSeek `/v1`; both paths answered 200),
-**Mistral's default** (`mistral-large-latest` 403 `tier_not_allowed` on the
-probed key; re-probe with a paid-tier key), #730/#731 (reasoning-model rules),
-#716, #718, #725 (#726 measured, #656 fixed since).
-
-## What 0.13.0 costs StudyAnalyzer (and any downstream)
-
-Read the CHANGELOG's `[0.13.0]` summary and *Changed — breaking*, and the
-crate's `[0.4.0]`. The points an app must act on:
-
-- **Rust `sync()`** returns `Result<SyncReport, SyncError>` and takes a clock
-  (`&Utc::now`) (PR #721).
-- **`LimitedClient`** (or any wrapping `HttpClient`) must forward
-  `post_json_stream_with_cancel` (#649/#652) and clip
-  `stream_timeout_seconds` as well as `timeout_seconds` (#702).
-- **The keychain item is one item in both languages** on every platform
-  (PR #720); show "saving a key replaces the damaged item" only for
-  `UnreadableItem` (#689); iOS needs the crate's `protected` store
-  (StudyAnalyzer #74).
-- **PICO**: show `CONTRADICTED` apart from *Unsure* and add the `match` arm
-  (#647); `RequestFailed { message, retryable, status }` — retry only
-  `retryable: true`, map `Some(401 | 403)` to `needs_api_key`; a `ChatError::Http`
-  arm wherever a `Transport` arm meant "the request failed" (#646).
-- **`HtmlError`** is `#[non_exhaustive]`: match it with `_` (#723).
-- **Warnings are `log` records** (#688): re-pin, and drop the app's own
-  damaged-item line if tauri-plugin-log shows bmlib's.
-- **Stored PDF and Markdown canonical texts are stale** (pdf-7,
-  markdown-2): re-convert and re-index.
-- Whether a misreported PICO part's confidence lifts `overall_confidence` is
-  the maintainer's to revisit (`docs/DECISIONS.md`).
-
-## Earlier, 2026-11-01 to 2026-11-05 (all merged): what StudyAnalyzer owes
-
-PRs #614-#674 (#609, #667, #619, #664, #616, #659, #658, #646, #654, #563,
-#635, #632, #640-#642, #638 and the PDF segmenter's): each CHANGELOG entry
-under `[0.13.0]` names the app's action, and *What 0.13.0 costs StudyAnalyzer*
-above gathers them. Residuals open: **#605**, **#623**, **#628**. The title
-corpus's `median_font_size` rows are line medians, so its next top-up bumps
-`ROW_DEFINITIONS_VERSION`.
+PR #736, tagged `v0.13.0`; PyPI and crates.io carry it. What it cost
+downstream is the CHANGELOG's `[0.13.0]` *Changed — breaking* and the crate's
+`[0.4.0]`. **Left open past it**: #694, #495, #722, #733, #734, **Mistral's
+default** (`mistral-large-latest` 403 `tier_not_allowed` on the probed key;
+re-probe with a paid-tier key), #730/#731, #716, #718, #725, and the PDF
+path's #605, #623, #628. Whether a misreported PICO part's confidence lifts
+`overall_confidence` is the maintainer's to revisit (`docs/DECISIONS.md`).
+The title corpus's `median_font_size` rows are line medians, so its next
+top-up bumps `ROW_DEFINITIONS_VERSION`.
 
 ## Rules carried forward, and previous sessions
 
@@ -350,12 +244,12 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache; **0.14.0 makes nothing stored stale** and labels bioRxiv and
   medRxiv full-text sources with their version on a re-fetch. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests on `fix/split-identity-consolidation-803`** (2026-11-21, PostgreSQL
-  18 DSN on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,237 passed +
-  23 skipped; ruff 0.15.20 and mypy clean. Rust `cargo test -p bmlib -p
-  bmlib-ffi` 1,907 passed on macOS, clippy and `cargo fmt --check` clean; the
-  Rust oracle 45 clean. `postgres_live` was not re-run (no Rust SQL changed;
-  15 passed on #794's branch). At the release
+- **Tests on `feat/prisma-unasked-807`** (2026-11-22, PostgreSQL 18 DSN on
+  port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,310 passed + 23 skipped;
+  ruff 0.15.20 and mypy clean. Rust `cargo test -p bmlib -p bmlib-ffi` 1,951
+  passed on macOS, clippy and `cargo fmt --check` clean; the Rust oracle 46
+  clean. `postgres_live` was not re-run (no Rust SQL changed; 15 passed on
+  #794's branch). At the release
   (2026-11-17) the release gates were rehearsed: `uv build`, `twine check
   --strict`, `py.typed` in the wheel, and 126 of 126 modules imported, one fresh
   interpreter each, in a core-only venv. On `main` before the release PR, `-p bmlib
@@ -387,7 +281,7 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**125 open** (2026-11-21; #803 closes with this session's PR, #755 stays open
+**125 open** (2026-11-22; #807 closes with this session's PR, #755 stays open
 for its decisions): **#806** (PR #804's review: the one-row wrong link, above),
 Europe PMC's **#792** and **#793** (PR #790's review,
 above), the library's #755, #762 and **#778** (PR #777's review follow-ups,
