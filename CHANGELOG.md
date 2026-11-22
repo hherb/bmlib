@@ -11,7 +11,7 @@ All notable changes to bmlib are documented here. The format is based on
 - **A PRISMA 2020 reporting agent** (StudyAnalyzer's PRISMA tab, design
   `2026-11-18-prisma2020-tab-design.md`; both languages, held together by
   `tests/fixtures/prisma2020_checklist.json`, `prisma2020_parts.json` and a
-  20-case whole-agent oracle, `rust/oracle/dump_prisma2020_agent.py`).
+  21-case whole-agent oracle, `rust/oracle/dump_prisma2020_agent.py`).
   - `quality.prisma2020_checklist`: the 42 items and sub-items as data, the
     checklist's wording verbatim (Page MJ et al., *BMJ* 2021;372:n71, CC BY
     4.0), each with a rubric per judgement, a condensation hint, whether it is
@@ -40,7 +40,9 @@ All notable changes to bmlib are documented here. The format is based on
     fits `max_context_chars`, else a digest made with the part's own
     `part_query`) and `assess_part(prepared, item_ids, min_similarity=)`, whose
     quotes are located in the paper, never the digest. `part_prompt_chars`
-    measures the longest prompt a part sends, for a caller's budget.
+    measures the longest prompt a part sends, for a caller's budget, and
+    `suitability_prompt_chars` the suitability check's, which may send the
+    whole paper too.
     **Nothing is cut**: bmlibrarian's `full_text[:2000]` and `text[:3000]` are
     not ported, and text over the budget is condensed or refused. A
     condensation runs with `continue_on_error=False` and a digest whose run did

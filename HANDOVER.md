@@ -1,6 +1,7 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-22 (**#807, the PR on `feat/prisma-unasked-807`**).
+_Last updated: 2026-11-22 (**PRISMA follow-ups for StudyAnalyzer, the PR on
+`feat/prisma-suitability-prompt-chars`**).
 **0.14.0 is tagged and released on GitHub** (`v0.14.0` on `e7b7c98a`, PR
 #801); `release.yml` run 44306259452 **still waits at the `pypi` gate for the
 maintainer** (checked 2026-11-22), so PyPI still serves 0.13.0. **Crate 0.5.0
@@ -8,29 +9,29 @@ is not yet on crates.io**: publish it once PyPI has 0.14.0, from a clean
 worktree of `e7b7c98a` (`HANDOVER_RUST.md`, *Publishing to crates.io*: remake
 the token link first, remove it after)._
 
-## This session: a PRISMA part lists the items it was not asked (#807, PR open)
+## This session: `suitability_prompt_chars`; PRISMA's Python plumbing shared (PR open)
 
-- **What**: `PartAssessment.unasked` (Python `list[str]`, Rust `Vec<String>`)
-  holds the ids a reply answered that its part did not ask, in the reply's
-  order and as the reply spelled them (an integer read as its digits, an id
-  off the checklist kept). Their answers are still not read, and the WARNING
-  stays. It is in `to_dict()` / `to_json()`, so every other `part`
-  expectation of the oracle gained `"unasked": []`.
-- **Parity, from the review**: Python now refuses an integer id outside i64 /
-  u64, and both languages read a negative zero (`-0`, `-0.0`) as `"0"`.
-  serde_json holds both as floats, so Rust refused them while Python read
-  them, the precedents being `retraction_status`'s range check and the
-  library records' negative zero.
-- **Shared contract**: the oracle's new `unasked` case replies with `"99"`,
-  an integer `5`, an unasked entry with an invalid body and `-0` around the
-  asked items, and `unasked_id_out_of_range` re-asks after a 21-digit id (20
-  cases now, in both case copies); Rust replays them clean. Unreleased, like
-  the agent, so no break; a Rust struct literal of `PartAssessment` now names
-  the field.
-- **StudyAnalyzer** shows it as a note (its PR #151's review asked for it).
+- **What**: `suitability_prompt_chars()` (Rust and Python, beside
+  `part_prompt_chars`) measures the suitability check's longest prompt, so
+  StudyAnalyzer's run budget stops copying the frame of the `pub(crate)`
+  `wrapped_prompt` (its `check_prompt_chars`). Both measures share one private
+  `longest_prompt_chars` / `_longest_prompt_chars`. The oracle gains a
+  `suitability_prompt_chars` case (21 cases, both copies; 2768 characters).
+- **Python only, no behaviour change**: `Prisma2020Agent._prepare` and `_ask`
+  now use `_FullTextAgent`'s plumbing (PRISMA 1's review). `_FullTextAgent`
+  gains `_condense(…, config)` returning digest, notes and status
+  (`_condense_once` wraps it), and `_chat_error(exc)`, which PRISMA overrides
+  to keep its `truncated` / `unusable_reply` kinds. The unusable-reply
+  WARNING now logs from `bmlib.quality._full_text_agent`.
 
 ## Merged since the 0.14.0 release (all Unreleased; detail in the CHANGELOGs)
 
+- **A PRISMA part lists the items it was not asked** (#807, PR #808):
+  `PartAssessment.unasked` (Python `list[str]`, Rust `Vec<String>`), the ids a
+  reply answered that its part did not ask, in reply order and as spelled;
+  their answers are still not read. Both languages refuse an integer id
+  outside i64 / u64 and read `-0` as `"0"`. A Rust struct literal of
+  `PartAssessment` now names the field (StudyAnalyzer's #152 shows it).
 - **The PRISMA 2020 agent** (PR #805; StudyAnalyzer plan PRISMA 1): the
   checklist as data, `plan_parts`, `read_part_reply` (the strict-evidence
   rule) and `Prisma2020Agent`, both languages, held together by

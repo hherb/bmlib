@@ -48,19 +48,17 @@ byte-identical; ``rust/oracle/dump_prisma2020_agent.py`` holds the two together.
 from __future__ import annotations
 
 import dataclasses
-import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, TypeVar
 
-from bmlib.agents.base import ChatJsonError, ChatJsonTruncatedError, ChatStoppedError
-from bmlib.context_processor import ProcessingConfig, ProcessingStatus, ProcessingStoppedError
+from bmlib.agents.base import ChatJsonError, ChatJsonTruncatedError
+from bmlib.context_processor import ProcessingConfig, ProcessingStatus
 from bmlib.llm import LLMClient
 from bmlib.llm.stream import Stop
 from bmlib.llm.utils import http_status
 from bmlib.quality._condense import (
-    CondensationRefusedError,
     condense_text,
     is_retryable_request,
 )
@@ -71,11 +69,9 @@ from bmlib.quality._full_text_agent import (
     LABEL_CHARS,
     AgentFailure,
     QueryCondenser,
-    UnreadableReplyError,
     _FullTextAgent,
     check_min_similarity,
 )
-from bmlib.quality.pico_agent import _NOT_A_REQUEST_FAILURE, _READ_ATTEMPTS, STOPPED_MESSAGE
 from bmlib.quality.pico_models import PicoPrepared
 from bmlib.quality.prisma2020_checklist import ChecklistItem, item
 from bmlib.quality.prisma2020_models import (
@@ -86,8 +82,6 @@ from bmlib.quality.prisma2020_models import (
 )
 from bmlib.quality.prisma2020_parts import PartPlan, part_query
 from bmlib.templates import TemplateEngine
-
-logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
 
@@ -331,13 +325,34 @@ def part_prompt_chars(item_ids: Sequence[str]) -> int:
     not on the checklist add nothing.
     """
     rows = [row for row in (item(item_id) for item_id in item_ids) if row is not None]
-    query = part_query(rows)
+    return _longest_prompt_chars(_part_task(rows), PART_RESPONSE_FORMAT, part_query(rows))
+
+
+def suitability_prompt_chars() -> int:
+    """The characters of the longest prompt the suitability check sends.
+
+    Without the paper and its title, measured as :func:`part_prompt_chars`
+    measures a part's.  The check may send the whole paper, so a caller
+    sizing one budget for a whole run takes the larger of this and its parts'
+    measure.
+    """
+    return _longest_prompt_chars(
+        SUITABILITY_TASK_PROMPT, SUITABILITY_RESPONSE_FORMAT, SUITABILITY_CONDENSE_QUERY
+    )
+
+
+def _longest_prompt_chars(task: str, response_format: str, query: str) -> int:
+    """The system prompt's characters plus the longest prompt of one question.
+
+    The longest of *task*'s question (as it is wrapped, with an empty title
+    and paper) and the two condensation prompts for *query*.
+    """
 
     def condense(template: str) -> str:
         return template.replace("{query}", query).replace("{content}", "")
 
     prompts = (
-        _wrapped(_part_task(rows), PART_RESPONSE_FORMAT, "", ""),
+        _wrapped(task, response_format, "", ""),
         condense(PRISMA_CONDENSE_EXTRACTION_PROMPT),
         condense(PRISMA_CONDENSE_CONSOLIDATION_PROMPT),
     )
@@ -647,40 +662,9 @@ class Prisma2020Agent(_FullTextAgent):
         if len(text) <= self.condense_config.max_context_chars:
             return PicoPrepared(title, original)
 
-        self._raise_if_stopped()
         # A failed batch fails the condensation (design 6.3).
         config = dataclasses.replace(self.condense_config, continue_on_error=False)
-        defect: BaseException | None = None
-        try:
-            digest, notes, status = self.condenser.condense(
-                query, text, title[:LABEL_CHARS], config, stage=stage
-            )
-        except ProcessingStoppedError as exc:
-            raise PrismaError(PrismaErrorKind.STOPPED, STOPPED_MESSAGE) from exc
-        except CondensationRefusedError as exc:
-            self._raise_if_stopped(exc)
-            cause = exc.__cause__
-            if isinstance(cause, _NOT_A_REQUEST_FAILURE):
-                defect = cause
-            else:
-                message = (
-                    f"a {len(text)}-character text could not be condensed to fit "
-                    f"{config.max_context_chars} characters: {exc}"
-                )
-                if cause is None:
-                    raise PrismaError(PrismaErrorKind.CONDENSATION_FAILED, message) from exc
-                raise PrismaError(
-                    PrismaErrorKind.REQUEST_FAILED,
-                    message,
-                    is_retryable_request(cause),
-                    http_status(cause),
-                ) from exc
-        if defect is not None:
-            # Raised outside the handler, as PicoAgent's, so it is not chained
-            # to its own effect.
-            raise defect
-        # A run stopped part-way can finish with a partial digest, which is no digest.
-        self._raise_if_stopped()
+        digest, notes, status = self._condense(title, text, query, stage, config)
         if status is not ProcessingStatus.COMPLETED:
             raise PrismaError(
                 PrismaErrorKind.CONDENSATION_FAILED,
@@ -723,37 +707,8 @@ class Prisma2020Agent(_FullTextAgent):
         """Send one question over what *prepared* sends, re-asking an unreadable reply once."""
         self._check_provider()
         prompt = _wrapped(task, response_format, prepared.title, self._sent(prepared))
-        messages = [self.system_msg(PRISMA_SYSTEM_PROMPT), self.user_msg(prompt)]
-        problem: UnreadableReplyError | None = None
-        for attempt in range(_READ_ATTEMPTS):
-            self._raise_if_stopped()
-            try:
-                data = self.chat_json(
-                    messages,
-                    max_retries=self.max_retries,
-                    retry_context=label,
-                    require_dict=True,
-                )
-            except ChatStoppedError as exc:
-                raise PrismaError(PrismaErrorKind.STOPPED, STOPPED_MESSAGE) from exc
-            except _NOT_A_REQUEST_FAILURE:
-                raise
-            except Exception as exc:
-                # A stop set during the call wins over whatever it raised.
-                self._raise_if_stopped(exc)
-                raise _request_error(exc) from exc
-            try:
-                return read(data)
-            except UnreadableReplyError as exc:
-                problem = exc
-                logger.warning(
-                    "Unusable reply for %s (attempt %d/%d): %s",
-                    label,
-                    attempt + 1,
-                    _READ_ATTEMPTS,
-                    exc,
-                )
-        raise PrismaError(
-            PrismaErrorKind.UNUSABLE_REPLY,
-            f"{label}: {_READ_ATTEMPTS} replies could not be read: {problem}",
-        ) from problem
+        return self._ask_until_readable(PRISMA_SYSTEM_PROMPT, prompt, read, label)
+
+    def _chat_error(self, exc: Exception) -> Exception:
+        """The :class:`PrismaError` a failed ``chat_json`` call is reported as."""
+        return _request_error(exc)

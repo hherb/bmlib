@@ -179,8 +179,8 @@ pub use pico_models::{
 // The two suitability prompts stay under `prisma2020_agent`: PICO's share
 // their names.
 pub use prisma2020_agent::{
-    part_prompt_chars, Prisma2020Agent, PrismaCondenser, PrismaError, PrismaPrepared,
-    PART_RESPONSE_FORMAT, PART_TASK_PROMPT, PRISMA_CONDENSE_CONSOLIDATION_PROMPT,
+    part_prompt_chars, suitability_prompt_chars, Prisma2020Agent, PrismaCondenser, PrismaError,
+    PrismaPrepared, PART_RESPONSE_FORMAT, PART_TASK_PROMPT, PRISMA_CONDENSE_CONSOLIDATION_PROMPT,
     PRISMA_CONDENSE_EXTRACTION_PROMPT, PRISMA_SYSTEM_PROMPT, SUITABILITY_CONDENSE_QUERY,
 };
 pub use prisma2020_checklist::{ChecklistItem, ChecklistSection, CHECKLIST, KEY_ITEMS};

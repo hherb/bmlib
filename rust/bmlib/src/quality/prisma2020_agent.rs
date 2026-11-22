@@ -220,10 +220,29 @@ fn part_task(rows: &[&'static ChecklistItem]) -> String {
 #[must_use]
 pub fn part_prompt_chars(item_ids: &[&'static str]) -> usize {
     let rows: Vec<&'static ChecklistItem> = item_ids.iter().filter_map(|id| item(id)).collect();
-    let query = part_query(&rows);
-    let condense = |template: &str| template.replace("{query}", &query).replace("{content}", "");
+    longest_prompt_chars(&part_task(&rows), PART_RESPONSE_FORMAT, &part_query(&rows))
+}
+
+/// The characters of the longest prompt the suitability check sends, without
+/// the paper and its title, measured as [`part_prompt_chars`] measures a
+/// part's. The check may send the whole paper, so a caller sizing one budget
+/// for a whole run takes the larger of this and its parts' measure.
+#[must_use]
+pub fn suitability_prompt_chars() -> usize {
+    longest_prompt_chars(
+        SUITABILITY_TASK_PROMPT,
+        SUITABILITY_RESPONSE_FORMAT,
+        SUITABILITY_CONDENSE_QUERY,
+    )
+}
+
+/// The system prompt's characters plus the longest of `task`'s question (as
+/// it is wrapped, with an empty title and paper) and the two condensation
+/// prompts for `query`.
+fn longest_prompt_chars(task: &str, response_format: &str, query: &str) -> usize {
+    let condense = |template: &str| template.replace("{query}", query).replace("{content}", "");
     let longest = [
-        wrapped_prompt(&part_task(&rows), PART_RESPONSE_FORMAT, "", ""),
+        wrapped_prompt(task, response_format, "", ""),
         condense(PRISMA_CONDENSE_EXTRACTION_PROMPT),
         condense(PRISMA_CONDENSE_CONSOLIDATION_PROMPT),
     ]
@@ -822,6 +841,40 @@ mod tests {
         assert!(two > one);
         let all: Vec<&'static str> = CHECKLIST.iter().map(|row| row.id).collect();
         assert!(part_prompt_chars(&all) > two);
+    }
+
+    /// A chat recording the characters each request sends, answering with a
+    /// reply no reader accepts.
+    struct Measuring(Vec<usize>);
+
+    impl JsonChat for Measuring {
+        fn chat_json(
+            &mut self,
+            messages: &[crate::llm::LLMMessage],
+            _temperature: f64,
+            _max_tokens: i64,
+            _max_retries: usize,
+            _require_dict: bool,
+        ) -> Result<crate::agents::ChatJsonOutcome, crate::agents::ChatJsonError> {
+            self.0
+                .push(messages.iter().map(|m| m.content.chars().count()).sum());
+            Ok(crate::agents::ChatJsonOutcome {
+                value: serde_json::json!({}),
+                attempts: 1,
+                repaired: false,
+            })
+        }
+    }
+
+    #[test]
+    fn suitability_prompt_chars_holds_the_check_prompt() {
+        let mut chat = Measuring(Vec::new());
+        let _ = Prisma2020Agent::new(&mut chat).check_suitability("", "x");
+        assert!(!chat.0.is_empty());
+        for sent in chat.0 {
+            assert!(sent - 1 <= suitability_prompt_chars(), "{sent}");
+        }
+        assert!(suitability_prompt_chars() > PRISMA_SYSTEM_PROMPT.chars().count());
     }
 
     #[test]

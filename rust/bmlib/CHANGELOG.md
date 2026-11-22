@@ -25,9 +25,9 @@ The Python library is documented separately, in the repository's
   `prepare_part` and `assess_part` (a digest condensed for other items is
   `InvalidItems`); `PrismaPrepared` (with `condensed_for`);
   `PrismaCondenser::new(model, temperature, max_tokens)` with
-  `with_progress`; `part_prompt_chars`; the prompt constants
-  (`SUITABILITY_TASK_PROMPT` and `SUITABILITY_RESPONSE_FORMAT` by module path
-  only). `PrismaError` has `PicoError`'s variants and kinds,
+  `with_progress`; `part_prompt_chars` and `suitability_prompt_chars`; the
+  prompt constants (`SUITABILITY_TASK_PROMPT` and `SUITABILITY_RESPONSE_FORMAT`
+  by module path only). `PrismaError` has `PicoError`'s variants and kinds,
   plus `InvalidItems` (`"invalid_items"`, Python's `ValueError`) and `Parts`
   (`"parts"`, `From<PartsError>`). The default `max_tokens` is
   `full_text_agent::DEFAULT_MAX_TOKENS` (16384), a part's reply being long.

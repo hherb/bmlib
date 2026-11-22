@@ -28,6 +28,13 @@
     }
   },
   {
+    "name": "suitability_prompt_chars",
+    "ok": true,
+    "value": {
+      "result": 2768
+    }
+  },
+  {
     "name": "whole",
     "ok": true,
     "value": {

@@ -47,6 +47,7 @@ from bmlib.quality.prisma2020_agent import (
     PrismaErrorKind,
     PrismaPrepared,
     part_prompt_chars,
+    suitability_prompt_chars,
 )
 from bmlib.quality.prisma2020_checklist import item
 from bmlib.quality.prisma2020_models import Judgement
@@ -283,6 +284,14 @@ def test_part_prompt_chars_holds_the_longest_prompt() -> None:
     sent = sum(len(m.content) for m in agent.llm.chat.call_args.kwargs["messages"])
     assert sent - len("x") <= part_prompt_chars(IDS)
     assert part_prompt_chars(IDS) < part_prompt_chars([*IDS, "13d"])
+
+
+def test_suitability_prompt_chars_holds_the_check_prompt() -> None:
+    agent = make_agent(_SUITABLE)
+    agent.check_suitability("", "x")
+    sent = sum(len(m.content) for m in agent.llm.chat.call_args.kwargs["messages"])
+    assert sent - len("x") <= suitability_prompt_chars()
+    assert suitability_prompt_chars() > len(PRISMA_SYSTEM_PROMPT)
 
 
 @pytest.mark.parametrize("other", [["7"], ["8", "7"], ["7", "8", "9"]])

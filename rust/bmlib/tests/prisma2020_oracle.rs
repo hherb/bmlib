@@ -32,9 +32,10 @@ use bmlib::context_processor::{
 };
 use bmlib::llm::LLMResponse;
 use bmlib::quality::prisma2020_agent::{
-    part_prompt_chars, Prisma2020Agent, PART_RESPONSE_FORMAT, PART_TASK_PROMPT,
-    PRISMA_CONDENSE_CONSOLIDATION_PROMPT, PRISMA_CONDENSE_EXTRACTION_PROMPT, PRISMA_SYSTEM_PROMPT,
-    SUITABILITY_CONDENSE_QUERY, SUITABILITY_RESPONSE_FORMAT, SUITABILITY_TASK_PROMPT,
+    part_prompt_chars, suitability_prompt_chars, Prisma2020Agent, PART_RESPONSE_FORMAT,
+    PART_TASK_PROMPT, PRISMA_CONDENSE_CONSOLIDATION_PROMPT, PRISMA_CONDENSE_EXTRACTION_PROMPT,
+    PRISMA_SYSTEM_PROMPT, SUITABILITY_CONDENSE_QUERY, SUITABILITY_RESPONSE_FORMAT,
+    SUITABILITY_TASK_PROMPT,
 };
 use bmlib::quality::QueryCondenser;
 use common::scripted_chat::{Script, ScriptedChat};
@@ -189,8 +190,8 @@ fn the_rust_agent_agrees_with_the_python_one() {
     let expected: Vec<Value> = serde_json::from_str(EXPECTED).expect("expected");
     assert_eq!(cases.len(), expected.len());
     assert!(
-        cases.len() >= 20,
-        "the corpus has shrunk below its 20 cases"
+        cases.len() >= 21,
+        "the corpus has shrunk below its 21 cases"
     );
 
     for (case, want) in cases.iter().zip(&expected) {
@@ -226,6 +227,14 @@ fn the_rust_agent_agrees_with_the_python_one() {
                     want["value"],
                     "{}: part_prompt_chars",
                     case["name"]
+                );
+                continue;
+            }
+            "suitability_prompt_chars" => {
+                assert_eq!(
+                    json!({ "result": suitability_prompt_chars() }),
+                    want["value"],
+                    "suitability_prompt_chars"
                 );
                 continue;
             }

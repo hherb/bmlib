@@ -34,7 +34,8 @@ A ``part`` case prepares the paper for its items and assesses them; a
 ``suitability`` case checks the paper; ``stop: true`` sets the stop before the
 call.  A ``prompts`` case dumps the eight prompt constants, the condensation's
 included, since the patched map-reduce never renders those, and a
-``part_prompt_chars`` case the measure a caller budgets with.
+``part_prompt_chars`` or ``suitability_prompt_chars`` case the measure a
+caller budgets with.
 
 Each value carries the result's ``to_dict()`` (or the error's kind), the
 messages every model call was sent and the condensation queries, so a prompt
@@ -58,7 +59,12 @@ from bmlib.context_processor import (
 )
 from bmlib.llm.data_types import LLMResponse
 from bmlib.quality import prisma2020_agent
-from bmlib.quality.prisma2020_agent import Prisma2020Agent, PrismaError, part_prompt_chars
+from bmlib.quality.prisma2020_agent import (
+    Prisma2020Agent,
+    PrismaError,
+    part_prompt_chars,
+    suitability_prompt_chars,
+)
 
 #: Every prompt the agent can send, the condensation's included.
 PROMPTS = (
@@ -95,6 +101,8 @@ def run(case: dict[str, Any]) -> dict[str, Any]:
         return {name: getattr(prisma2020_agent, name) for name in PROMPTS}
     if case["fn"] == "part_prompt_chars":
         return {"result": part_prompt_chars(args["item_ids"])}
+    if case["fn"] == "suitability_prompt_chars":
+        return {"result": suitability_prompt_chars()}
     llm = _client(args["replies"], args.get("stop_reasons", []))
     kwargs: dict[str, Any] = {}
     if "max_context_chars" in args:
