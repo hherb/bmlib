@@ -42,7 +42,8 @@ All notable changes to bmlib are documented here. The format is based on
     quotes are located in the paper, never the digest. `part_prompt_chars`
     measures the longest prompt a part sends, for a caller's budget, and
     `suitability_prompt_chars` the suitability check's, which may send the
-    whole paper too.
+    whole paper too; both count the `JSON_CORRECTION_NOTE` a retry after an
+    unparseable reply adds.
     **Nothing is cut**: bmlibrarian's `full_text[:2000]` and `text[:3000]` are
     not ported, and text over the budget is condensed or refused. A
     condensation runs with `continue_on_error=False` and a digest whose run did

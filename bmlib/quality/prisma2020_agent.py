@@ -53,7 +53,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, TypeVar
 
-from bmlib.agents.base import ChatJsonError, ChatJsonTruncatedError
+from bmlib.agents.base import JSON_CORRECTION_NOTE, ChatJsonError, ChatJsonTruncatedError
 from bmlib.context_processor import ProcessingConfig, ProcessingStatus
 from bmlib.llm import LLMClient
 from bmlib.llm.stream import Stop
@@ -320,9 +320,10 @@ def part_prompt_chars(item_ids: Sequence[str]) -> int:
     """The characters of the longest prompt a part of *item_ids* sends.
 
     Without the paper and its title: the system prompt and the longest of the
-    part's question (as it is wrapped) and its two condensation prompts.  A
-    caller subtracts it from the window when sizing the paper's budget.  Ids
-    not on the checklist add nothing.
+    part's question (as it is wrapped) and its two condensation prompts, each
+    as a retry after an unparseable reply sends it.  A caller subtracts it
+    from the window when sizing the paper's budget.  Ids not on the checklist
+    add nothing.
     """
     rows = [row for row in (item(item_id) for item_id in item_ids) if row is not None]
     return _longest_prompt_chars(_part_task(rows), PART_RESPONSE_FORMAT, part_query(rows))
@@ -345,7 +346,10 @@ def _longest_prompt_chars(task: str, response_format: str, query: str) -> int:
     """The system prompt's characters plus the longest prompt of one question.
 
     The longest of *task*'s question (as it is wrapped, with an empty title
-    and paper) and the two condensation prompts for *query*.
+    and paper) and the two condensation prompts for *query*, as a retry after
+    an unparseable reply sends it: with :data:`JSON_CORRECTION_NOTE` after a
+    blank line.  A condensation request sends no system prompt, so for it this
+    is an upper bound.
     """
 
     def condense(template: str) -> str:
@@ -356,7 +360,8 @@ def _longest_prompt_chars(task: str, response_format: str, query: str) -> int:
         condense(PRISMA_CONDENSE_EXTRACTION_PROMPT),
         condense(PRISMA_CONDENSE_CONSOLIDATION_PROMPT),
     )
-    return len(PRISMA_SYSTEM_PROMPT) + max(len(prompt) for prompt in prompts)
+    longest = max(len(prompt) for prompt in prompts)
+    return len(PRISMA_SYSTEM_PROMPT) + longest + len("\n\n") + len(JSON_CORRECTION_NOTE)
 
 
 def _checklist_rows(item_ids: Sequence[str]) -> list[ChecklistItem]:

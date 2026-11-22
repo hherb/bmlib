@@ -46,6 +46,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
+use crate::agents::JSON_CORRECTION_NOTE;
 use crate::context_processor::llm_processor::{ContextModel, PromptTemplates};
 use crate::context_processor::{
     ProcessingConfig, ProcessingResult, ProcessingStatus, ProgressInfo,
@@ -214,9 +215,10 @@ fn part_task(rows: &[&'static ChecklistItem]) -> String {
 
 /// The characters of the longest prompt a part of `item_ids` sends, without
 /// the paper and its title: the system prompt and the longest of the part's
-/// question (as it is wrapped) and its two condensation prompts. A caller
-/// subtracts it from the window when sizing the paper's budget. Ids not on
-/// the checklist add nothing.
+/// question (as it is wrapped) and its two condensation prompts, each as a
+/// retry after an unparseable reply sends it. A caller subtracts it from the
+/// window when sizing the paper's budget. Ids not on the checklist add
+/// nothing.
 #[must_use]
 pub fn part_prompt_chars(item_ids: &[&'static str]) -> usize {
     let rows: Vec<&'static ChecklistItem> = item_ids.iter().filter_map(|id| item(id)).collect();
@@ -238,7 +240,9 @@ pub fn suitability_prompt_chars() -> usize {
 
 /// The system prompt's characters plus the longest of `task`'s question (as
 /// it is wrapped, with an empty title and paper) and the two condensation
-/// prompts for `query`.
+/// prompts for `query`, as a retry after an unparseable reply sends it: with
+/// [`JSON_CORRECTION_NOTE`] after a blank line. A condensation request sends
+/// no system prompt, so for it this is an upper bound.
 fn longest_prompt_chars(task: &str, response_format: &str, query: &str) -> usize {
     let condense = |template: &str| template.replace("{query}", query).replace("{content}", "");
     let longest = [
@@ -250,7 +254,10 @@ fn longest_prompt_chars(task: &str, response_format: &str, query: &str) -> usize
     .map(|prompt| prompt.chars().count())
     .max()
     .unwrap_or(0);
-    PRISMA_SYSTEM_PROMPT.chars().count() + longest
+    PRISMA_SYSTEM_PROMPT.chars().count()
+        + longest
+        + "\n\n".len()
+        + JSON_CORRECTION_NOTE.chars().count()
 }
 
 /// Why a PRISMA 2020 call made no result: [`PicoError`]'s variants and kind
@@ -871,8 +878,10 @@ mod tests {
         let mut chat = Measuring(Vec::new());
         let _ = Prisma2020Agent::new(&mut chat).check_suitability("", "x");
         assert!(!chat.0.is_empty());
+        // This chat never retries, so no request carries the correction note.
+        let correction = "\n\n".len() + JSON_CORRECTION_NOTE.chars().count();
         for sent in chat.0 {
-            assert!(sent - 1 <= suitability_prompt_chars(), "{sent}");
+            assert_eq!(sent - 1 + correction, suitability_prompt_chars());
         }
         assert!(suitability_prompt_chars() > PRISMA_SYSTEM_PROMPT.chars().count());
     }

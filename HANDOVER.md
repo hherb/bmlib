@@ -15,14 +15,18 @@ the token link first, remove it after)._
   `part_prompt_chars`) measures the suitability check's longest prompt, so
   StudyAnalyzer's run budget stops copying the frame of the `pub(crate)`
   `wrapped_prompt` (its `check_prompt_chars`). Both measures share one private
-  `longest_prompt_chars` / `_longest_prompt_chars`. The oracle gains a
-  `suitability_prompt_chars` case (21 cases, both copies; 2768 characters).
-- **Python only, no behaviour change**: `Prisma2020Agent._prepare` and `_ask`
-  now use `_FullTextAgent`'s plumbing (PRISMA 1's review). `_FullTextAgent`
-  gains `_condense(…, config)` returning digest, notes and status
-  (`_condense_once` wraps it), and `_chat_error(exc)`, which PRISMA overrides
-  to keep its `truncated` / `unusable_reply` kinds. The unusable-reply
-  WARNING now logs from `bmlib.quality._full_text_agent`.
+  `longest_prompt_chars` / `_longest_prompt_chars`, which now counts the
+  `JSON_CORRECTION_NOTE` a retry after an unparseable reply adds (172
+  characters; finalcheck review, `part_prompt_chars` was short by it too).
+  The oracle gains a `suitability_prompt_chars` case (21 cases, both copies;
+  2940 characters).
+- **Python only, no change to results or errors**: `Prisma2020Agent._prepare`
+  and `_ask` now use `_FullTextAgent`'s plumbing (PRISMA 1's review).
+  `_FullTextAgent` gains `_condense(…, config)` returning digest, notes and
+  status (`_condense_once` wraps it), and `_chat_error(exc)`, which PRISMA
+  overrides to keep its `truncated` / `unusable_reply` kinds. The
+  unusable-reply WARNING now logs from `bmlib.quality._full_text_agent`, so a
+  filter on the old logger name no longer sees it.
 
 ## Merged since the 0.14.0 release (all Unreleased; detail in the CHANGELOGs)
 
@@ -31,7 +35,7 @@ the token link first, remove it after)._
   reply answered that its part did not ask, in reply order and as spelled;
   their answers are still not read. Both languages refuse an integer id
   outside i64 / u64 and read `-0` as `"0"`. A Rust struct literal of
-  `PartAssessment` now names the field (StudyAnalyzer's #152 shows it).
+  `PartAssessment` now names the field (hherb/StudyAnalyzer#152 shows it).
 - **The PRISMA 2020 agent** (PR #805; StudyAnalyzer plan PRISMA 1): the
   checklist as data, `plan_parts`, `read_part_reply` (the strict-evidence
   rule) and `Prisma2020Agent`, both languages, held together by

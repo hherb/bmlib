@@ -16,12 +16,14 @@
 
 """The base of the agents that put one question to the model over a paper's full text.
 
-The design proposal, the primary-outcome extraction and the RoB 2 agent all
-do the same plumbing: refuse a bad stop or window up front, condense a paper
-that does not fit once (for a query of their own), ask until the reply reads,
-and never send a request once the caller's stop is set.  That lives here once;
-each agent keeps its own prompts, its own reader and its own error kinds, by
-saying how a failure becomes its exception (:meth:`_FullTextAgent._error`).
+The design proposal, the primary-outcome extraction, the RoB 2 agent and the
+PRISMA 2020 agent all do the same plumbing: refuse a bad stop or window up
+front, condense a paper that does not fit once (for a query of their own), ask
+until the reply reads, and never send a request once the caller's stop is set.
+That lives here once; each agent keeps its own prompts, its own reader and its
+own error kinds, by saying how a failure becomes its exception
+(:meth:`_FullTextAgent._error`, and :meth:`_FullTextAgent._chat_error` for a
+failed request where its kinds are finer).
 
 Private: the agents are the API.  :class:`PicoAgent` predates this and keeps
 its own copy of the same rules.
@@ -146,9 +148,9 @@ class LlmQueryCondenser:
 class _FullTextAgent(BaseAgent):
     """An agent that asks one question over a paper, condensing it first if needed.
 
-    Subclasses implement :meth:`_error` and call :meth:`_condense_once` (or
-    :meth:`_condense`, to keep the notes and status) and
-    :meth:`_ask_until_readable`.
+    Subclasses implement :meth:`_error` (and may override :meth:`_chat_error`)
+    and call :meth:`_condense_once` (or :meth:`_condense`, to keep the notes and
+    status) and :meth:`_ask_until_readable`.
 
     Args:
         llm: The client requests go through.
@@ -279,6 +281,7 @@ class _FullTextAgent(BaseAgent):
                     http_status(cause),
                 ) from exc
         if defect is not None:
+            # Raised outside the handler, so it is not chained to its own effect.
             raise defect
         # A run stopped part-way can finish with a partial digest, which is no digest.
         self._raise_if_stopped()

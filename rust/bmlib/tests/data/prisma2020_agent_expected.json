@@ -17,21 +17,21 @@
     "name": "part_prompt_chars_one_part",
     "ok": true,
     "value": {
-      "result": 4342
+      "result": 4514
     }
   },
   {
     "name": "part_prompt_chars_key_items",
     "ok": true,
     "value": {
-      "result": 11353
+      "result": 11525
     }
   },
   {
     "name": "suitability_prompt_chars",
     "ok": true,
     "value": {
-      "result": 2768
+      "result": 2940
     }
   },
   {
