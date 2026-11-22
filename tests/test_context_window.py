@@ -46,6 +46,7 @@ from bmlib.llm.providers.deepseek import DeepSeekProvider
 from bmlib.llm.providers.gemini import GeminiProvider
 from bmlib.llm.providers.mistral import MistralProvider
 from bmlib.llm.providers.ollama import OllamaProvider
+from bmlib.llm.providers.omlx import OmlxProvider
 from bmlib.llm.providers.openai_provider import OpenAIProvider
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "context_window.json").read_text())
@@ -465,7 +466,8 @@ def _provider_over(case, monkeypatch):
         provider = AnthropicProvider(api_key="k")
         provider._client = anthropic.Anthropic(api_key="k", http_client=own, max_retries=0)
         return provider
-    provider = {"mistral": MistralProvider, "deepseek": DeepSeekProvider}[name](api_key="k")
+    providers = {"mistral": MistralProvider, "deepseek": DeepSeekProvider, "omlx": OmlxProvider}
+    provider = providers[name](api_key="k")
     provider._client = openai.OpenAI(
         api_key="k", base_url="http://provider.test/v1", http_client=http, max_retries=0
     )

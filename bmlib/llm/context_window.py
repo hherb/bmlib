@@ -66,6 +66,9 @@ _FIELD_BY_PROVIDER: Mapping[str, str] = {
 #: DeepSeek lists every model in one body; this is the per-model field.
 DEEPSEEK_WINDOW_FIELD = "context_window"
 
+#: oMLX lists every model in one body too, each with this window field.
+OMLX_WINDOW_FIELD = "max_model_len"
+
 #: Providers whose metadata names the largest reply (the most a request's
 #: ``max_tokens`` may ask for), with the body field that holds it.
 _OUTPUT_FIELD_BY_PROVIDER: Mapping[str, str] = {
@@ -78,7 +81,7 @@ DEEPSEEK_OUTPUT_FIELD = "max_output_tokens"
 
 #: Providers whose metadata states no output limit: reading one is unknown,
 #: not an error.
-_NO_OUTPUT_FIELD = frozenset({"mistral", "ollama"})
+_NO_OUTPUT_FIELD = frozenset({"mistral", "ollama", "omlx"})
 
 #: Largest count Rust's ``u64`` holds; Python refuses more so both agree.
 MAX_WINDOW = 2**64 - 1
@@ -160,8 +163,8 @@ def _field(provider: str, model: str, obj: Any, name: str, unknown: str = "windo
     return _as_count(provider, model, repr(name), obj[name], unknown)
 
 
-def _deepseek_entry(provider: str, model: str, body: Any, unknown: str) -> Mapping[str, Any] | None:
-    """DeepSeek's list entry for ``model``; ``None`` when ``data`` is not a list.
+def _listed_entry(provider: str, model: str, body: Any, unknown: str) -> Mapping[str, Any] | None:
+    """A model list's entry for ``model`` (DeepSeek, oMLX); ``None`` if ``data`` is no list.
 
     Non-object entries are skipped; with duplicate ids the first wins.
 
@@ -174,7 +177,7 @@ def _deepseek_entry(provider: str, model: str, body: Any, unknown: str) -> Mappi
         return None
     entry = next((e for e in data if isinstance(e, Mapping) and e.get("id") == model), None)
     if entry is None:
-        raise NoSuchModelError(f"deepseek has no model {model!r}", provider=provider, model=model)
+        raise NoSuchModelError(f"{provider} has no model {model!r}", provider=provider, model=model)
     return entry
 
 
@@ -182,20 +185,23 @@ def read_context_window(provider: str, model: str, body: Any) -> int | None:
     """Read ``model``'s context window (tokens) out of a provider's metadata.
 
     ``body`` is the JSON the provider returned: the model object (anthropic,
-    gemini, mistral), the model list (deepseek) or ``/api/show`` (ollama).
+    gemini, mistral), the model list (deepseek, omlx) or ``/api/show`` (ollama).
     Returns ``None`` when the body does not state a usable window, including
     when ``body``, ``data`` or ``model_info`` is not the JSON type it should
     be. Never raises for the shape of valid JSON.
 
     Raises:
-        NoSuchModelError: deepseek's list has no entry for ``model``.
+        NoSuchModelError: deepseek's or omlx's list has no entry for ``model``.
         ValueError: ``provider`` has no metadata to read.
     """
     if provider in _FIELD_BY_PROVIDER:
         return _field(provider, model, body, _FIELD_BY_PROVIDER[provider])
     if provider == "deepseek":
-        entry = _deepseek_entry(provider, model, body, "window")
+        entry = _listed_entry(provider, model, body, "window")
         return None if entry is None else _field(provider, model, entry, DEEPSEEK_WINDOW_FIELD)
+    if provider == "omlx":
+        entry = _listed_entry(provider, model, body, "window")
+        return None if entry is None else _field(provider, model, entry, OMLX_WINDOW_FIELD)
     if provider == "ollama":
         # ``modelinfo`` is the spelling the ollama client library exposes.
         candidates = (
@@ -238,7 +244,7 @@ def read_output_limit(provider: str, model: str, body: Any) -> int | None:
     if provider in _NO_OUTPUT_FIELD:
         return None
     if provider == "deepseek":
-        entry = _deepseek_entry(provider, model, body, unknown)
+        entry = _listed_entry(provider, model, body, unknown)
         return (
             None
             if entry is None

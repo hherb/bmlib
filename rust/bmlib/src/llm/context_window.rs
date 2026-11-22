@@ -55,6 +55,9 @@ const FIELD_BY_PROVIDER: &[(&str, &str)] = &[
 /// DeepSeek lists every model in one body; this is the per-model field.
 const DEEPSEEK_WINDOW_FIELD: &str = "context_window";
 
+/// oMLX lists every model in one body too, each with this window field.
+const OMLX_WINDOW_FIELD: &str = "max_model_len";
+
 /// Body field holding the most a reply may be (the largest `max_tokens` a
 /// request may ask for), per provider whose model object names it.
 const OUTPUT_FIELD_BY_PROVIDER: &[(&str, &str)] =
@@ -65,7 +68,7 @@ const DEEPSEEK_OUTPUT_FIELD: &str = "max_output_tokens";
 
 /// Providers whose metadata states no output limit: reading one is unknown,
 /// not an error.
-const NO_OUTPUT_FIELD: &[&str] = &["mistral", "ollama"];
+const NO_OUTPUT_FIELD: &[&str] = &["mistral", "ollama", "omlx"];
 
 /// Ollama: the architecture names the prefix of the window's key.
 const OLLAMA_ARCHITECTURE_KEY: &str = "general.architecture";
@@ -138,8 +141,8 @@ fn field(object: &Value, name: &str) -> Option<u64> {
 /// Read `model`'s context window (tokens) out of a provider's metadata.
 ///
 /// `body` is the JSON the provider returned: the model object (anthropic,
-/// gemini, mistral), the model list (deepseek) or `/api/show` (ollama).
-/// `Ok(None)` means the body does not state a usable window. A deepseek list
+/// gemini, mistral), the model list (deepseek, omlx) or `/api/show` (ollama).
+/// `Ok(None)` means the body does not state a usable window. A listing
 /// without `model` is [`ContextWindowError::NoSuchModel`]; a provider with no
 /// metadata is [`ContextWindowError::UnknownProvider`].
 pub fn read_context_window(
@@ -151,8 +154,12 @@ pub fn read_context_window(
         return Ok(field(body, name));
     }
     match provider {
-        "deepseek" => Ok(deepseek_entry(provider, model, body)?
+        "deepseek" => Ok(listed_entry(provider, model, body)?
             .and_then(|entry| field(entry, DEEPSEEK_WINDOW_FIELD))),
+        "omlx" => {
+            Ok(listed_entry(provider, model, body)?
+                .and_then(|entry| field(entry, OMLX_WINDOW_FIELD)))
+        }
         "ollama" => {
             // `modelinfo` is the spelling the ollama client library exposes.
             let info = ["model_info", "modelinfo"]
@@ -212,7 +219,7 @@ pub fn read_output_limit(
         return Ok(None);
     }
     match provider {
-        "deepseek" => Ok(deepseek_entry(provider, model, body)?
+        "deepseek" => Ok(listed_entry(provider, model, body)?
             .and_then(|entry| field(entry, DEEPSEEK_OUTPUT_FIELD))),
         other => Err(ContextWindowError::UnknownProvider(other.to_string())),
     }
@@ -235,11 +242,11 @@ pub fn read_model_limits(
     })
 }
 
-/// DeepSeek's list entry for `model`: `Ok(None)` when `data` is not a list
+/// A model list's entry for `model` (DeepSeek's, oMLX's): `Ok(None)` when `data` is not a list
 /// (unknown, not "no such model"), [`ContextWindowError::NoSuchModel`] when no
 /// entry names it. Non-object entries never match; with duplicate ids the
 /// first wins.
-fn deepseek_entry<'a>(
+fn listed_entry<'a>(
     provider: &str,
     model: &str,
     body: &'a Value,

@@ -215,6 +215,7 @@ fn each_providers_chat_url_is_pinned() {
             "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
         ),
         ("ollama", "http://localhost:11434/api/chat"),
+        ("omlx", "http://127.0.0.1:8000/v1/chat/completions"),
     ];
     assert_eq!(bmlib::llm::provider_specs().len(), expected.len());
     for (provider, url) in expected {
@@ -252,6 +253,9 @@ fn defaults_and_base_url_overrides_are_applied() {
     let gemini = ChatRequest::new(vec![LLMMessage::user("hi")]).with_model("gemini");
     let target = resolve_target(&gemini, "gemini", None, Some("k")).expect("resolves");
     assert_eq!(target.model, "gemini-flash-lite-latest");
+    let omlx = ChatRequest::new(vec![LLMMessage::user("hi")]).with_model("omlx");
+    let target = resolve_target(&omlx, "omlx", None, None).expect("resolves keyless");
+    assert_eq!(target.model, "Inkling-2-Mini-oQ4e-mtp");
 
     let target = resolve_target(
         &request,

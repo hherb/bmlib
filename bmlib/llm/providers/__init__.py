@@ -57,7 +57,7 @@ _builtins_registered: bool = False
 # Built-in providers: name → (module, class, SDK module, extra).  Every
 # provider module imports its SDK lazily, inside ``_get_client()``, so
 # importing the module proves nothing about the SDK — registration probes the
-# SDK itself (#303).  The four OpenAI-compatible providers share one SDK.
+# SDK itself (#303).  The five OpenAI-compatible providers share one SDK.
 _BUILTIN_PROVIDERS: dict[str, tuple[str, str, str, str]] = {
     "anthropic": ("bmlib.llm.providers.anthropic", "AnthropicProvider", "anthropic", "anthropic"),
     "ollama": ("bmlib.llm.providers.ollama", "OllamaProvider", "ollama", "ollama"),
@@ -65,6 +65,7 @@ _BUILTIN_PROVIDERS: dict[str, tuple[str, str, str, str]] = {
     "deepseek": ("bmlib.llm.providers.deepseek", "DeepSeekProvider", "openai", "openai"),
     "mistral": ("bmlib.llm.providers.mistral", "MistralProvider", "openai", "openai"),
     "gemini": ("bmlib.llm.providers.gemini", "GeminiProvider", "openai", "openai"),
+    "omlx": ("bmlib.llm.providers.omlx", "OmlxProvider", "openai", "openai"),
 }
 
 

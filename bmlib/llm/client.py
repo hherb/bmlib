@@ -93,7 +93,7 @@ class LLMClient:
             "ollama": {"base_url": ollama_host},
         }
         # OpenAI-compatible providers share the generic api_key / base_url
-        for name in ("openai", "deepseek", "mistral", "gemini"):
+        for name in ("openai", "deepseek", "mistral", "gemini", "omlx"):
             self._provider_config[name] = {"api_key": api_key, "base_url": base_url}
         self._providers: dict[str, BaseProvider] = {}
 
