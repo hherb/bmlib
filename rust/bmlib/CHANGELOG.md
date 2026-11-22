@@ -32,7 +32,8 @@ The Python library is documented separately, in the repository's
   (`"parts"`, `From<PartsError>`). The default `max_tokens` is
   `full_text_agent::DEFAULT_MAX_TOKENS` (16384), a part's reply being long.
   `PartAssessment::unasked` lists the ids a reply answered that were not
-  asked, in the reply's order (#807).
+  asked, in the reply's order (#807). A negative-zero id reads as `"0"`, as
+  in Python.
 
 ### Fixed
 

@@ -124,7 +124,7 @@ impl ItemAssessment {
     }
 }
 
-/// The items of one part, the asked ids the reply left out, and run notes.
+/// One part's items, the asked ids left out, the ids answered unasked, run notes.
 ///
 /// `unasked` lists the ids the reply answered although they were not asked,
 /// in the reply's order and as it spelled them (an integer read as its
@@ -274,6 +274,14 @@ pub fn read_part_reply(
             // `"id": 7` reads as "7" (ruling 8): a re-ask for that slip would
             // cost the whole part.
             Some(Value::Number(number)) if number.is_i64() || number.is_u64() => number.to_string(),
+            // serde_json reads `-0` as `-0.0`; Python reads it as the integer 0.
+            Some(Value::Number(number))
+                if number
+                    .as_f64()
+                    .is_some_and(|f| f == 0.0 && f.is_sign_negative()) =>
+            {
+                "0".to_string()
+            }
             _ => return Err("an item's id is not text".to_string()),
         };
         if by_id.contains_key(&id) {
@@ -287,7 +295,7 @@ pub fn read_part_reply(
     for id in &unasked {
         log::warn!(
             target: "bmlib.quality.prisma2020_models",
-            "PRISMA reply has item {id:?}, which was not asked; ignored"
+            "PRISMA reply has item {id:?}, which was not asked; its answer is not read"
         );
     }
 

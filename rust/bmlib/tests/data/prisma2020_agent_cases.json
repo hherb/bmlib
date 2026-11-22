@@ -93,13 +93,31 @@
       ],
       "min_similarity": 0.9,
       "replies": [
-        "{\"items\": [{\"id\": \"99\", \"judgement\": \"reported\", \"explanation\": \"why\", \"quotes\": []}, {\"id\": \"6\", \"judgement\": \"partly_reported\", \"explanation\": \"why\", \"quotes\": [\"We searched MEDLINE and Embase from inception to March 2020\"]}, {\"id\": 5, \"judgement\": \"reported\", \"explanation\": \"why\", \"quotes\": [\"Studies were eligible if they were randomised trials of adults with asthma\"]}, {\"id\": \"7\", \"judgement\": \"not_reported\", \"explanation\": \"why\", \"quotes\": []}, {\"id\": \"8\", \"judgement\": \"reported\", \"explanation\": \"why\", \"quotes\": [\"Two reviewers independently screened titles and abstracts\"]}]}"
+        "{\"items\": [{\"id\": \"99\", \"judgement\": \"reported\", \"explanation\": \"why\", \"quotes\": []}, {\"id\": \"6\", \"judgement\": \"partly_reported\", \"explanation\": \"why\", \"quotes\": [\"We searched MEDLINE and Embase from inception to March 2020\"]}, {\"id\": 5, \"judgement\": \"reported\", \"explanation\": \"why\", \"quotes\": [\"Studies were eligible if they were randomised trials of adults with asthma\"]}, {\"id\": \"13b\", \"judgement\": \"maybe\", \"explanation\": 5, \"quotes\": 7}, {\"id\": -0, \"judgement\": \"reported\", \"explanation\": \"why\", \"quotes\": []}, {\"id\": \"7\", \"judgement\": \"not_reported\", \"explanation\": \"why\", \"quotes\": []}, {\"id\": \"8\", \"judgement\": \"reported\", \"explanation\": \"why\", \"quotes\": [\"Two reviewers independently screened titles and abstracts\"]}]}"
       ],
       "text": "Methods. Studies were eligible if they were randomised trials of adults with asthma. We searched MEDLINE and Embase from inception to March 2020. Two reviewers independently screened titles and abstracts, resolving disagreements by discussion.",
       "title": "Inhaled steroids in asthma: a systematic review"
     },
     "fn": "part",
     "name": "unasked"
+  },
+  {
+    "args": {
+      "item_ids": [
+        "6",
+        "7",
+        "8"
+      ],
+      "min_similarity": 0.9,
+      "replies": [
+        "{\"items\": [{\"id\": 18446744073709551616, \"judgement\": \"reported\", \"explanation\": \"why\", \"quotes\": []}, {\"id\": \"6\", \"judgement\": \"partly_reported\", \"explanation\": \"why\", \"quotes\": [\"We searched MEDLINE and Embase from inception to March 2020\"]}, {\"id\": \"7\", \"judgement\": \"not_reported\", \"explanation\": \"why\", \"quotes\": []}, {\"id\": \"8\", \"judgement\": \"reported\", \"explanation\": \"why\", \"quotes\": [\"Two reviewers independently screened titles and abstracts\"]}]}",
+        "{\"items\": [{\"id\": \"6\", \"judgement\": \"partly_reported\", \"explanation\": \"why\", \"quotes\": [\"We searched MEDLINE and Embase from inception to March 2020\"]}, {\"id\": \"7\", \"judgement\": \"not_reported\", \"explanation\": \"why\", \"quotes\": []}, {\"id\": \"8\", \"judgement\": \"reported\", \"explanation\": \"why\", \"quotes\": [\"Two reviewers independently screened titles and abstracts\"]}]}"
+      ],
+      "text": "Methods. Studies were eligible if they were randomised trials of adults with asthma. We searched MEDLINE and Embase from inception to March 2020. Two reviewers independently screened titles and abstracts, resolving disagreements by discussion.",
+      "title": "Inhaled steroids in asthma: a systematic review"
+    },
+    "fn": "part",
+    "name": "unasked_id_out_of_range"
   },
   {
     "args": {

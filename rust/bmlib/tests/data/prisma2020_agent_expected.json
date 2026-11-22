@@ -318,8 +318,97 @@
         "notes": [],
         "unasked": [
           "99",
-          "5"
+          "5",
+          "13b",
+          "0"
         ]
+      }
+    }
+  },
+  {
+    "name": "unasked_id_out_of_range",
+    "ok": true,
+    "value": {
+      "messages": [
+        [
+          {
+            "content": "You are an expert in systematic review methodology and the PRISMA 2020 reporting guideline.\n\nCRITICAL RULES:\n1. Judge ONLY what is ACTUALLY PRESENT in the text\n2. DO NOT assume, infer, or fabricate anything the text does not state\n3. Judge THIS review's own reporting, not the studies it includes\n4. Return ONLY valid JSON, no explanation; use null, never NaN or Infinity, for a number you cannot give",
+            "role": "system"
+          },
+          {
+            "content": "Judge how fully the systematic review below reports each of these PRISMA 2020 checklist items.\n\nItem 6: Information sources\nChecklist wording: Specify all databases, registers, websites, organisations, reference lists and other sources searched or consulted to identify studies. Specify the date when each source was last searched or consulted.\nGuidance:\nreported: every database (with its platform or interface, for example Ovid), register, website, organisation, reference list and other source searched or consulted, each with the date it was last searched or consulted. One date counts for all sources only if the paper plainly applies it to each.\npartly_reported: sources named but dates missing for some or all, or other sources mentioned without naming them, for example \"grey literature was searched\".\nnot_reported: no sources named.\n\nItem 7: Search strategy\nChecklist wording: Present the full search strategies for all databases, registers and websites, including any filters and limits used.\nGuidance:\nreported: the full search strategy, exactly as run (every term, Boolean operator, field tag, filter and limit), for every database, register and website searched, in the text.\npartly_reported: the full strategy for some sources but not all, or only the terms or concepts searched, or a strategy without its filters and limits.\nnot_reported: only a statement that a search was done, with no terms.\nreported_elsewhere: the paper says where the full strategies are, outside its text, for example \"full search strategies in Supplementary Appendix 1\"; quote the pointer. If some strategies are in the text and the rest are pointed to, judge reported_elsewhere and say which are in the text.\n\nItem 8: Selection process\nChecklist wording: Specify the methods used to decide whether a study met the inclusion criteria of the review, including how many reviewers screened each record and each report retrieved, whether they worked independently, and if applicable, details of automation tools used in the process.\nGuidance:\nreported: how many reviewers screened each record (titles and abstracts) and each report retrieved (full texts), whether they worked independently, how disagreements were resolved, and the automation tools used, if any. Silence about automation tools is not a gap.\npartly_reported: some of this is missing, for example two reviewers named without saying whether they worked independently, or only the title and abstract stage described.\nnot_reported: no account of how studies were selected.\n\nFor EACH item give:\n- id: the item's id exactly as listed (for example \"13d\")\n- judgement: one of \"reported\", \"partly_reported\", \"not_reported\", \"reported_elsewhere\" or \"not_applicable\", as the item's guidance defines them\n- explanation: 1-3 sentences saying what the paper reports for the item, or what is missing\n- quotes: 1-3 passages copied VERBATIM from the paper that show what you judged. Copy them character for character; do not paraphrase, shorten with ellipses, or join sentences.\n\nSTRICT EVIDENCE RULES:\n- Score only what is actually present in the paper; do not infer what it does not say\n- Every judgement but \"not_reported\" needs a quote; one with no quote found in the paper is shown as \"not_reported\"\n- \"reported_elsewhere\": quote the paper's pointer to where the item is reported (a supplement, a protocol, a registry record)\n- \"not_applicable\": only where the item's guidance allows it, quoting the passage that shows why\n- Be strict: an item reported only in part is \"partly_reported\", not \"reported\"\n\nPaper Title: Inhaled steroids in asthma: a systematic review\n\nPaper Text:\nMethods. Studies were eligible if they were randomised trials of adults with asthma. We searched MEDLINE and Embase from inception to March 2020. Two reviewers independently screened titles and abstracts, resolving disagreements by discussion.\n\nRespond with JSON in exactly this shape, one entry for each item listed:\n\n{\n    \"items\": [\n        {\n            \"id\": \"7\",\n            \"judgement\": \"partly_reported\",\n            \"explanation\": \"The MEDLINE strategy is given in full; the strategies for the other databases are not.\",\n            \"quotes\": [\"a passage copied verbatim from the paper\"]\n        }\n    ]\n}",
+            "role": "user"
+          }
+        ],
+        [
+          {
+            "content": "You are an expert in systematic review methodology and the PRISMA 2020 reporting guideline.\n\nCRITICAL RULES:\n1. Judge ONLY what is ACTUALLY PRESENT in the text\n2. DO NOT assume, infer, or fabricate anything the text does not state\n3. Judge THIS review's own reporting, not the studies it includes\n4. Return ONLY valid JSON, no explanation; use null, never NaN or Infinity, for a number you cannot give",
+            "role": "system"
+          },
+          {
+            "content": "Judge how fully the systematic review below reports each of these PRISMA 2020 checklist items.\n\nItem 6: Information sources\nChecklist wording: Specify all databases, registers, websites, organisations, reference lists and other sources searched or consulted to identify studies. Specify the date when each source was last searched or consulted.\nGuidance:\nreported: every database (with its platform or interface, for example Ovid), register, website, organisation, reference list and other source searched or consulted, each with the date it was last searched or consulted. One date counts for all sources only if the paper plainly applies it to each.\npartly_reported: sources named but dates missing for some or all, or other sources mentioned without naming them, for example \"grey literature was searched\".\nnot_reported: no sources named.\n\nItem 7: Search strategy\nChecklist wording: Present the full search strategies for all databases, registers and websites, including any filters and limits used.\nGuidance:\nreported: the full search strategy, exactly as run (every term, Boolean operator, field tag, filter and limit), for every database, register and website searched, in the text.\npartly_reported: the full strategy for some sources but not all, or only the terms or concepts searched, or a strategy without its filters and limits.\nnot_reported: only a statement that a search was done, with no terms.\nreported_elsewhere: the paper says where the full strategies are, outside its text, for example \"full search strategies in Supplementary Appendix 1\"; quote the pointer. If some strategies are in the text and the rest are pointed to, judge reported_elsewhere and say which are in the text.\n\nItem 8: Selection process\nChecklist wording: Specify the methods used to decide whether a study met the inclusion criteria of the review, including how many reviewers screened each record and each report retrieved, whether they worked independently, and if applicable, details of automation tools used in the process.\nGuidance:\nreported: how many reviewers screened each record (titles and abstracts) and each report retrieved (full texts), whether they worked independently, how disagreements were resolved, and the automation tools used, if any. Silence about automation tools is not a gap.\npartly_reported: some of this is missing, for example two reviewers named without saying whether they worked independently, or only the title and abstract stage described.\nnot_reported: no account of how studies were selected.\n\nFor EACH item give:\n- id: the item's id exactly as listed (for example \"13d\")\n- judgement: one of \"reported\", \"partly_reported\", \"not_reported\", \"reported_elsewhere\" or \"not_applicable\", as the item's guidance defines them\n- explanation: 1-3 sentences saying what the paper reports for the item, or what is missing\n- quotes: 1-3 passages copied VERBATIM from the paper that show what you judged. Copy them character for character; do not paraphrase, shorten with ellipses, or join sentences.\n\nSTRICT EVIDENCE RULES:\n- Score only what is actually present in the paper; do not infer what it does not say\n- Every judgement but \"not_reported\" needs a quote; one with no quote found in the paper is shown as \"not_reported\"\n- \"reported_elsewhere\": quote the paper's pointer to where the item is reported (a supplement, a protocol, a registry record)\n- \"not_applicable\": only where the item's guidance allows it, quoting the passage that shows why\n- Be strict: an item reported only in part is \"partly_reported\", not \"reported\"\n\nPaper Title: Inhaled steroids in asthma: a systematic review\n\nPaper Text:\nMethods. Studies were eligible if they were randomised trials of adults with asthma. We searched MEDLINE and Embase from inception to March 2020. Two reviewers independently screened titles and abstracts, resolving disagreements by discussion.\n\nRespond with JSON in exactly this shape, one entry for each item listed:\n\n{\n    \"items\": [\n        {\n            \"id\": \"7\",\n            \"judgement\": \"partly_reported\",\n            \"explanation\": \"The MEDLINE strategy is given in full; the strategies for the other databases are not.\",\n            \"quotes\": [\"a passage copied verbatim from the paper\"]\n        }\n    ]\n}",
+            "role": "user"
+          }
+        ]
+      ],
+      "queries": [],
+      "result": {
+        "condensation_status": null,
+        "condensed_from_chars": null,
+        "items": [
+          {
+            "citations": [
+              {
+                "end": 144,
+                "exact": true,
+                "similarity": 1.0,
+                "start": 85,
+                "text": "We searched MEDLINE and Embase from inception to March 2020"
+              }
+            ],
+            "explanation": "why",
+            "id": "6",
+            "judgement": "partly_reported",
+            "model_judgement": "partly_reported",
+            "quotes_contradicted": [],
+            "quotes_dropped": 0,
+            "quotes_not_found": [],
+            "unbacked": false
+          },
+          {
+            "citations": [],
+            "explanation": "why",
+            "id": "7",
+            "judgement": "not_reported",
+            "model_judgement": "not_reported",
+            "quotes_contradicted": [],
+            "quotes_dropped": 0,
+            "quotes_not_found": [],
+            "unbacked": false
+          },
+          {
+            "citations": [
+              {
+                "end": 203,
+                "exact": true,
+                "similarity": 1.0,
+                "start": 146,
+                "text": "Two reviewers independently screened titles and abstracts"
+              }
+            ],
+            "explanation": "why",
+            "id": "8",
+            "judgement": "reported",
+            "model_judgement": "reported",
+            "quotes_contradicted": [],
+            "quotes_dropped": 0,
+            "quotes_not_found": [],
+            "unbacked": false
+          }
+        ],
+        "missing": [],
+        "notes": [],
+        "unasked": []
       }
     }
   },

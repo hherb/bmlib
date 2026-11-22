@@ -147,8 +147,7 @@ fn missing_item_is_listed() {
 }
 
 #[test]
-fn extra_item_is_ignored() {
-    common::log_capture::start();
+fn extra_item_is_listed_unasked() {
     let part = read_part_reply(
         &reply(vec![
             entry("7", "reported", &[QUOTE]),
@@ -162,10 +161,6 @@ fn extra_item_is_ignored() {
     assert_eq!(part.items.len(), 1);
     assert_eq!(part.unasked, vec!["99"]);
     assert_eq!(part.to_json()["unasked"], json!(["99"]));
-    let records = common::log_capture::take("bmlib.quality.prisma2020_models");
-    assert!(records
-        .iter()
-        .any(|r| r.level == log::Level::Warn && r.message.contains("99")));
 }
 
 #[test]
@@ -174,6 +169,7 @@ fn unasked_ids_keep_the_reply_s_order_and_spelling() {
     // checklist or not, an integer read as its digits as an asked one is.
     let mut five = entry("5", "reported", &[]);
     five["id"] = json!(5);
+    common::log_capture::start();
     let part = read_part_reply(
         &reply(vec![
             entry("99", "reported", &[]),
@@ -187,6 +183,75 @@ fn unasked_ids_keep_the_reply_s_order_and_spelling() {
     )
     .unwrap();
     assert_eq!(part.unasked, vec!["99", "5", "13a"]);
+    let read: Vec<&str> = part.items.iter().map(|row| row.id).collect();
+    assert_eq!(read, ["7"]);
+    assert!(part.missing.is_empty());
+    let warnings: Vec<String> = common::log_capture::take("bmlib.quality.prisma2020_models")
+        .into_iter()
+        .filter(|r| r.level == log::Level::Warn)
+        .map(|r| r.message)
+        .collect();
+    let expected: Vec<String> = ["99", "5", "13a"]
+        .iter()
+        .map(|id| {
+            format!("PRISMA reply has item {id:?}, which was not asked; its answer is not read")
+        })
+        .collect();
+    assert_eq!(warnings, expected);
+}
+
+#[test]
+fn an_unasked_answer_is_not_read() {
+    // Checking it would turn a harmless extra into a re-ask of the whole part.
+    let bad = json!({"id": "99", "judgement": "maybe", "explanation": 5, "quotes": 7});
+    let part = read_part_reply(
+        &reply(vec![entry("7", "reported", &[QUOTE]), bad]),
+        &["7"],
+        TEXT,
+        0.85,
+    )
+    .unwrap();
+    assert_eq!(part.items.len(), 1);
+    assert_eq!(part.unasked, vec!["99"]);
+}
+
+#[test]
+fn an_unasked_id_given_twice_is_unreadable() {
+    let mut again = entry("99", "reported", &[]);
+    again["id"] = json!(99);
+    let error = read_part_reply(
+        &reply(vec![entry("99", "reported", &[]), again]),
+        &["7"],
+        TEXT,
+        0.85,
+    )
+    .unwrap_err();
+    assert!(error.contains("duplicate item id \"99\""), "{error}");
+}
+
+#[test]
+fn a_negative_zero_id_is_read_as_0() {
+    // serde_json reads the literal `-0` as `-0.0`; Python reads the integer 0.
+    for zero in ["-0", "-0.0"] {
+        let mut item = entry("0", "reported", &[]);
+        item["id"] = serde_json::from_str(zero).unwrap();
+        let part = read_part_reply(&reply(vec![item]), &["7"], TEXT, 0.85).unwrap();
+        assert_eq!(
+            (part.unasked, part.missing),
+            (vec!["0".to_string()], vec!["7"])
+        );
+    }
+}
+
+#[test]
+fn an_integer_id_outside_i64_and_u64_is_unreadable() {
+    // serde_json holds it as a float, which Python refuses too.
+    for big in ["18446744073709551616", "-9223372036854775809"] {
+        let mut item = entry("7", "reported", &[]);
+        item["id"] = serde_json::from_str(big).unwrap();
+        let error = read_part_reply(&reply(vec![item]), &["7"], TEXT, 0.85).unwrap_err();
+        assert!(error.contains("id"), "{big}: {error}");
+    }
 }
 
 #[test]

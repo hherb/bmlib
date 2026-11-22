@@ -14,12 +14,19 @@ the token link first, remove it after)._
   holds the ids a reply answered that its part did not ask, in the reply's
   order and as the reply spelled them (an integer read as its digits, an id
   off the checklist kept). Their answers are still not read, and the WARNING
-  stays. It is in `to_dict()` / `to_json()`, so every `part` expectation of
-  the oracle gained `"unasked": []`.
-- **Shared contract**: the oracle's new `unasked` case (19 cases now, in both
-  case copies) replies with `"99"` and an integer `5` around the asked items;
-  Rust replays it clean. Unreleased, like the agent, so no break; a Rust struct
-  literal of `PartAssessment` now names the field.
+  stays. It is in `to_dict()` / `to_json()`, so every other `part`
+  expectation of the oracle gained `"unasked": []`.
+- **Parity, from the review**: Python now refuses an integer id outside i64 /
+  u64, and both languages read a negative zero (`-0`, `-0.0`) as `"0"`.
+  serde_json holds both as floats, so Rust refused them while Python read
+  them, the precedents being `retraction_status`'s range check and the
+  library records' negative zero.
+- **Shared contract**: the oracle's new `unasked` case replies with `"99"`,
+  an integer `5`, an unasked entry with an invalid body and `-0` around the
+  asked items, and `unasked_id_out_of_range` re-asks after a 21-digit id (20
+  cases now, in both case copies); Rust replays them clean. Unreleased, like
+  the agent, so no break; a Rust struct literal of `PartAssessment` now names
+  the field.
 - **StudyAnalyzer** shows it as a note (its PR #151's review asked for it).
 
 ## Merged since the 0.14.0 release (all Unreleased; detail in the CHANGELOGs)
@@ -35,17 +42,18 @@ the token link first, remove it after)._
   a digest serves only the items it was `condensed_for`. Licence CC BY 4.0.
 - **A DOI and a PMID naming two papers never merge them** (#803, PR #804):
   both rows are kept, the record merges into the DOI row without its PMID or
-  PMCID, and a WARNING names both. **#806 (open, the maintainer's choice of
-  remedy)** is the one-row case: a DOI or PMID finding one row that holds a
-  different value of the other identifier still merges silently.
+  PMCID, and a WARNING names both. Papers already merged away stay merged.
+  **#806 (open, the maintainer's choice of remedy)** is the one-row case: a
+  DOI or PMID finding one row that holds a different value of the other
+  identifier still merges silently.
 - **A record with neither DOI nor PMID is stored once** (#794, PR #802): the
   `publication_record_ids` table, `FetchedRecord.source_record_id`,
   `store_publication(..., record_id=)` (Rust
   `store_publication_with_record_id`); a DOI or PMID outranks a record ID.
-  The table arrives empty, so rows already duplicated stay. **Not pinned**:
-  Rust has no test of the concurrent-writer insert (Python's
+  The table arrives empty, so rows already duplicated stay, and each such
+  record gains one more row on its first re-fetch after the upgrade. **Not
+  pinned**: Rust has no test of the concurrent-writer insert (Python's
   `test_an_id_stored_meanwhile_by_another_writer_fails_the_store`).
-
 
 ## What 0.14.0 costs StudyAnalyzer (and any downstream)
 
@@ -237,8 +245,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   medRxiv full-text sources with their version on a re-fetch. The two questions are independent, and a downstream reading only the
   number must still read this list.
 - **Tests on `feat/prisma-unasked-807`** (2026-11-22, PostgreSQL 18 DSN on
-  port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,304 passed + 23 skipped;
-  ruff 0.15.20 and mypy clean. Rust `cargo test -p bmlib -p bmlib-ffi` 1,947
+  port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,310 passed + 23 skipped;
+  ruff 0.15.20 and mypy clean. Rust `cargo test -p bmlib -p bmlib-ffi` 1,951
   passed on macOS, clippy and `cargo fmt --check` clean; the Rust oracle 46
   clean. `postgres_live` was not re-run (no Rust SQL changed; 15 passed on
   #794's branch). At the release
