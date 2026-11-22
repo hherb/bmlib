@@ -8,6 +8,13 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **An `omlx` provider**: a local [oMLX](https://github.com/jundot/omlx)
+  server (MLX on Apple silicon) through its OpenAI-compatible API at
+  `http://127.0.0.1:8000`, keyless and free, in both languages
+  (`provider_specs()` in Rust, `OmlxProvider` in Python). Models are listed
+  from `/v1/models`, and the context window is that list's `max_model_len`
+  (no output limit is stated). Shared cases in
+  `tests/fixtures/context_window.json`.
 - **A PRISMA 2020 reporting agent** (StudyAnalyzer's PRISMA tab, design
   `2026-11-18-prisma2020-tab-design.md`; both languages, held together by
   `tests/fixtures/prisma2020_checklist.json`, `prisma2020_parts.json` and a

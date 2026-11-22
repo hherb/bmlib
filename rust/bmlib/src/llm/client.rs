@@ -243,6 +243,16 @@ pub fn provider_specs() -> BTreeMap<&'static str, ProviderSpec> {
             api_key_env: None,
             is_local: true,
         },
+        ProviderSpec {
+            // oMLX (MLX on Apple silicon), through its OpenAI-compatible API.
+            // It names no default model; this is one worth trying first.
+            name: "omlx",
+            protocol: Protocol::OpenAi,
+            base_url: "http://127.0.0.1:8000",
+            default_model: "Inkling-2-Mini-oQ4e-mtp",
+            api_key_env: None,
+            is_local: true,
+        },
     ];
     rows.into_iter().map(|row| (row.name, row)).collect()
 }
@@ -1633,13 +1643,14 @@ const HTTP_NOT_FOUND: u16 = 404;
 const OLLAMA_MISSING_MODEL_PHRASE: &str = "not found";
 
 /// Whether a 404 from `provider` means "no such model" rather than a wrong
-/// URL. DeepSeek's list endpoint names no model, so its 404 never does.
+/// URL. DeepSeek's and oMLX's list endpoints name no model, so their 404
+/// never does.
 /// Ollama answers a wrong base URL (say one ending `/v1`) with a 404 too, so
 /// only an `error` field saying "not found" counts. The others name the model
 /// in the path, so any 404 does.
 fn names_a_missing_model(provider: &str, body: &str) -> bool {
     match provider {
-        "deepseek" => false,
+        "deepseek" | "omlx" => false,
         "ollama" => serde_json::from_str::<Value>(body)
             .ok()
             .and_then(|v| {
@@ -1681,6 +1692,8 @@ fn context_window_request(target: &Target) -> (String, Option<Value>) {
     let id = percent_encode_segment(&target.model);
     match target.provider.as_str() {
         "deepseek" => (format!("{base}/models"), None),
+        // oMLX has no per-model endpoint; its list states `max_model_len`.
+        "omlx" => (format!("{base}/v1/models"), None),
         "gemini" => {
             let native = base.strip_suffix("/openai").unwrap_or(base);
             (format!("{native}/models/{id}"), None)

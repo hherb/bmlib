@@ -183,16 +183,17 @@ class TestBuiltinRegistrationProbesTheSdk:
         monkeypatch.setattr(fresh_registry, "_sdk_installed", lambda module: module == "ollama")
         assert fresh_registry.list_providers() == ["ollama"]
 
-    def test_the_openai_sdk_carries_four_providers(self, fresh_registry, monkeypatch):
+    def test_the_openai_sdk_carries_five_providers(self, fresh_registry, monkeypatch):
         monkeypatch.setattr(fresh_registry, "_sdk_installed", lambda module: module == "openai")
         assert sorted(fresh_registry.list_providers()) == [
             "deepseek",
             "gemini",
             "mistral",
+            "omlx",
             "openai",
         ]
 
-    def test_every_sdk_installed_lists_all_six(self, fresh_registry, monkeypatch):
+    def test_every_sdk_installed_lists_all_seven(self, fresh_registry, monkeypatch):
         monkeypatch.setattr(fresh_registry, "_sdk_installed", lambda module: True)
         assert sorted(fresh_registry.list_providers()) == [
             "anthropic",
@@ -200,6 +201,7 @@ class TestBuiltinRegistrationProbesTheSdk:
             "gemini",
             "mistral",
             "ollama",
+            "omlx",
             "openai",
         ]
 
@@ -2808,3 +2810,16 @@ class TestAnAnthropicJsonModeReplyIsNotPickedAroundARefusal:
         provider._client.messages.create.return_value = response
         result = provider.chat([LLMMessage(role="user", content="Hi")], model="m", json_mode=True)
         assert result.content == expected
+
+
+class TestOmlxProvider:
+    """oMLX: a local OpenAI-compatible server, keyless and free."""
+
+    def test_local_keyless_free(self):
+        from bmlib.llm.providers.omlx import OmlxProvider
+
+        p = OmlxProvider()
+        assert p.is_local and p.is_free and not p.requires_api_key
+        assert p.default_base_url == "http://127.0.0.1:8000/v1"
+        assert p.default_model == "Inkling-2-Mini-oQ4e-mtp"
+        assert p.calculate_cost("any-model", 1_000_000, 1_000_000) == 0.0

@@ -989,6 +989,95 @@
       "expect": {
         "unknown": true
       }
+    },
+    {
+      "name": "omlx happy",
+      "provider": "omlx",
+      "model": "Qwen3-8B-4bit",
+      "body": {
+        "data": [
+          {
+            "id": "other",
+            "max_model_len": 1
+          },
+          {
+            "id": "Qwen3-8B-4bit",
+            "max_model_len": 262144
+          }
+        ]
+      },
+      "expect": {
+        "window": 262144
+      }
+    },
+    {
+      "name": "omlx field missing",
+      "provider": "omlx",
+      "model": "Qwen3-8B-4bit",
+      "body": {
+        "data": [
+          {
+            "id": "other",
+            "max_model_len": 1
+          },
+          {
+            "id": "Qwen3-8B-4bit"
+          }
+        ]
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "omlx string",
+      "provider": "omlx",
+      "model": "Qwen3-8B-4bit",
+      "body": {
+        "data": [
+          {
+            "id": "other",
+            "max_model_len": 1
+          },
+          {
+            "id": "Qwen3-8B-4bit",
+            "max_model_len": "262144"
+          }
+        ]
+      },
+      "expect": {
+        "unknown": true
+      }
+    },
+    {
+      "name": "omlx id absent",
+      "provider": "omlx",
+      "model": "Qwen3-8B-4bit",
+      "body": {
+        "data": [
+          {
+            "id": "other",
+            "max_model_len": 1
+          }
+        ]
+      },
+      "expect": {
+        "error": "no_such_model"
+      }
+    },
+    {
+      "name": "omlx data dict",
+      "provider": "omlx",
+      "model": "Qwen3-8B-4bit",
+      "body": {
+        "data": {
+          "id": "Qwen3-8B-4bit",
+          "max_model_len": 5
+        }
+      },
+      "expect": {
+        "unknown": true
+      }
     }
   ],
   "refusals": {
@@ -1188,6 +1277,17 @@
         "expect": {
           "error": "transport",
           "status": null
+        }
+      },
+      {
+        "name": "omlx 404 is a transport error carrying 404",
+        "provider": "omlx",
+        "model": "Qwen3-8B-4bit",
+        "status": 404,
+        "body": "{\"detail\": \"Not Found\"}",
+        "expect": {
+          "error": "transport",
+          "status": 404
         }
       }
     ]
@@ -1416,6 +1516,27 @@
         "expect": {
           "unknown": true,
           "window": 131072
+        }
+      },
+      {
+        "name": "omlx states none",
+        "provider": "omlx",
+        "model": "Qwen3-8B-4bit",
+        "body": {
+          "data": [
+            {
+              "id": "other",
+              "max_model_len": 1
+            },
+            {
+              "id": "Qwen3-8B-4bit",
+              "max_model_len": 262144
+            }
+          ]
+        },
+        "expect": {
+          "unknown": true,
+          "window": 262144
         }
       }
     ]
