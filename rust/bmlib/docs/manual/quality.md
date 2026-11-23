@@ -415,3 +415,89 @@ let pico = agent.extract(title, &full_text, 0.9)?;
 
 The models carry `to_json` (Python's `to_dict`, key for key) and no
 `from_json`, so reading a stored result back is Python's job.
+
+## PRISMA 2020
+
+*(unreleased)* `Prisma2020Agent` judges how fully a systematic review
+reports each item of the PRISMA 2020 checklist, a part of the checklist at a
+time, with every judgement backed by a quote located in the paper. The rules
+(the checklist's fields, the split, the strict-evidence rule, the failures)
+are Python's, in [quality.md](../../../../docs/manual/quality.md#prisma-2020-agent-unreleased);
+this section gives the Rust shapes.
+
+```rust
+use bmlib::agents::{ChatJsonError, ChatJsonOutcome};
+use bmlib::llm::LLMMessage;
+use bmlib::quality::prisma2020_checklist::item;
+use bmlib::quality::prisma2020_models::Judgement;
+use bmlib::quality::{plan_parts, ChecklistItem, JsonChat, Prisma2020Agent, CHECKLIST};
+use serde_json::{json, Value};
+# struct Canned(Vec<Value>);
+# impl JsonChat for Canned {
+#     fn chat_json(&mut self, _: &[LLMMessage], _: f64, _: i64, _: usize, _: bool)
+#         -> Result<ChatJsonOutcome, ChatJsonError> {
+#         Ok(ChatJsonOutcome { value: self.0.remove(0), attempts: 1, repaired: false })
+#     }
+# }
+
+// The whole checklist, split to a 12,000-character reply budget.
+let table: &'static [ChecklistItem; 42] = &CHECKLIST;
+let all: Vec<&'static ChecklistItem> = table.iter().collect();
+assert_eq!(plan_parts(&all, 12_000)?.len(), 4);
+
+// One part of two items, judged over a paper short enough to send whole.
+let rows: Vec<&'static ChecklistItem> = ["6", "7"].iter().filter_map(|id| item(id)).collect();
+let plan = plan_parts(&rows, 12_000)?.remove(0);
+assert_eq!(plan.label(), "Methods 6–7");
+
+let search = "We searched MEDLINE and Embase from inception to March 2020";
+let text = format!("Methods. {search}. Two reviewers screened every record.");
+let mut chat = Canned(vec![json!({"items": [
+    {"id": "6", "judgement": "reported", "explanation": "e", "quotes": [search]},
+    {"id": "7", "judgement": "reported", "explanation": "e", "quotes": ["not in it"]},
+    {"id": 99, "judgement": "reported", "explanation": "e", "quotes": []},
+]})]);
+let mut agent = Prisma2020Agent::new(&mut chat);
+let prepared = agent.prepare_part("A review", &text, &plan.item_ids)?;
+let part = agent.assess_part(&prepared, &plan.item_ids, 0.9)?;
+
+assert_eq!(part.items[0].judgement, Judgement::Reported);
+assert_eq!(part.items[1].model_judgement, Judgement::Reported);
+assert_eq!(part.items[1].judgement, Judgement::NotReported); // no quote was located
+assert!(part.items[1].unbacked);
+assert_eq!(part.unasked, ["99"]); // an integer id reads as its digits
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+`CHECKLIST` is a `const` array, so borrow it as `&'static` (as above) to hand
+its rows to `plan_parts`, or take rows from `prisma2020_checklist::item(id)`.
+`Judgement` and `read_suitability` are reached through `prisma2020_models`
+only, since the RoB 2 and PICO modules export the same names.
+
+The agent has `PicoAgent`'s builders: `with_stop`, `with_condenser`,
+`with_temperature`, `with_max_tokens` (default 16,384), `with_max_retries`
+and `with_condense_config` (its `continue_on_error` is always set to false).
+`num_ctx` belongs to the chat (`LlmChat::with_num_ctx`), as for PICO. A call
+returns `Result<_, PrismaError>`, whose `kind()` is Python's
+`PrismaErrorKind` value, plus four kinds that Python raises as `ValueError`:
+`InvalidItems` (ids empty, repeated or not on the checklist, or a digest
+asked for items it was not condensed for), `InvalidSimilarity`,
+`PreparedOverBudget` and `PreparedUnderBudget`. A `PartsError` from
+`plan_parts` converts into `PrismaError::Parts`.
+
+**Long papers.** Text over the threshold needs a condenser,
+`PrismaCondenser::new(&context_model, temperature, max_tokens)` (with
+`with_progress` for its reports); without one the call is
+`PrismaError::CondensationFailed`, where Python condenses through the
+agent's own client. A digest whose run did not complete is refused as
+`CondensationFailed`, as in Python.
+
+```rust,ignore
+let mut condenser = PrismaCondenser::new(&my_context_model, 0.1, 4096);
+let mut agent = Prisma2020Agent::new(&mut chat).with_condenser(&mut condenser);
+let prepared = agent.prepare_part(title, &full_text, &ids)?;
+```
+
+`part_prompt_chars(&ids)` and `suitability_prompt_chars()` measure the prompt
+around the paper, as Python's do. The results carry `to_json`, Python's
+`to_dict`, key for key.

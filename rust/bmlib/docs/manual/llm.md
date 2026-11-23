@@ -18,9 +18,10 @@ environment variable its key lives in — and every request goes through one
 `LlmClient` over an injected
 `HttpClient` ([http.md](http.md)). The rows are
 Python's: `anthropic` (the default provider), `openai`, `deepseek`,
-`mistral`, `gemini` (its OpenAI-compatible endpoint) and `ollama` (local, no
-key). Embeddings are not ported: `EmbeddingResponse` exists as a data type,
-but `LlmClient` has no `embed`. Use [`bmlib::embed`](embed.md) for in-process
+`mistral`, `gemini` (its OpenAI-compatible endpoint), `ollama` (local, no
+key) and, *(unreleased)*, `omlx` (a local oMLX server at `127.0.0.1:8000`,
+MLX on Apple silicon, no key). Embeddings are not ported: `EmbeddingResponse`
+exists as a data type, but `LlmClient` has no `embed`. Use [`bmlib::embed`](embed.md) for in-process
 embeddings.
 
 ## Chatting
@@ -222,8 +223,8 @@ The pieces are public for a caller with its own transport: `SseEvents` and
 ## Context windows
 
 `client.context_window("provider:model")` asks the provider (Anthropic,
-Gemini, Mistral, DeepSeek, Ollama's `/api/show`) and reads the answer with
-`read_context_window`. OpenAI has no metadata endpoint, so it answers from
+Gemini, Mistral, DeepSeek, oMLX, Ollama's `/api/show`) and reads the answer
+with `read_context_window`. OpenAI has no metadata endpoint, so it answers from
 `KNOWN_CONTEXT_WINDOWS` without a key or a request; an exact match only.
 
 ```rust
@@ -246,8 +247,8 @@ assert_eq!(known_context_window("openai", "gpt-4o-mini-2024-07-18"), None);
 
 `Ok(None)` means the provider answered and stated no usable window.
 `ContextWindowError::NoSuchModel` is a 404 that names the model (not from
-DeepSeek, and from Ollama only when its `error` says "not found"). Any other
-failed request is `Transport { message, status }`, where `status` is the HTTP
+DeepSeek or oMLX, whose list names no model, and from Ollama only when its
+`error` says "not found"). Any other failed request is `Transport { message, status }`, where `status` is the HTTP
 status of the answer (a 401 or 403 is a refused key), or `None` where none
 came (*0.4.0, #664*). Unlike
 Python's `context_window(model, provider=None)`, a bare provider name asks

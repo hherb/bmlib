@@ -29,7 +29,7 @@ uv pip install -e ".[all,dev]"
 |----------------|-----------------------|----------------------------------------|
 | anthropic      | anthropic>=0.41       | Anthropic Claude LLM provider          |
 | ollama         | ollama>=0.5           | Ollama local LLM provider              |
-| openai         | openai>=1.0           | OpenAI, DeepSeek, Mistral, Gemini, and OpenAI-compatible providers |
+| openai         | openai>=1.0           | OpenAI, DeepSeek, Mistral, Gemini, oMLX and OpenAI-compatible providers |
 | postgresql     | psycopg2-binary>=2.9  | PostgreSQL database backend            |
 | transparency   | httpx>=0.25           | Transparency analysis API calls        |
 | publications   | httpx>=0.25           | Publication fetcher API calls           |
@@ -117,6 +117,7 @@ bmlib/
 │       ├── openai_provider.py # OpenAI
 │       ├── openai_compat.py # OpenAI-compatible API servers
 │       ├── deepseek.py      # DeepSeek
+│       ├── omlx.py          # oMLX (local MLX on Apple silicon), keyless; window from the list's max_model_len
 │       ├── mistral.py       # Mistral
 │       └── gemini.py        # Google Gemini
 ├── publications/            # Publication ingestion, deduplication, and sync

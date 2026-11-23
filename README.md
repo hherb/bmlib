@@ -78,7 +78,7 @@ models and `SectionSegmenter` all import on a core install.
 |-------|----------------|----------|
 | `anthropic` | `pip install bmlib[anthropic]` | Anthropic Claude provider |
 | `ollama` | `pip install bmlib[ollama]` | Ollama local provider |
-| `openai` | `pip install bmlib[openai]` | OpenAI, DeepSeek, Mistral, Gemini and OpenAI-compatible providers |
+| `openai` | `pip install bmlib[openai]` | OpenAI, DeepSeek, Mistral, Gemini, oMLX and OpenAI-compatible providers |
 | `postgresql` | `pip install bmlib[postgresql]` | PostgreSQL backend (psycopg2) |
 | `transparency` | `pip install bmlib[transparency]` | Transparency analysis (httpx) |
 | `publications` | `pip install bmlib[publications]` | Publication sync and record lookup (httpx) |
@@ -118,7 +118,7 @@ the Python manual. The Rust manual has a page for each module too.
 | Module | What it does |
 |--------|-------------|
 | [**db**](docs/manual/database.md) | Thin database layer over SQLite and PostgreSQL: pure functions over DB-API connections, composable transactions with savepoints, and migrations |
-| [**llm**](docs/manual/llm.md) | One client with pluggable providers (Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini, OpenAI-compatible). Covers chat, **streaming with cancellation**, tool calling, reasoning traces, **context-window lookup**, embeddings (Ollama), model listing, JSON repair, chunking and token tracking |
+| [**llm**](docs/manual/llm.md) | One client with pluggable providers (Anthropic, OpenAI, Ollama, DeepSeek, Mistral, Gemini, oMLX, OpenAI-compatible). Covers chat, **streaming with cancellation**, tool calling, reasoning traces, **context-window lookup**, embeddings (Ollama), model listing, JSON repair, chunking and token tracking |
 | [**templates**](docs/manual/templates.md) | Jinja2 prompt templates that look in a user directory first, then a default directory |
 | [**agents**](docs/manual/agents.md) | `BaseAgent` for LLM-driven tasks: `chat_json` with retry and truncation handling, and per-agent metrics |
 | [**context_processor**](docs/manual/context_processor.md) | Hierarchical map-reduce over content larger than one context window. No batch is ever larger than `max_context_chars` |

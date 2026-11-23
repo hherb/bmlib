@@ -24,6 +24,10 @@ Tier 2 runs by default when Tier 1's metadata result is not confident enough (`u
 | `manager` | `QualityManager` orchestrator | Yes |
 | `pico_agent` | `PicoAgent` — the PICO breakdown, its parts backed by verified quotes *(0.12.0)* | **No — called directly** |
 | `pico_models` | `PicoExtraction`, `PicoPart`, `PicoSuitability`, `PicoError` *(0.12.0)*, `PicoPrepared` *(0.13.0)* | **No — produced by `pico_agent`** |
+| `prisma2020_checklist` | `CHECKLIST`, `ChecklistItem`, `ChecklistSection`, `KEY_ITEMS` — the PRISMA 2020 checklist as data *(unreleased)* | **No — read by `prisma2020_agent`** |
+| `prisma2020_parts` | `plan_parts`, `PartPlan`, `PartsError`, `part_query` — a run split to a reply budget *(unreleased)* | **No — called directly** |
+| `prisma2020_models` | `read_part_reply`, `shown_judgement`, `ItemAssessment`, `PartAssessment`, `Suitability` *(unreleased)* | **No — produced by `prisma2020_agent`** |
+| `prisma2020_agent` | `Prisma2020Agent` — PRISMA 2020 reporting, a part at a time, every judgement backed by a located quote *(unreleased)* | **No — called directly** |
 | `cochrane_models` | Nine-domain RoB + study-characteristics dataclasses, plus `collapse_risk_of_bias()` | **Yes — produced by `cochrane_assessor`, bridged onto `BiasRisk`** |
 | `cochrane_formatter` | Markdown / HTML Cochrane table renderers | **No — standalone** |
 | `extractors` | Rule-based, LLM-free extraction functions | **No — standalone** |
@@ -73,10 +77,32 @@ from bmlib.quality import (
     PicoPrepared,  # (0.13.0)
     PicoSuitability,
     verify_quotes,
+    # The PRISMA 2020 agent (unreleased)
+    CHECKLIST,
+    KEY_ITEMS,
+    PART_OVERHEAD_CHARS,
+    ChecklistItem,
+    ChecklistSection,
+    ItemAssessment,
+    PartAssessment,
+    PartPlan,
+    PartsError,
+    Prisma2020Agent,
+    PrismaCondenser,
+    PrismaError,
+    PrismaErrorKind,
+    PrismaPrepared,
+    Suitability,
+    part_prompt_chars,
+    part_query,
+    plan_parts,
+    read_part_reply,
+    shown_judgement,
+    suitability_prompt_chars,
 )
 ```
 
-The list above is the complete `bmlib.quality.__all__`. Everything else must be imported from its submodule:
+The list above is `bmlib.quality.__all__` less the unattended evidence-weight pipeline (RoB 2, the evidence ladder, the design and outcome agents and `assess_unattended`), which `__all__` exports too but this page does not yet document (#811). Everything else must be imported from its submodule:
 
 ```python
 from bmlib.quality.cochrane_formatter import format_complete_assessment_markdown
@@ -84,6 +110,8 @@ from bmlib.quality.cochrane_models import ROB_JUDGEMENT_LOW, VALID_ROB_JUDGEMENT
 from bmlib.quality.data_models import DESIGN_TO_RANDOMIZED, STUDY_DESIGN_MAPPING
 from bmlib.quality.extractors import find_sample_size, get_extracted_study_type
 from bmlib.quality.metadata_filter import classify_from_metadata
+from bmlib.quality.prisma2020_checklist import item
+from bmlib.quality.prisma2020_models import Judgement, read_suitability
 from bmlib.quality.quality_agent import QualityAgent
 from bmlib.quality.scoring_models import ALL_DIMENSIONS, DIMENSION_SAMPLE_SIZE
 from bmlib.quality.study_classifier import StudyClassifier
@@ -1041,6 +1069,156 @@ store(json.dumps(prepared.to_dict()))             # and PicoPrepared.from_dict l
 ### The Rust port
 
 `bmlib::quality::PicoAgent` is the same agent: `check_suitability(&str, &str)` and `extract(&str, &str, min_similarity)` return `Result<_, PicoError>`, whose `kind()` is the Python enum's value (and `"invalid_similarity"` and *(0.13.0)* `"prepared_over_budget"` and `"prepared_under_budget"` for the three cases Python raises as `ValueError`). *(0.13.0, #659)* `RequestFailed { message, retryable, status }` carries `ChatError::is_retryable` of the failed call, as Python's `retryable`; an unknown provider and a missing key are `retryable: false`. *(0.13.0, #662)* `status` is `ChatError::Http`'s status, as Python's `status` (`None` for no HTTP answer); `ChatJsonError::Transport` carries both, from `ChatSource::last_failure_retryable` and `last_failure_status`. *(0.13.0, #638)* `prepare(&str, &str)`, `check_suitability_prepared(&PicoPrepared)` and `extract_prepared(&PicoPrepared, min_similarity)` are Python's, `PicoPrepared`'s fields read through accessors, with `to_json`/`from_json` refusing what Python's `from_dict` refuses, word for word. Oversized text needs a condenser, `PicoAgent::pico_condenser(model, temperature, max_tokens)`; without one it is `CondensationFailed`. *(0.13.0, #616)* A condensation request that failed the run is `RequestFailed`, through `ContextModel::last_request_failure` (default `None`, which keeps a condenser naming no request `CondensationFailed`), the batch's `ModelCallError { message, request }` and `ProcessingResult::error`. A `ContextModel` must return `Err` for a completion that stopped at the output ceiling, since only the implementation sees the stop reason. *(0.13.0, #640–#642)* The production pair is `LlmChat::new(&client, model)` for the agent and `LlmContextModel::new(&client, model)` for its condenser, each `.with_num_ctx(window)` and `.with_stop(&flag)`; `LlmContextModel` retries what `ChatError::is_retryable` says a retry may cure (a `ChatError::Transport`, or a `ChatError::Http` whose status is in `RETRYABLE_STATUSES`, *(0.13.0, #646)*) up to `CONTEXT_MODEL_ATTEMPTS` tries from `LlmClient::retry_base_delay`, never once stopped, and reads a structured reply through `chat_json`. `PicoAgent::with_stop(&flag)` makes any error while the flag is set, and a condensation that finished while it was set, `PicoError::Stopped` (`"stopped"`), carrying the failure's message. Both are `#[non_exhaustive]`: build them with `new` and the `with_` methods. `tests/fixtures/pico_stop_num_ctx.json` holds both languages to the same requests, each request's `num_ctx` and the same outcome over a fake Ollama transport. The Rust result models have no `from_json`, so the refusals on reading a stored result are Python's. The prompts are byte-identical, and `rust/bmlib/tests/pico_oracle.rs` holds the two languages to the same results and the same messages over scripted model replies.
+
+## PRISMA 2020 agent *(unreleased)*
+
+`Prisma2020Agent` (`bmlib.quality.prisma2020_agent`) judges how fully a systematic review reports each item of the [PRISMA 2020 checklist](https://www.prisma-statement.org/prisma-2020-checklist). It was built for StudyAnalyzer's PRISMA tab. As with [`PicoAgent`](#pico-agent-0120), **every judgement must be backed by the paper**: each quote the model gives is located by [`find_passage`](citations.md) in the text you passed, and a claim that no located quote backs is shown as `not_reported`.
+
+The checklist is too long for one reply, so a run is split into **parts** that each fit the model's output budget. The caller drives the calls, so it can store each part as it finishes:
+
+```python
+from bmlib.quality import CHECKLIST, Prisma2020Agent, PrismaError, PrismaErrorKind, plan_parts
+
+agent = Prisma2020Agent(llm=client, model="anthropic:claude-sonnet-5-5")
+
+suitability = agent.check_suitability(title, full_text)
+if not suitability.is_suitable:
+    print(suitability.document_type, suitability.rationale)  # e.g. "RCT"
+
+for plan in plan_parts(CHECKLIST, 12_000):          # the reply budget, in characters
+    ids = list(plan.item_ids)
+    try:
+        prepared = agent.prepare_part(title, full_text, ids)  # whole, or condensed for these ids
+        part = agent.assess_part(prepared, ids, min_similarity=0.9)
+    except PrismaError as exc:
+        if exc.kind is PrismaErrorKind.TRUNCATED:
+            ...  # the reply was cut: plan this part again with a smaller budget
+        raise
+    for row in part.items:
+        print(row.id, row.judgement, row.unbacked, [(c.start, c.end) for c in row.citations])
+    print("missing", part.missing, "unasked", part.unasked)  # ask the missing ones again
+    store(plan.label(), part.to_dict())
+```
+
+The prompts carry the checklist's own wording: Page MJ et al., *BMJ* 2021;372:n71, CC BY 4.0. The names, guidance, condensation hints and reply estimates are bmlib's own.
+
+### The checklist
+
+`CHECKLIST` is a tuple of the 42 items and sub-items (`"1"` to `"27"`, with `"10a"`, `"13d"` and so on), in checklist order. Each is a frozen `ChecklistItem`:
+
+| Field | Meaning |
+|---|---|
+| `id` | The item number as the checklist prints it, e.g. `"13d"` |
+| `section` | A `ChecklistSection`: `TITLE`, `ABSTRACT`, `INTRODUCTION`, `METHODS`, `RESULTS`, `DISCUSSION` or `OTHER_INFORMATION` |
+| `name` | A short name, e.g. *Synthesis methods: synthesis method* |
+| `wording` | The checklist's text, verbatim |
+| `guidance` | A rubric: what each judgement means for this item |
+| `condense_hint` | What a digest must keep to judge the item (see `part_query` below) |
+| `key` | Whether the item is one of the ten `KEY_ITEMS` |
+| `may_be_not_applicable` | Whether `not_applicable` is a valid judgement here (14 items, e.g. `"12"`, `"13a"`–`"13f"`, `"21"`) |
+| `reply_chars` | The estimated size of one item's reply, 900 to 1,400 characters |
+
+`KEY_ITEMS` is `("7", "11", "18", "13d", "20b", "14", "21", "15", "22", "24a")`, the items an app may re-check alone. `item(id)` (from `bmlib.quality.prisma2020_checklist`) returns one row, or `None`.
+
+### Splitting a run into parts
+
+```python
+plan_parts(items: Sequence[ChecklistItem], reply_budget_chars: int) -> list[PartPlan]
+part_query(items: Sequence[ChecklistItem]) -> str
+```
+
+`plan_parts` packs items greedily, in the order given. A part takes the next item while `PART_OVERHEAD_CHARS` (400, the reply's JSON frame) plus the items' `reply_chars` stays within the budget. Pass the whole checklist for a run, or a subset to re-check some items. **Nothing is cut.** An item that cannot fit a part even alone raises `PartsError` (`kind` `"item_too_large"`, with `id`, `needed` and `budget`) before any part is returned. The whole checklist makes 13 parts at 4,000 characters, 6 at 8,000 and 4 at 12,000.
+
+`PartPlan.item_ids` is a tuple of ids. `PartPlan.label()` names the part for a screen: `"Methods 7–9"` within a section, `"Title 1 – Methods 7"` across sections (en dashes), `"Methods 13d"` for one item. `part_query` is the condensation query for a part: its items' `condense_hint`s joined by `"; "`.
+
+### Sizing the paper's budget
+
+A run's paper budget is the model's window less the prompt around the paper and the reply. Two functions measure the prompt, without the paper and its title:
+
+```python
+part_prompt_chars(item_ids: Sequence[str]) -> int     # the longest prompt a part sends
+suitability_prompt_chars() -> int                     # the suitability check's (2,940)
+```
+
+Each is the system prompt plus the longest of the question and the two condensation prompts. Each counts the `JSON_CORRECTION_NOTE` that a retry after an unparseable reply adds. Ids not on the checklist add nothing. The suitability check may send the whole paper, so a budget for a whole run takes the larger of `suitability_prompt_chars()` and its parts' `part_prompt_chars`. Set it as `condense_config.max_context_chars`.
+
+### `Prisma2020Agent`
+
+```python
+Prisma2020Agent(
+    llm: LLMClient,
+    model: str,
+    template_engine: TemplateEngine | None = None,    # unused; accepted as every agent does
+    temperature: float = 0.1,
+    max_tokens: int = 16384,                           # a part's reply is long
+    condense_config: ProcessingConfig | None = None,   # max_context_chars defaults to 48,000
+    num_ctx: int | None = None,                        # Ollama's window, as PicoAgent's
+    stop: threading.Event | Callable[[], bool] | None = None,
+    condense_progress: ProgressCallback | None = None,
+    condenser: QueryCondenser | None = None,           # defaults to PrismaCondenser(self)
+    max_retries: int = 3,                              # chat_json's attempts per question
+)
+
+check_suitability(title: str | None, text: str | None) -> Suitability
+prepare_part(title: str | None, text: str | None, item_ids: Sequence[str]) -> PrismaPrepared
+assess_part(prepared: PrismaPrepared, item_ids: Sequence[str], *, min_similarity: float) -> PartAssessment
+```
+
+- **`check_suitability`** asks whether the paper is a systematic review or meta-analysis, including a scoping, network, umbrella, rapid or living review. Pass the abstract or the whole paper. Nothing is cut: text over the budget is condensed with `SUITABILITY_CONDENSE_QUERY`.
+- **`prepare_part`** returns the paper ready for one part: whole when it fits `condense_config.max_context_chars`, else a digest made with `part_query` of those items. A digest **serves only the items it was condensed for** (`PrismaPrepared.condensed_for`). `assess_part` raises `ValueError` if it is given other items, since a digest gathered for one part may lack what another needs. A paper sent whole serves any items. To re-check one key item of a condensed part, prepare it for that item alone.
+- **`assess_part`** asks the model to judge each item and quote the paper. Every quote is located in `prepared.text`, the paper as passed, **never the digest**. So citation offsets are code points into the string you will highlight.
+- **`min_similarity`** is required, as for `PicoAgent`. A value outside (0, 1], NaN or a `bool` raises `ValueError` before any request.
+- **Item ids** are refused with `ValueError` before any request when they are a bare string, empty, repeated or not on the checklist.
+- **`num_ctx`, `stop` and `condense_progress`** behave as `PicoAgent`'s: sent, read or reported for every request, the condenser's included. Once the stop is set, the call under way raises `STOPPED`.
+- **A `PrismaPrepared` made for another budget** raises `ValueError` before any request, as a `PicoPrepared` does: prepare it with the agent that will use it. It holds the `paper` (a `PicoPrepared`, its `title`, `text`, `sent`, `condensed_from_chars`, `condensation_status` and `notes` read through) and `condensed_for`. It has no `to_dict`. Store the results, not the prepared paper.
+
+### What an item reports
+
+The model answers each item with one of five judgements (`Judgement`, from `bmlib.quality.prisma2020_models`): `reported`, `partly_reported`, `not_reported`, `reported_elsewhere` (a pointer to a supplement, protocol or registry record) or `not_applicable`. **The judgement shown is the model's only when the evidence allows it** (`shown_judgement`):
+
+| The model says | Shown as | `unbacked` |
+|---|---|---|
+| `not_reported` | `not_reported`, whatever its quotes | `False` |
+| any other, with no quote located | `not_reported` | `True` |
+| `not_applicable`, on an item where `may_be_not_applicable` is false | `not_reported` | `True` |
+| any other, with at least one quote located | the model's judgement | `False` |
+
+The rule only ever downgrades. A `not_reported` is never upgraded because a quote was located, unlike PICO's `NOT_REPORTED` part (#577). A reviewer sees the model's own word beside the paper's span.
+
+`ItemAssessment` carries `id`, `model_judgement` (what the model said), `judgement` (what is shown), `unbacked`, `explanation`, `citations` (`PicoCitation`s into the paper), `quotes_not_found`, `quotes_contradicted` and `quotes_dropped`, with PICO's meanings.
+
+`PartAssessment` carries:
+
+- `items`, in the order the ids were asked.
+- `missing`: asked ids the reply left out, for the caller to ask again.
+- `unasked`: ids the reply answered though they were not asked, in reply order and as spelled (#807). Their answers are not read, and each is logged at WARNING.
+- `condensed_from_chars`, `condensation_status` and `notes`, as PICO's results carry them.
+
+An integer id in a reply reads as its digits (`7` as `"7"`, `-0` as `"0"`). One outside the 64-bit range is unreadable, as Rust's `serde_json` reads it.
+
+`Suitability` carries `is_systematic_review`, `is_meta_analysis`, `is_suitable` (either of the two), `document_type`, `variant` (the model's string, e.g. `"scoping_review"`, or `None`), `rationale`, `confidence` (clamped to 0–1, 0.0 when unreadable), and the condensation fields. Every result has `to_dict()`, and none has a `from_dict()` yet.
+
+### Failures
+
+A call returns its result or raises `PrismaError`, whose `kind` (`PrismaErrorKind`) has PICO's values and meanings: `EMPTY_INPUT`, `REQUEST_FAILED` (with `retryable` and `status`), `TRUNCATED`, `UNUSABLE_REPLY`, `CONDENSATION_FAILED` and `STOPPED`. See [PICO's failures](#failures). Two differ in what helps:
+
+- `TRUNCATED` on a part: the reply hit `max_tokens`. Split the part (plan it with a smaller budget) or raise `max_tokens`.
+- `UNUSABLE_REPLY`: no reply parsed as a JSON object within `chat_json`'s retries, or two replies in a row parsed but could not be read. A reply cannot be read when `items` is not a list, an entry is not an object, an id is absent or repeated, a judgement is not one of the five, or a suitability reply lacks a boolean `is_systematic_review` or `is_meta_analysis`. The re-ask happens once, after a WARNING from `bmlib.quality._full_text_agent`.
+
+A caller's mistake is a `ValueError` before any request, as listed above. What no retry can cure (a bmlib defect, an unknown provider, a missing SDK) propagates unwrapped, as from `PicoAgent`.
+
+### Long papers
+
+Text over `condense_config.max_context_chars` is condensed by the [Cochrane map-reduce](#condensing-oversized-text), over prompts asking for **verbatim** passages (`PRISMA_CONDENSE_EXTRACTION_PROMPT`, `PRISMA_CONDENSE_CONSOLIDATION_PROMPT`). PRISMA is stricter than PICO here:
+
+- Each condensation runs with `continue_on_error=False`, so one failed batch fails the run.
+- **A digest whose run did not complete is refused** as `CONDENSATION_FAILED`, so no item is ever judged from a partial digest. PICO keeps a `partial` digest with a note.
+
+Each part condenses for its own items, so a long paper costs one map-reduce per part. `PrismaCondenser` is the default condenser. Pass your own `QueryCondenser` as `condenser=`.
+
+### The Rust port
+
+`bmlib::quality::Prisma2020Agent` is the same agent, its prompts byte-identical: `Prisma2020Agent::new(&mut chat)` with `PicoAgent`'s builders, returning `Result<_, PrismaError>`. Where Python raises `ValueError`, Rust returns `PrismaError::InvalidItems`, `InvalidSimilarity`, `PreparedOverBudget` or `PreparedUnderBudget`, and `PartsError` is wrapped as `PrismaError::Parts`. Oversized text needs a condenser (`PrismaCondenser::new(&context_model, temperature, max_tokens)`). Without one it is `CondensationFailed`. See the [Rust manual](../../rust/bmlib/docs/manual/quality.md#prisma-2020). `tests/fixtures/prisma2020_checklist.json` and `prisma2020_parts.json` pin the checklist and the split in both languages, and `rust/oracle/dump_prisma2020_agent.py` holds the whole agent to the same results and messages over scripted replies.
 
 ## Cochrane Formatters
 

@@ -110,6 +110,21 @@ All notable changes to bmlib are documented here. The format is based on
   writes one more key and `from_dict()` refuses a dictionary without it (one an
   older `to_dict()` wrote) (#794).
 
+### Documentation
+
+- **The PRISMA 2020 agent is in both quality manuals**:
+  `docs/manual/quality.md` and the doc-tested
+  `rust/bmlib/docs/manual/quality.md` now cover the checklist, the split,
+  sizing a paper's budget, the agent's three calls, the strict-evidence rule
+  and the failures. Neither page had any of it. Python's page claimed its
+  import list was the whole of `bmlib.quality.__all__`, when 87 of its 128
+  names appeared nowhere on the page. The other 66 are the evidence-weight
+  pipeline, and the page now says it is undocumented (#811).
+- **The `omlx` provider is in the manuals and the README**: its section and
+  context-window row in `docs/manual/llm.md`, and the provider lists in
+  `rust/bmlib/docs/manual/llm.md`, the README and `CLAUDE.md` (PR #810
+  added none of them).
+
 ## [0.14.0] — 2026-11-17
 
 **The shared paper library and the evidence weight.** `bmlib.library` (Rust

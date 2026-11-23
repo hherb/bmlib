@@ -1,35 +1,39 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-22 (**PRISMA follow-ups for StudyAnalyzer, the PR on
-`feat/prisma-suitability-prompt-chars`**).
+_Last updated: 2026-11-23 (**the PRISMA 2020 and oMLX manuals, the PR on
+`docs/prisma-omlx-manual`**).
 **0.14.0 is tagged and released on GitHub** (`v0.14.0` on `e7b7c98a`, PR
 #801); `release.yml` run 44306259452 **still waits at the `pypi` gate for the
-maintainer** (checked 2026-11-22), so PyPI still serves 0.13.0. **Crate 0.5.0
-is not yet on crates.io**: publish it once PyPI has 0.14.0, from a clean
+maintainer** (last checked 2026-11-22), so PyPI still serves 0.13.0. **Crate
+0.5.0 is not yet on crates.io**: publish it once PyPI has 0.14.0, from a clean
 worktree of `e7b7c98a` (`HANDOVER_RUST.md`, *Publishing to crates.io*: remake
 the token link first, remove it after)._
 
-## This session: `suitability_prompt_chars`; PRISMA's Python plumbing shared (PR open)
+## This session: the PRISMA 2020 agent and `omlx` reach the manuals (PR open)
 
-- **What**: `suitability_prompt_chars()` (Rust and Python, beside
-  `part_prompt_chars`) measures the suitability check's longest prompt, so
-  StudyAnalyzer's run budget stops copying the frame of the `pub(crate)`
-  `wrapped_prompt` (its `check_prompt_chars`). Both measures share one private
-  `longest_prompt_chars` / `_longest_prompt_chars`, which now counts the
-  `JSON_CORRECTION_NOTE` a retry after an unparseable reply adds (172
-  characters; finalcheck review, `part_prompt_chars` was short by it too).
-  The oracle gains a `suitability_prompt_chars` case (21 cases, both copies;
-  2940 characters).
-- **Python only, no change to results or errors**: `Prisma2020Agent._prepare`
-  and `_ask` now use `_FullTextAgent`'s plumbing (PRISMA 1's review).
-  `_FullTextAgent` gains `_condense(…, config)` returning digest, notes and
-  status (`_condense_once` wraps it), and `_chat_error(exc)`, which PRISMA
-  overrides to keep its `truncated` / `unusable_reply` kinds. The
-  unusable-reply WARNING now logs from `bmlib.quality._full_text_agent`, so a
-  filter on the old logger name no longer sees it.
+- **Docs only, no code change.** Neither quality manual mentioned PRISMA.
+  `docs/manual/quality.md` gains *PRISMA 2020 agent* (the checklist, the
+  split, sizing the budget, the three calls, the strict-evidence rule,
+  failures, long papers), with an example run against a scripted client.
+  `rust/bmlib/docs/manual/quality.md` gains *PRISMA 2020*, doc-tested. The
+  oMLX provider (PR #810) gets a section and a window row in
+  `docs/manual/llm.md`, and a mention in the Rust `llm.md`, the README and
+  `CLAUDE.md`.
+- **Filed #811**: the evidence-weight pipeline (RoB 2, the evidence ladder,
+  the design and outcome agents, `assess_unattended`; 66 exports) is in
+  neither quality manual. The Python page used to claim its import list was
+  all of `__all__`; it now cites #811. Re-measure with the snippet in #811.
 
 ## Merged since the 0.14.0 release (all Unreleased; detail in the CHANGELOGs)
 
+- **An `omlx` provider** (PR #810): a local oMLX server (MLX on Apple
+  silicon) at `127.0.0.1:8000`, keyless and free, both languages; the window
+  is `/v1/models`' `max_model_len`. Not in the tool-calling allowlist.
+- **`suitability_prompt_chars`** (PR #809): the suitability check's prompt
+  measured beside `part_prompt_chars`, both counting the retry's
+  `JSON_CORRECTION_NOTE`; Python's PRISMA agent now uses `_FullTextAgent`'s
+  plumbing, so its unusable-reply WARNING logs from
+  `bmlib.quality._full_text_agent`.
 - **A PRISMA part lists the items it was not asked** (#807, PR #808):
   `PartAssessment.unasked` (Python `list[str]`, Rust `Vec<String>`), the ids a
   reply answered that its part did not ask, in reply order and as spelled;
@@ -249,10 +253,11 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache; **0.14.0 makes nothing stored stale** and labels bioRxiv and
   medRxiv full-text sources with their version on a re-fetch. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests on `feat/prisma-unasked-807`** (2026-11-22, PostgreSQL 18 DSN on
-  port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,310 passed + 23 skipped;
-  ruff 0.15.20 and mypy clean. Rust `cargo test -p bmlib -p bmlib-ffi` 1,951
-  passed on macOS, clippy and `cargo fmt --check` clean; the Rust oracle 46
+- **Tests on `docs/prisma-omlx-manual`** (2026-11-23, PostgreSQL 18 DSN on
+  port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,332 passed + 23 skipped;
+  ruff 0.15.20 and mypy clean; Rust `cargo test -p bmlib --doc manual` 61
+  passed. On `feat/prisma-unasked-807` (2026-11-22) Rust
+  `cargo test -p bmlib -p bmlib-ffi` 1,951 passed on macOS, clippy and `cargo fmt --check` clean; the Rust oracle 46
   clean. `postgres_live` was not re-run (no Rust SQL changed; 15 passed on
   #794's branch). At the release
   (2026-11-17) the release gates were rehearsed: `uv build`, `twine check
@@ -286,8 +291,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**125 open** (2026-11-22; #807 closes with this session's PR, #755 stays open
-for its decisions): **#806** (PR #804's review: the one-row wrong link, above),
+**125 open** (2026-11-23): **#811** (the evidence-weight pipeline's manual
+sections, above), **#806** (PR #804's review: the one-row wrong link, above),
 Europe PMC's **#792** and **#793** (PR #790's review,
 above), the library's #755, #762 and **#778** (PR #777's review follow-ups,
 above), **#776** (PR #775's
