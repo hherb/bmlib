@@ -13,7 +13,7 @@ pip install bmlib[anthropic]
 # Ollama (local models)
 pip install bmlib[ollama]
 
-# OpenAI (also enables DeepSeek, Mistral, Gemini via OpenAI-compatible base)
+# OpenAI (also enables DeepSeek, Mistral, Gemini and oMLX via OpenAI-compatible base)
 pip install bmlib[openai]
 
 # Multiple providers
@@ -269,7 +269,7 @@ class LLMClient:
 | `default_provider` | `str` | `"anthropic"` | Provider to use when no `"provider:"` prefix is in the model string. Normalised to lowercase. |
 | `ollama_host` | `str \| None` | `None` | Ollama server URL. Defaults to `OLLAMA_HOST` env var or `http://localhost:11434`. A scheme-less `host:port` may carry a path — `localhost:11434/ollama`, the reverse-proxy form, is read as the SDK reads it; until *(0.11.0)* the provider refused to construct on it (#301). |
 | `anthropic_api_key` | `str \| None` | `None` | Anthropic API key. Defaults to `ANTHROPIC_API_KEY` env var. |
-| `api_key` | `str \| None` | `None` | Generic API key used by OpenAI-compatible providers (OpenAI, DeepSeek, Mistral, Gemini). Each provider also checks its own env var (e.g. `OPENAI_API_KEY`). |
+| `api_key` | `str \| None` | `None` | Generic API key used by OpenAI-compatible providers (OpenAI, DeepSeek, Mistral, Gemini, oMLX). Each provider but oMLX also checks its own env var (e.g. `OPENAI_API_KEY`). |
 | `base_url` | `str \| None` | `None` | Override the base URL for OpenAI-compatible providers. Each provider has its own default. |
 
 Provider instances are created lazily on first use and cached for the lifetime of the client.
@@ -995,10 +995,11 @@ response = client.chat(
 | `mistral` | `max_context_length` from `GET /v1/models/{id}` | by the SDK |
 | `gemini` | `inputTokenLimit` from the native `/models/{id}` (the base URL less its `/openai`) | 429, 5xx and transport errors, with backoff |
 | `deepseek` | the entry's `context_window` in `/models` (DeepSeek has no per-model endpoint) | by the SDK |
+| `omlx` | the entry's `max_model_len` in `/v1/models` (oMLX has no per-model endpoint; no output limit is stated) *(unreleased)* | by the SDK |
 | `ollama` | `/api/show`'s `model_info` (or `modelinfo`), the key `<general.architecture>.context_length` — the trained window, not `num_ctx` | connection errors and 5xx, with backoff |
 | `openai` | no request: `KNOWN_CONTEXT_WINDOWS` | — |
 
-A value that is not a positive integer up to `2**64 - 1` (a `bool`, a float, a string, zero) is unknown, logged at WARNING; an absent field is unknown at INFO. A 404 is `NoSuchModelError` — except from Ollama, where only a 404 whose JSON `error` says "not found" is; any other (a base URL ending `/v1`, say, which Ollama answers with the plain-text `404 page not found`) is a wrong address and a `ContextWindowError`. For DeepSeek it is a list with no entry for the model. Retries are up to three attempts in all, one second before the first retry and doubling; any other refusal is not retried, since it will not change on a second ask. A third-party provider inherits the default, which asks the table and makes no request.
+A value that is not a positive integer up to `2**64 - 1` (a `bool`, a float, a string, zero) is unknown, logged at WARNING; an absent field is unknown at INFO. A 404 is `NoSuchModelError` — except from Ollama, where only a 404 whose JSON `error` says "not found" is; any other (a base URL ending `/v1`, say, which Ollama answers with the plain-text `404 page not found`) is a wrong address and a `ContextWindowError`. For DeepSeek and oMLX it is a list with no entry for the model, and a 404 is a `ContextWindowError`, since their list names no model. Retries are up to three attempts in all, one second before the first retry and doubling; any other refusal is not retried, since it will not change on a second ask. A third-party provider inherits the default, which asks the table and makes no request.
 
 ### `KNOWN_CONTEXT_WINDOWS` / `known_context_window`
 
@@ -1817,6 +1818,23 @@ Reasoning models (`o1`, `o1-mini`, `o3-mini`) are sent `max_completion_tokens` i
 | `gemini-1.5-flash` | $0.075 | $0.30 | 1M |
 
 The default model, `gemini-flash-lite-latest`, is not in this table yet (#733), so its cost is the unlogged fallback estimate, $1.00 / $3.00 — likely well above its real price.
+
+### oMLX *(unreleased)*
+
+A local [oMLX](https://github.com/jundot/omlx) server, which serves MLX models on Apple silicon through an OpenAI-compatible API.
+
+| Property | Value |
+|----------|-------|
+| Provider name | `omlx` |
+| Default model | `Inkling-2-Mini-oQ4e-mtp` (oMLX names no default; this one is worth trying first) |
+| API key env var | none — no key is needed |
+| Base URL | `http://127.0.0.1:8000/v1` |
+| Is local | Yes |
+| Is free | Yes — every model costs $0 |
+| Tool calling | No — not in the tool-calling allowlist, so `supports_tools("omlx")` is `False` |
+| Embeddings | No |
+
+Models are listed from `/v1/models`. The context window is that list's `max_model_len` for the model (see [Where each provider's window comes from](#where-each-providers-window-comes-from)). Rust's `provider_specs()` has the same row, its base URL without the `/v1`.
 
 ### Ollama
 
