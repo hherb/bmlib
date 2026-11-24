@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Write ``tests/fixtures/rob2_replies.json`` and ``tests/fixtures/rob2_run.json``.
+"""Write the RoB 2 contracts ``rob2_replies.json``, ``rob2_run.json``, ``rob2_steps.json``.
 
 The shared RoB 2 contracts Python and Rust both assert against, built from the
 Python implementation:
@@ -25,6 +25,7 @@ Python implementation:
   same for escalation replies.
 - ``rob2_run.json``: a whole run's dict, which both languages read and write
   back unchanged.
+- ``rob2_steps.json``: the plan of steps for one and two outcomes.
 
     python scripts/make_rob2_fixtures.py [output-directory]
 
@@ -52,6 +53,7 @@ from bmlib.quality.rob2_agent import (
     d5_assessment,
     domain_prompt,
     escalation_message,
+    plan_rob2,
     read_domain_reply,
     read_escalation_reply,
     rob2_overall,
@@ -71,6 +73,10 @@ from bmlib.quality.rob2_questions import (
 DEFAULT_DIRECTORY = Path(__file__).resolve().parent.parent / "tests/fixtures"
 REPLIES_NAME = "rob2_replies.json"
 RUN_NAME = "rob2_run.json"
+STEPS_NAME = "rob2_steps.json"
+
+#: The outcome counts whose plans the steps contract pins.
+STEP_PLAN_OUTCOMES = (1, 2)
 
 RANDOM = "Participants were randomly assigned using a computer-generated list."
 CENTRAL = "Allocation was concealed by a central web-based service."
@@ -348,11 +354,22 @@ def _dump(data: dict[str, Any]) -> str:
     return json.dumps(data, ensure_ascii=False, indent=1) + "\n"
 
 
+def build_steps() -> dict[str, Any]:
+    """The plan of steps for one and two outcomes, as both languages must plan them."""
+    return {
+        "plans": [
+            {"outcomes": n, "steps": [step.to_dict() for step in plan_rob2(n)]}
+            for n in STEP_PLAN_OUTCOMES
+        ]
+    }
+
+
 def main() -> None:
     """Write both contracts to the directory given, or to the committed fixtures."""
     directory = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_DIRECTORY
     (directory / REPLIES_NAME).write_text(_dump(build_replies()), encoding="utf-8")
     (directory / RUN_NAME).write_text(_dump(build_run()), encoding="utf-8")
+    (directory / STEPS_NAME).write_text(_dump(build_steps()), encoding="utf-8")
 
 
 if __name__ == "__main__":

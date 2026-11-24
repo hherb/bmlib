@@ -1100,6 +1100,59 @@ impl fmt::Display for Rob2RunError {
 
 impl std::error::Error for Rob2RunError {}
 
+/// One request-making step of a RoB 2 run, as a caller can store it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rob2Step {
+    /// One domain's judgement. `outcome` is the index into the outcomes the
+    /// caller passes, or `None` for D1, which is judged once for the paper.
+    Domain {
+        /// The domain to judge.
+        domain: Domain,
+        /// The outcome's index, `None` for D1.
+        outcome: Option<usize>,
+    },
+    /// The escalation decision for the outcome at this index.
+    Escalation {
+        /// The outcome's index.
+        outcome: usize,
+    },
+}
+
+impl Rob2Step {
+    /// The wire form: `{"kind", "domain", "outcome"}`, absent parts `null`.
+    pub fn to_json(&self) -> Value {
+        match self {
+            Rob2Step::Domain { domain, outcome } => {
+                json!({"kind": "domain", "domain": wire_name(domain), "outcome": outcome})
+            }
+            Rob2Step::Escalation { outcome } => {
+                json!({"kind": "escalation", "domain": null, "outcome": outcome})
+            }
+        }
+    }
+}
+
+/// The steps [`Rob2Agent::assess`] takes, in its order: D1 once, then for each
+/// outcome its domains D2 to D5 and its escalation. No outcome plans nothing
+/// (not even D1), as `assess` refuses that input before any request.
+pub fn plan_rob2(outcome_count: usize) -> Vec<Rob2Step> {
+    if outcome_count == 0 {
+        return Vec::new();
+    }
+    let mut plan = vec![Rob2Step::Domain {
+        domain: Domain::D1,
+        outcome: None,
+    }];
+    for outcome in 0..outcome_count {
+        plan.extend(Domain::ALL[1..].iter().map(|&domain| Rob2Step::Domain {
+            domain,
+            outcome: Some(outcome),
+        }));
+        plan.push(Rob2Step::Escalation { outcome });
+    }
+    plan
+}
+
 /// A call's failure: a stop ends the run, anything else is the reason its
 /// domain (or escalation) failed.
 fn split(failure: Failure) -> Result<(String, bool, Option<u16>), Rob2RunError> {
@@ -1542,6 +1595,29 @@ pub(crate) mod tests {
             answers["1.1"]["quotes"] = json!([RANDOM]);
         }
         json!({ "answers": answers })
+    }
+
+    #[test]
+    fn the_plan_is_d1_then_each_outcomes_domains_and_escalation() {
+        let plan = plan_rob2(2);
+        let first: Vec<Value> = plan.iter().take(6).map(Rob2Step::to_json).collect();
+        assert_eq!(
+            first,
+            vec![
+                json!({"kind": "domain", "domain": "D1", "outcome": null}),
+                json!({"kind": "domain", "domain": "D2", "outcome": 0}),
+                json!({"kind": "domain", "domain": "D3", "outcome": 0}),
+                json!({"kind": "domain", "domain": "D4", "outcome": 0}),
+                json!({"kind": "domain", "domain": "D5", "outcome": 0}),
+                json!({"kind": "escalation", "domain": null, "outcome": 0}),
+            ]
+        );
+        assert_eq!(plan.len(), 1 + 2 * 5);
+    }
+
+    #[test]
+    fn no_outcome_plans_nothing() {
+        assert!(plan_rob2(0).is_empty());
     }
 
     #[test]

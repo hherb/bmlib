@@ -1,0 +1,99 @@
+{
+ "plans": [
+  {
+   "outcomes": 1,
+   "steps": [
+    {
+     "kind": "domain",
+     "domain": "D1",
+     "outcome": null
+    },
+    {
+     "kind": "domain",
+     "domain": "D2",
+     "outcome": 0
+    },
+    {
+     "kind": "domain",
+     "domain": "D3",
+     "outcome": 0
+    },
+    {
+     "kind": "domain",
+     "domain": "D4",
+     "outcome": 0
+    },
+    {
+     "kind": "domain",
+     "domain": "D5",
+     "outcome": 0
+    },
+    {
+     "kind": "escalation",
+     "domain": null,
+     "outcome": 0
+    }
+   ]
+  },
+  {
+   "outcomes": 2,
+   "steps": [
+    {
+     "kind": "domain",
+     "domain": "D1",
+     "outcome": null
+    },
+    {
+     "kind": "domain",
+     "domain": "D2",
+     "outcome": 0
+    },
+    {
+     "kind": "domain",
+     "domain": "D3",
+     "outcome": 0
+    },
+    {
+     "kind": "domain",
+     "domain": "D4",
+     "outcome": 0
+    },
+    {
+     "kind": "domain",
+     "domain": "D5",
+     "outcome": 0
+    },
+    {
+     "kind": "escalation",
+     "domain": null,
+     "outcome": 0
+    },
+    {
+     "kind": "domain",
+     "domain": "D2",
+     "outcome": 1
+    },
+    {
+     "kind": "domain",
+     "domain": "D3",
+     "outcome": 1
+    },
+    {
+     "kind": "domain",
+     "domain": "D4",
+     "outcome": 1
+    },
+    {
+     "kind": "domain",
+     "domain": "D5",
+     "outcome": 1
+    },
+    {
+     "kind": "escalation",
+     "domain": null,
+     "outcome": 1
+    }
+   ]
+  }
+ ]
+}

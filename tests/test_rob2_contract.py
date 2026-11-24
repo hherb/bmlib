@@ -41,6 +41,7 @@ from bmlib.quality.rob2_agent import (
     Rob2Run,
     domain_prompt,
     escalation_message,
+    plan_rob2,
     read_domain_reply,
     read_escalation_reply,
 )
@@ -148,6 +149,13 @@ def test_the_generator_still_builds_the_fixtures() -> None:
     for name, build in (
         ("rob2_replies.json", make.build_replies),
         ("rob2_run.json", make.build_run),
+        ("rob2_steps.json", make.build_steps),
     ):
         expected = json.dumps(build(), ensure_ascii=False, indent=1) + "\n"
         assert (FIXTURES / name).read_text(encoding="utf-8") == expected, name
+
+
+def test_the_plan_is_the_contracts() -> None:
+    steps: dict[str, Any] = json.loads((FIXTURES / "rob2_steps.json").read_text("utf-8"))
+    for case in steps["plans"]:
+        assert [s.to_dict() for s in plan_rob2(case["outcomes"])] == case["steps"]

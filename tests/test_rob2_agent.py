@@ -43,6 +43,7 @@ from bmlib.quality.rob2_agent import (
     Rob2RunError,
     Rob2RunErrorKind,
     domain_prompt,
+    plan_rob2,
     read_domain_reply,
     read_escalation_reply,
 )
@@ -870,3 +871,20 @@ def test_the_d5_prompt_names_the_outcome_and_the_switching_check() -> None:
         domain_prompt(Domain.D1, "A trial", TEXT, OUTCOME)
     with pytest.raises(ValueError, match="D2"):
         domain_prompt(Domain.D2, "A trial", TEXT, None)
+
+
+def test_the_plan_is_d1_then_each_outcomes_domains_and_escalation() -> None:
+    plan = plan_rob2(2)
+    assert [s.to_dict() for s in plan][:6] == [
+        {"kind": "domain", "domain": "D1", "outcome": None},
+        {"kind": "domain", "domain": "D2", "outcome": 0},
+        {"kind": "domain", "domain": "D3", "outcome": 0},
+        {"kind": "domain", "domain": "D4", "outcome": 0},
+        {"kind": "domain", "domain": "D5", "outcome": 0},
+        {"kind": "escalation", "domain": None, "outcome": 0},
+    ]
+    assert len(plan) == 1 + 2 * 5
+
+
+def test_no_outcome_plans_nothing() -> None:
+    assert plan_rob2(0) == []

@@ -51,7 +51,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from bmlib.quality._full_text_agent import (
     LABEL_CHARS,
@@ -116,10 +116,12 @@ __all__ = [
     "Rob2Run",
     "Rob2RunError",
     "Rob2RunErrorKind",
+    "Rob2Step",
     "d5_assessment",
     "domain_prompt",
     "domain_result_from_dict",
     "escalation_message",
+    "plan_rob2",
     "read_domain_reply",
     "read_escalation_reply",
     "rob2_overall",
@@ -939,6 +941,42 @@ class _CallFailedError(Exception):
         super().__init__(message)
         self.retryable = retryable
         self.status = status
+
+
+@dataclass(frozen=True)
+class Rob2Step:
+    """One request-making step of a RoB 2 run, as a caller can store it.
+
+    ``kind`` is ``"domain"`` (``domain`` is set) or ``"escalation"``
+    (``domain`` is ``None``). ``outcome`` is the index into the outcomes list
+    the caller passes, or ``None`` for domain D1, which is judged once for the
+    whole paper.
+    """
+
+    kind: Literal["domain", "escalation"]
+    domain: Domain | None
+    outcome: int | None
+
+    def to_dict(self) -> dict[str, Any]:
+        """The wire form: ``{"kind", "domain", "outcome"}``, absent parts ``None``."""
+        domain = None if self.domain is None else self.domain.value
+        return {"kind": self.kind, "domain": domain, "outcome": self.outcome}
+
+
+def plan_rob2(outcome_count: int) -> list[Rob2Step]:
+    """The steps :meth:`Rob2Agent.assess` takes, in its order.
+
+    D1 once, then for each outcome its domains D2 to D5 and its escalation.
+    No outcome plans nothing (not even D1), as ``assess`` refuses that input
+    before any request.
+    """
+    if outcome_count <= 0:
+        return []
+    plan = [Rob2Step("domain", Domain.D1, None)]
+    for outcome in range(outcome_count):
+        plan.extend(Rob2Step("domain", d, outcome) for d in _OUTCOME_DOMAINS)
+        plan.append(Rob2Step("escalation", None, outcome))
+    return plan
 
 
 class Rob2Agent(_FullTextAgent):

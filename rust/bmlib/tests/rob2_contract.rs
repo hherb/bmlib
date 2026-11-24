@@ -23,8 +23,8 @@
 
 use bmlib::quality::outcome_agent::ProposedOutcome;
 use bmlib::quality::rob2_agent::{
-    domain_prompt, escalation_message, read_domain_reply, read_escalation_reply, DomainAssessment,
-    Escalation, Rob2Run, ROB2_DOMAIN_PROMPT, ROB2_SYSTEM_PROMPT,
+    domain_prompt, escalation_message, plan_rob2, read_domain_reply, read_escalation_reply,
+    DomainAssessment, Escalation, Rob2Run, ROB2_DOMAIN_PROMPT, ROB2_SYSTEM_PROMPT,
 };
 use bmlib::quality::rob2_algorithm::{questions, Domain};
 use bmlib::quality::rob2_questions::{
@@ -35,6 +35,7 @@ use serde_json::{json, Value};
 
 const REPLIES: &str = include_str!("../../../tests/fixtures/rob2_replies.json");
 const RUN: &str = include_str!("../../../tests/fixtures/rob2_run.json");
+const STEPS: &str = include_str!("../../../tests/fixtures/rob2_steps.json");
 
 fn replies() -> Value {
     serde_json::from_str(REPLIES).expect("the fixture is JSON")
@@ -170,4 +171,14 @@ fn the_run_round_trips_unchanged() {
         serde_json::to_value(overall).expect("json"),
         json!(["high", null, null])
     );
+}
+
+#[test]
+fn the_plan_is_the_contracts() {
+    let fixture: Value = serde_json::from_str(STEPS).expect("the fixture is JSON");
+    for case in fixture["plans"].as_array().expect("plans") {
+        let count = usize::try_from(case["outcomes"].as_u64().expect("outcomes")).expect("count");
+        let plan: Vec<Value> = plan_rob2(count).iter().map(|s| s.to_json()).collect();
+        assert_eq!(Value::Array(plan), case["steps"]);
+    }
 }
