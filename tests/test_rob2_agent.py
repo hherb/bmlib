@@ -36,14 +36,18 @@ from bmlib.quality.rob2_agent import (
     ROB2_SYSTEM_PROMPT,
     DomainAssessment,
     DomainFailed,
+    DomainResult,
     Escalation,
+    EscalationFailed,
     OutcomeRob2,
     Rob2Agent,
     Rob2Digests,
     Rob2Run,
     Rob2RunError,
     Rob2RunErrorKind,
+    combine_outcome,
     domain_prompt,
+    escalation_message,
     plan_rob2,
     read_domain_reply,
     read_escalation_reply,
@@ -986,3 +990,119 @@ def test_the_plan_is_d1_then_each_outcomes_domains_and_escalation() -> None:
 
 def test_no_outcome_plans_nothing() -> None:
     assert plan_rob2(0) == []
+
+
+# --- The escalation and the outcome, apart ---
+
+
+def _concerns_replies() -> list[Any]:
+    """The five replies of one outcome whose D1 and D5 have some concerns."""
+    replies = [{"answers": CONCERNS[Domain.D1]}] + [reply(d) for d in list(Domain)[1:4]]
+    return [*replies, D5_CONCERNS]
+
+
+def _domains_of(agent: Rob2Agent) -> tuple[DomainResult, list[DomainResult]]:
+    """D1, then D2-D5 of ``OUTCOME``, asked one at a time as a caller would."""
+    held = Rob2Digests()
+    study = agent.assess_domain(Domain.D1, "A trial", TEXT, None, min_similarity=SIM, digests=held)
+    domains = [
+        agent.assess_domain(d, "A trial", TEXT, OUTCOME, min_similarity=SIM, digests=held)
+        for d in list(Domain)[1:]
+    ]
+    return study, domains
+
+
+def test_escalation_is_asked_when_the_rule_needs_it() -> None:
+    agent = make_agent(*_concerns_replies(), {"escalate": True, "reasoning": "R."})
+    study, domains = _domains_of(agent)
+    assert agent.llm.chat.call_count == 5
+
+    asked = agent.escalate_outcome("A trial", OUTCOME, study, domains)
+
+    assert asked == Escalation(True, "R.")
+    assert sent(agent)[5] == escalation_message(OUTCOME, study, domains)
+    assert agent.llm.chat.call_count == 6
+    combined = combine_outcome(OUTCOME, study, domains, asked)
+    assert combined.escalation == asked and combined.overall is Judgement.HIGH
+
+
+def test_escalation_is_not_needed_when_a_domain_failed() -> None:
+    agent = make_agent(*_concerns_replies())
+    study, domains = _domains_of(agent)
+    failed = DomainFailed(Domain.D1, "down")
+
+    assert agent.escalate_outcome("A trial", OUTCOME, failed, domains) is None
+
+    assert agent.llm.chat.call_count == 5
+    assert combine_outcome(OUTCOME, failed, domains, None).overall is None
+    assert study != failed
+
+
+def test_a_failed_escalation_is_kept_with_its_reason() -> None:
+    failure = ConnectionError("down")
+    failure.status_code = 503  # type: ignore[attr-defined]
+    agent = make_agent(*_concerns_replies())
+    agent.llm.chat.side_effect = [*agent.llm.chat.side_effect, failure]
+    study, domains = _domains_of(agent)
+
+    with patch("bmlib.agents.base.time.sleep"):
+        failed = agent.escalate_outcome("A trial", OUTCOME, study, domains)
+
+    assert isinstance(failed, EscalationFailed)
+    assert (failed.retryable, failed.status) == (True, 503) and "down" in failed.reason
+    combined = combine_outcome(OUTCOME, study, domains, failed)
+    assert combined.escalation is None and combined.overall is None
+    assert combined.escalation_error == failed.reason
+    assert (combined.escalation_retryable, combined.escalation_status) == (True, 503)
+
+
+def test_a_stop_during_the_escalation_stays_a_stop() -> None:
+    stop = threading.Event()
+    agent = make_agent(*_concerns_replies(), {"escalate": True}, stop=stop)
+    study, domains = _domains_of(agent)
+    stop.set()
+    with pytest.raises(Rob2RunError) as raised:
+        agent.escalate_outcome("A trial", OUTCOME, study, domains)
+    assert raised.value.kind is Rob2RunErrorKind.STOPPED
+
+
+def test_the_steps_give_assess_s_run() -> None:
+    outcomes = [OUTCOME, SECOND]
+    replies = [*_concerns_replies(), {"escalate": False, "reasoning": "R."}, *low_run(2)[5:]]
+    whole = make_agent(*replies).assess("A trial", TEXT, outcomes, min_similarity=SIM)
+
+    agent = make_agent(*replies)
+    held = Rob2Digests()
+    study: DomainResult | None = None
+    done: dict[int, list[DomainResult]] = {}
+    escalation: dict[int, Escalation | EscalationFailed | None] = {}
+    results: list[OutcomeRob2] = []
+    for step in plan_rob2(len(outcomes)):
+        if step.kind == "domain":
+            assert step.domain is not None
+            proposed = None if step.outcome is None else outcomes[step.outcome]
+            result = agent.assess_domain(
+                step.domain, "A trial", TEXT, proposed, min_similarity=SIM, digests=held
+            )
+            if step.outcome is None:
+                study = result
+            else:
+                done.setdefault(step.outcome, []).append(result)
+        else:
+            assert step.outcome is not None and study is not None
+            index = step.outcome
+            escalation = agent.escalate_outcome("A trial", outcomes[index], study, done[index])
+            results.append(combine_outcome(outcomes[index], study, done[index], escalation))
+    assert study is not None
+    run = Rob2Run(whole.algorithm_version, whole.prompt_version, study, results)
+
+    assert run.to_dict() == whole.to_dict()
+
+
+def test_combine_outcome_refuses_domains_out_of_order() -> None:
+    agent = make_agent(*low_run())
+    study, domains = _domains_of(agent)
+    with pytest.raises(ValueError, match="D2"):
+        combine_outcome(OUTCOME, study, domains[::-1], None)
+    with pytest.raises(ValueError, match="D2"):
+        combine_outcome(OUTCOME, study, domains[:3], None)

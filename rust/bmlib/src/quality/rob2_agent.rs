@@ -1290,26 +1290,39 @@ impl<'a> Rob2Agent<'a> {
             return Err(Rob2RunError::NoOutcomes);
         }
         check_stop(self.stop).map_err(|_| Rob2RunError::Stopped)?;
-        let paper = Paper {
-            title,
-            stripped,
-            original: text,
-            min_similarity,
-        };
-        let mut papers = Papers::new();
-        let study = self.domain(Domain::D1, &paper, None, &mut papers)?;
+        let mut digests = Rob2Digests::default();
+        let mut study = None;
+        let mut domains: Vec<DomainResult> = Vec::new();
         let mut results = Vec::with_capacity(outcomes.len());
-        for outcome in outcomes {
-            let mut domains = Vec::with_capacity(Domain::ALL.len() - 1);
-            for &domain in &Domain::ALL[1..] {
-                domains.push(self.domain(domain, &paper, Some(outcome), &mut papers)?);
+        for step in plan_rob2(outcomes.len()) {
+            match step {
+                Rob2Step::Domain { domain, outcome } => {
+                    let result = self.assess_domain(
+                        domain,
+                        title,
+                        text,
+                        outcome.map(|i| &outcomes[i]),
+                        min_similarity,
+                        &mut digests,
+                    )?;
+                    match outcome {
+                        None => study = Some(result),
+                        Some(_) => domains.push(result),
+                    }
+                }
+                Rob2Step::Escalation { outcome } => {
+                    let proposed = &outcomes[outcome];
+                    let study = study.as_ref().expect("the plan judges D1 first");
+                    let escalation = self.escalate_outcome(title, proposed, study, &domains)?;
+                    let domains = std::mem::take(&mut domains);
+                    results.push(combine_outcome(proposed, study, domains, escalation));
+                }
             }
-            results.push(self.outcome(title, outcome, &study, domains)?);
         }
         Ok(Rob2Run {
             algorithm_version: ROB2_ALGORITHM_VERSION.to_string(),
             prompt_version: ROB2_PROMPT_VERSION,
-            study,
+            study: study.expect("the plan judges D1 first"),
             outcomes: results,
         })
     }
@@ -1498,59 +1511,125 @@ impl<'a> Rob2Agent<'a> {
         Ok(DomainResult::Assessed(assessment))
     }
 
-    /// Combine one outcome's domains, asking the escalation question when it
-    /// is needed.
-    fn outcome(
+    /// Ask the escalation question for one outcome, when the rule needs it
+    /// (design §4.7): `domains` are D2-D5 of `outcome`, `study` is D1.
+    ///
+    /// A failed or unreadable answer is [`Rob2Escalation::Failed`], never a
+    /// default answer.
+    ///
+    /// # Errors
+    ///
+    /// [`Rob2RunError::Stopped`] when the stop is set.
+    pub fn escalate_outcome(
         &mut self,
         title: &str,
         outcome: &ProposedOutcome,
         study: &DomainResult,
-        domains: Vec<DomainResult>,
-    ) -> Result<OutcomeRob2, Rob2RunError> {
-        let mut escalation = None;
-        let mut escalation_error = None;
-        let (mut escalation_retryable, mut escalation_status) = (false, None);
-        let needed = judgements(study, &domains).is_some_and(|j| needs_escalation_decision(&j));
-        if let (true, DomainResult::Assessed(first)) = (needed, study) {
-            let assessed: Vec<DomainAssessment> = domains
-                .iter()
-                .filter_map(|d| match d {
-                    DomainResult::Assessed(a) => Some(a.clone()),
-                    DomainResult::Failed { .. } => None,
+        domains: &[DomainResult],
+    ) -> Result<Rob2Escalation, Rob2RunError> {
+        let needed = judgements(study, domains).is_some_and(|j| needs_escalation_decision(&j));
+        let (true, DomainResult::Assessed(first)) = (needed, study) else {
+            return Ok(Rob2Escalation::NotNeeded);
+        };
+        let assessed: Vec<DomainAssessment> = domains
+            .iter()
+            .filter_map(|d| match d {
+                DomainResult::Assessed(a) => Some(a.clone()),
+                DomainResult::Failed { .. } => None,
+            })
+            .collect();
+        let label = format!(
+            "RoB 2 escalation of {}",
+            repr_str(
+                &python_strip(title)
+                    .chars()
+                    .take(LABEL_CHARS)
+                    .collect::<String>()
+            )
+        );
+        let sampling = self.sampling();
+        match ask_until_readable(
+            &mut *self.chat,
+            ROB2_SYSTEM_PROMPT,
+            &escalation_message(outcome, first, &assessed),
+            sampling,
+            self.stop,
+            &label,
+            read_escalation_reply,
+        ) {
+            Ok(answer) => Ok(Rob2Escalation::Asked(answer)),
+            Err(failure) => {
+                let (reason, retryable, status) = split(failure)?;
+                Ok(Rob2Escalation::Failed {
+                    reason,
+                    retryable,
+                    status,
                 })
-                .collect();
-            let label = format!(
-                "RoB 2 escalation of {}",
-                repr_str(&title.chars().take(LABEL_CHARS).collect::<String>())
-            );
-            let sampling = self.sampling();
-            match ask_until_readable(
-                &mut *self.chat,
-                ROB2_SYSTEM_PROMPT,
-                &escalation_message(outcome, first, &assessed),
-                sampling,
-                self.stop,
-                &label,
-                read_escalation_reply,
-            ) {
-                Ok(answer) => escalation = Some(answer),
-                Err(failure) => {
-                    let (message, retryable, status) = split(failure)?;
-                    (escalation_error, escalation_retryable, escalation_status) =
-                        (Some(message), retryable, status);
-                }
             }
         }
-        let overall = rob2_overall(study, &domains, escalation.as_ref());
-        Ok(OutcomeRob2 {
-            outcome: outcome.name.clone(),
-            domains,
-            escalation,
-            escalation_error,
-            escalation_retryable,
-            escalation_status,
-            overall,
-        })
+    }
+}
+
+/// The outcome of [`Rob2Agent::escalate_outcome`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum Rob2Escalation {
+    /// The domains do not call for the question (one failed, or the rule
+    /// decides alone); nothing was asked.
+    NotNeeded,
+    /// The model's readable answer.
+    Asked(Escalation),
+    /// The question was asked and not answered; the outcome is left not
+    /// assessed.
+    Failed {
+        /// Why: the unreadable field or the failed request.
+        reason: String,
+        /// Whether asking again may succeed.
+        retryable: bool,
+        /// The HTTP status the failed request was answered with, if any.
+        status: Option<u16>,
+    },
+}
+
+/// Combine one outcome's domains and its escalation into its [`OutcomeRob2`].
+///
+/// `domains` must be D2, D3, D4, D5 in that order.
+///
+/// # Panics
+///
+/// When `domains` is not D2-D5 in order, a programming error as in
+/// [`rob2_overall`].
+#[must_use]
+pub fn combine_outcome(
+    outcome: &ProposedOutcome,
+    study: &DomainResult,
+    domains: Vec<DomainResult>,
+    escalation: Rob2Escalation,
+) -> OutcomeRob2 {
+    assert!(
+        domains
+            .iter()
+            .map(DomainResult::domain)
+            .eq(Domain::ALL[1..].iter().copied()),
+        "domains are not D2, D3, D4, D5 in order"
+    );
+    let (escalation, escalation_error, escalation_retryable, escalation_status) = match escalation {
+        Rob2Escalation::NotNeeded => (None, None, false, None),
+        Rob2Escalation::Asked(answer) => (Some(answer), None, false, None),
+        Rob2Escalation::Failed {
+            reason,
+            retryable,
+            status,
+        } => (None, Some(reason), retryable, status),
+    };
+    let overall = rob2_overall(study, &domains, escalation.as_ref());
+    OutcomeRob2 {
+        outcome: outcome.name.clone(),
+        domains,
+        escalation,
+        escalation_error,
+        escalation_retryable,
+        escalation_status,
+        overall,
     }
 }
 
@@ -2468,6 +2547,198 @@ pub(crate) mod tests {
             Rob2RunError::WrongOutcome.to_string(),
             "D1 is assessed for the trial, D2-D5 for an outcome"
         );
+    }
+
+    /// D1 and D2-D5 of one outcome, asked one at a time as a caller would.
+    fn steps_of(
+        agent: &mut Rob2Agent<'_>,
+        proposed: &ProposedOutcome,
+    ) -> (DomainResult, Vec<DomainResult>) {
+        let mut held = Rob2Digests::default();
+        let study = agent
+            .assess_domain(Domain::D1, "A trial", TEXT, None, SIM, &mut held)
+            .expect("D1");
+        let domains = Domain::ALL[1..]
+            .iter()
+            .map(|&d| {
+                agent
+                    .assess_domain(d, "A trial", TEXT, Some(proposed), SIM, &mut held)
+                    .expect("domain")
+            })
+            .collect();
+        (study, domains)
+    }
+
+    #[test]
+    fn escalation_is_asked_when_the_rule_needs_it() {
+        let mut replies = concerns_run();
+        replies.push(json!({"escalate": true, "reasoning": "R."}));
+        let mut chat = Scripted::new(replies);
+        let sbp = outcome("SBP");
+        let mut agent = Rob2Agent::new(&mut chat);
+        let (study, domains) = steps_of(&mut agent, &sbp);
+        let asked = agent
+            .escalate_outcome("A trial", &sbp, &study, &domains)
+            .expect("step");
+        let escalation = Escalation {
+            escalate: true,
+            reasoning: "R.".into(),
+        };
+        assert_eq!(asked, Rob2Escalation::Asked(escalation.clone()));
+        let expected = escalation_message(
+            &sbp,
+            assessed(&study),
+            &domains
+                .iter()
+                .map(|d| assessed(d).clone())
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(chat.sent.len(), 6);
+        assert_eq!(chat.sent[5], expected);
+        let combined = combine_outcome(&sbp, &study, domains, asked);
+        assert_eq!(combined.escalation, Some(escalation));
+        assert_eq!(combined.overall, Some(Judgement::High));
+    }
+
+    #[test]
+    fn escalation_is_not_needed_when_a_domain_failed() {
+        let mut chat = Scripted::new(concerns_run());
+        let sbp = outcome("SBP");
+        let mut agent = Rob2Agent::new(&mut chat);
+        let (_, domains) = steps_of(&mut agent, &sbp);
+        let failed = DomainResult::Failed {
+            domain: Domain::D1,
+            reason: "down".into(),
+            retryable: false,
+            status: None,
+        };
+        let asked = agent
+            .escalate_outcome("A trial", &sbp, &failed, &domains)
+            .expect("step");
+        assert_eq!(asked, Rob2Escalation::NotNeeded);
+        assert_eq!(chat.sent.len(), 5);
+        let combined = combine_outcome(&sbp, &failed, domains, asked);
+        assert_eq!(combined.overall, None);
+    }
+
+    #[test]
+    fn a_failed_escalation_is_kept_with_its_reason() {
+        let mut replies = concerns_run();
+        replies.push(json!({}));
+        let mut chat = Scripted::new(replies);
+        chat.replies[5] = Err(ChatJsonError::Transport {
+            message: "down".into(),
+            attempts: 1,
+            retryable: true,
+            status: Some(503),
+        });
+        let sbp = outcome("SBP");
+        let mut agent = Rob2Agent::new(&mut chat);
+        let (study, domains) = steps_of(&mut agent, &sbp);
+        let asked = agent
+            .escalate_outcome("A trial", &sbp, &study, &domains)
+            .expect("step");
+        let Rob2Escalation::Failed {
+            reason,
+            retryable,
+            status,
+        } = asked.clone()
+        else {
+            panic!("expected a failure, got {asked:?}");
+        };
+        assert!(reason.contains("down"));
+        assert_eq!((retryable, status), (true, Some(503)));
+        let combined = combine_outcome(&sbp, &study, domains, asked);
+        assert_eq!(combined.escalation, None);
+        assert_eq!(combined.overall, None);
+        assert_eq!(combined.escalation_error, Some(reason));
+        assert_eq!(
+            (combined.escalation_retryable, combined.escalation_status),
+            (true, Some(503))
+        );
+    }
+
+    #[test]
+    fn a_stop_during_the_escalation_stays_a_stop() {
+        let stop = AtomicBool::new(false);
+        let mut replies = concerns_run();
+        replies.push(json!({"escalate": true}));
+        let mut chat = Scripted::new(replies);
+        let sbp = outcome("SBP");
+        let (study, domains) = steps_of(&mut Rob2Agent::new(&mut chat), &sbp);
+        stop.store(true, Ordering::SeqCst);
+        let result = Rob2Agent::new(&mut chat)
+            .with_stop(&stop)
+            .escalate_outcome("A trial", &sbp, &study, &domains);
+        assert_eq!(result, Err(Rob2RunError::Stopped));
+    }
+
+    #[test]
+    fn the_steps_give_assess_s_run() {
+        let outcomes = [outcome("SBP"), outcome("DBP")];
+        let mut replies = concerns_run();
+        replies.push(json!({"escalate": false, "reasoning": "R."}));
+        replies.extend(low_run(2).into_iter().skip(5));
+        let mut chat = Scripted::new(replies.clone());
+        let whole = Rob2Agent::new(&mut chat)
+            .assess("A trial", TEXT, &outcomes, SIM)
+            .expect("run");
+
+        let mut chat = Scripted::new(replies);
+        let mut agent = Rob2Agent::new(&mut chat);
+        let mut held = Rob2Digests::default();
+        let mut study = None;
+        let mut domains: Vec<Vec<DomainResult>> = vec![Vec::new(); outcomes.len()];
+        let mut results = Vec::new();
+        for step in plan_rob2(outcomes.len()) {
+            match step {
+                Rob2Step::Domain { domain, outcome } => {
+                    let result = agent
+                        .assess_domain(
+                            domain,
+                            "A trial",
+                            TEXT,
+                            outcome.map(|i| &outcomes[i]),
+                            SIM,
+                            &mut held,
+                        )
+                        .expect("domain");
+                    match outcome {
+                        None => study = Some(result),
+                        Some(i) => domains[i].push(result),
+                    }
+                }
+                Rob2Step::Escalation { outcome } => {
+                    let study = study.as_ref().expect("D1 comes first");
+                    let escalation = agent
+                        .escalate_outcome("A trial", &outcomes[outcome], study, &domains[outcome])
+                        .expect("escalation");
+                    results.push(combine_outcome(
+                        &outcomes[outcome],
+                        study,
+                        std::mem::take(&mut domains[outcome]),
+                        escalation,
+                    ));
+                }
+            }
+        }
+        let run = Rob2Run {
+            algorithm_version: whole.algorithm_version.clone(),
+            prompt_version: whole.prompt_version,
+            study: study.expect("D1"),
+            outcomes: results,
+        };
+        assert_eq!(run.to_json(), whole.to_json());
+    }
+
+    #[test]
+    #[should_panic(expected = "D2, D3, D4, D5")]
+    fn combine_outcome_refuses_domains_out_of_order() {
+        let mut chat = Scripted::new(low_run(1));
+        let sbp = outcome("SBP");
+        let (study, mut domains) = steps_of(&mut Rob2Agent::new(&mut chat), &sbp);
+        domains.reverse();
+        combine_outcome(&sbp, &study, domains, Rob2Escalation::NotNeeded);
     }
 
     #[test]

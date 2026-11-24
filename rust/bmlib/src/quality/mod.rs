@@ -190,10 +190,10 @@ pub use prisma2020_models::{
 pub use prisma2020_parts::{part_query, plan_parts, PartPlan, PartsError, PART_OVERHEAD_CHARS};
 pub use quality_agent::{QualityAgent, ASSESSMENT_SYSTEM_PROMPT, ASSESSMENT_USER_TEMPLATE};
 pub use rob2_agent::{
-    domain_prompt, escalation_message, plan_rob2, read_domain_reply, read_escalation_reply,
-    rob2_overall, DomainAssessment, DomainResult, Escalation, MachineAnswer, OutcomeRob2,
-    Rob2Agent, Rob2Digests, Rob2Run, Rob2RunError, Rob2Step, NOT_APPLICABLE, ROB2_DOMAIN_PROMPT,
-    ROB2_SYSTEM_PROMPT,
+    combine_outcome, domain_prompt, escalation_message, plan_rob2, read_domain_reply,
+    read_escalation_reply, rob2_overall, DomainAssessment, DomainResult, Escalation, MachineAnswer,
+    OutcomeRob2, Rob2Agent, Rob2Digests, Rob2Escalation, Rob2Run, Rob2RunError, Rob2Step,
+    NOT_APPLICABLE, ROB2_DOMAIN_PROMPT, ROB2_SYSTEM_PROMPT,
 };
 pub use rob2_algorithm::{
     applicable_questions, domain_judgement, needs_escalation_decision, overall_judgement,
