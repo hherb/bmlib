@@ -2738,7 +2738,7 @@ pub(crate) mod tests {
         let sbp = outcome("SBP");
         let (study, mut domains) = steps_of(&mut Rob2Agent::new(&mut chat), &sbp);
         domains.reverse();
-        combine_outcome(&sbp, &study, domains, Rob2Escalation::NotNeeded);
+        let _ = combine_outcome(&sbp, &study, domains, Rob2Escalation::NotNeeded);
     }
 
     #[test]
