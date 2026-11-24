@@ -455,7 +455,8 @@ pub struct OutcomeAgent<'a> {
 }
 
 impl<'a> OutcomeAgent<'a> {
-    /// An agent asking through `chat`, with the Cochrane assessor's defaults.
+    /// An agent asking through `chat`, with the full-text agents' defaults
+    /// (`max_tokens` [`DEFAULT_MAX_TOKENS`], 16384).
     #[must_use]
     pub fn new(chat: &'a mut dyn JsonChat) -> Self {
         OutcomeAgent {

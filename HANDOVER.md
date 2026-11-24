@@ -1,7 +1,7 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-23 (**the PRISMA 2020 and oMLX manuals, the PR on
-`docs/prisma-omlx-manual`**).
+_Last updated: 2026-11-24 (**the evidence-weight manuals, #811, the PR on
+`docs/evidence-weight-manual`**).
 **0.14.0 is tagged and released on GitHub** (`v0.14.0` on `e7b7c98a`, PR
 #801); `release.yml` run 44306259452 **still waits at the `pypi` gate for the
 maintainer** (last checked 2026-11-22), so PyPI still serves 0.13.0. **Crate
@@ -9,23 +9,26 @@ maintainer** (last checked 2026-11-22), so PyPI still serves 0.13.0. **Crate
 worktree of `e7b7c98a` (`HANDOVER_RUST.md`, *Publishing to crates.io*: remake
 the token link first, remove it after)._
 
-## This session: the PRISMA 2020 agent and `omlx` reach the manuals (PR open)
+## This session: the evidence weight reaches the manuals (#811, PR open)
 
-- **Docs only, no code change.** Neither quality manual mentioned PRISMA.
-  `docs/manual/quality.md` gains *PRISMA 2020 agent* (the checklist, the
-  split, sizing the budget, the three calls, the strict-evidence rule,
-  failures, long papers), with an example run against a scripted client.
-  `rust/bmlib/docs/manual/quality.md` gains *PRISMA 2020*, doc-tested. The
-  oMLX provider (PR #810) gets a section and a window row in
-  `docs/manual/llm.md`, and a mention in the Rust `llm.md`, the README and
-  `CLAUDE.md`.
-- **Filed #811**: the evidence-weight pipeline (RoB 2, the evidence ladder,
-  the design and outcome agents, `assess_unattended`; 66 exports) is in
-  neither quality manual. The Python page used to claim its import list was
-  all of `__all__`; it now cites #811. Re-measure with the snippet in #811.
+- **Docs, plus three Rust doc comments.** `docs/manual/quality.md` gains
+  *Unattended evidence weight* (`assess_unattended` and its three results,
+  the design and outcome proposals, RoB 2's rules, the RoB 2 assessor with D5
+  from facts, the ladder, long papers). Its examples were run against a
+  scripted client. `rust/bmlib/docs/manual/quality.md` gains *Evidence
+  weight*, doc-tested. The Python import list equals `bmlib.quality.__all__`
+  again (128 names, checked with `ast`). Three Rust constructors' doc
+  comments said "the Cochrane assessor's defaults" though their `max_tokens`
+  is 16384; fixed.
+- **Filed #813** (a decision): a stored ladder is not rebuilt on read, so
+  one contradicting its outcome's RoB 2 judgement reads back, in both
+  languages. Every other derived value in the result is re-checked.
 
 ## Merged since the 0.14.0 release (all Unreleased; detail in the CHANGELOGs)
 
+- **The PRISMA 2020 agent and `omlx` in the manuals** (PR #812): both quality
+  pages gain a PRISMA section (the Rust one doc-tested); `llm.md` an oMLX
+  section and window row.
 - **An `omlx` provider** (PR #810): a local oMLX server (MLX on Apple
   silicon) at `127.0.0.1:8000`, keyless and free, both languages; the window
   is `/v1/models`' `max_model_len`. Not in the tool-calling allowlist.
@@ -253,24 +256,26 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache; **0.14.0 makes nothing stored stale** and labels bioRxiv and
   medRxiv full-text sources with their version on a re-fetch. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests on `docs/prisma-omlx-manual`** (2026-11-23, PostgreSQL 18 DSN on
-  port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,332 passed + 23 skipped;
-  ruff 0.15.20 and mypy clean; Rust `cargo test -p bmlib --doc manual` 61
-  passed. On `feat/prisma-unasked-807` (2026-11-22) Rust
-  `cargo test -p bmlib -p bmlib-ffi` 1,951 passed on macOS, clippy and `cargo fmt --check` clean; the Rust oracle 46
-  clean. `postgres_live` was not re-run (no Rust SQL changed; 15 passed on
-  #794's branch). At the release
-  (2026-11-17) the release gates were rehearsed: `uv build`, `twine check
-  --strict`, `py.typed` in the wheel, and 126 of 126 modules imported, one fresh
-  interpreter each, in a core-only venv. On `main` before the release PR, `-p bmlib
-  --no-default-features` passed 1,464 and clippy was clean. Other recipes: `postgres_live.rs` with
-  `BMLIB_PG_TESTS=1 BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`; `--features embed` and the
-  embedder's live tests need `BMLIB_EMBED_MODEL` (the GGUFs are in
-  `~/.cache/bmlib/models/`; the Python live tests need `.[all,dev,embed]`).
-  Measure `main` with `pytest --collect-only` and never subtract from a
-  previous handover's number. The default skips are the PostgreSQL
-  parameterisations, a PostgreSQL-only schema test, three non-UTF-8 name
-  tests (APFS) and `test_pymupdf_requires_dependency`.
+- **Tests on `docs/evidence-weight-manual`** (2026-11-24, PostgreSQL 18 DSN
+  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,332 passed + 23
+  skipped; ruff 0.15.20 and mypy clean; Rust
+  `cargo test -p bmlib --doc manual` 63 passed, `cargo fmt --check` and
+  `cargo doc -D warnings` clean. On `feat/prisma-unasked-807` (2026-11-22)
+  Rust `cargo test -p bmlib -p bmlib-ffi` 1,951 passed on macOS, clippy and
+  `cargo fmt --check` clean; the Rust oracle 46 clean. `postgres_live` was not
+  re-run (no Rust SQL changed; 15 passed on #794's branch). At the release
+  (2026-11-17) the release gates were rehearsed: `uv build`,
+  `twine check --strict`, `py.typed` in the wheel, and 126 of 126 modules
+  imported, one fresh interpreter each, in a core-only venv. On `main` before
+  the release PR, `-p bmlib --no-default-features` passed 1,464 and clippy was
+  clean. Other recipes: `postgres_live.rs` with
+  `BMLIB_PG_TESTS=1 BMLIB_PG_PORT=5532 BMLIB_PG_USER=postgres`;
+  `--features embed` and the embedder's live tests need `BMLIB_EMBED_MODEL`
+  (the GGUFs are in `~/.cache/bmlib/models/`; the Python live tests need
+  `.[all,dev,embed]`). Measure `main` with `pytest --collect-only` and never
+  subtract from a previous handover's number. The default skips are the
+  PostgreSQL parameterisations, a PostgreSQL-only schema test, three non-UTF-8
+  name tests (APFS) and `test_pymupdf_requires_dependency`.
 - **Run the PostgreSQL half locally — it finds real bugs.** Postgres.app 16
   runs on `localhost:5432` here (`createdb -h localhost -U postgres bmlib_test`
   once); set `BMLIB_TEST_POSTGRESQL_DSN="host=localhost port=5432
@@ -291,33 +296,32 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**125 open** (2026-11-23): **#811** (the evidence-weight pipeline's manual
-sections, above), **#806** (PR #804's review: the one-row wrong link, above),
-Europe PMC's **#792** and **#793** (PR #790's review,
-above), the library's #755, #762 and **#778** (PR #777's review follow-ups,
-above), **#776** (PR #775's
-MECA follow-ups) and **#759** (measure the `/details` settle period) are the
-newest; #734, #733, #731, #730, #726, #725, #722, #718, #716 and #694 come
-before them; #577 stays open for its point 3, which PR #696 left open
-(`gh issue list --state open --limit 400 --json number`, 2026-11-17). #651
-is #632's residual; #556–#734 are not yet sorted into the lists below. **PR
-#615's review filed** **#617** (both halves done, PRs #620 and #692) and #618
-(a part not reported may now have a blank description; fixed with #577 in PR
-#696, the maintainer's call of 2026-11-07). **#623** (pdf-4's review
-residuals: indent misses, a numbered quantity read as a subsection, the Rust
-failed-`/Title` test), **#605** (whether a truncated page is more than a
-warning; the maintainer's call) and **#595** (`render_html`'s weaker furniture
-rule; measure the move by diffing before choosing) and **#628**'s remaining
-causes are the PDF path's open work. **#528** and **#529** are PR #526's
-review's, both `find_passage` decisions: a superscript digit makes different
-numbers match exactly (`10³` vs `103`), and a quote whose seeds are all too
-common is rejected at 0.0. **#537** is #507's Rust/FFI half (refusing a
-non-ISO evidence date needs `retraction_status` to return a `Result`, an app
-API change); **#520** is the Rust store's import, which owes #522's nature
-rule too. **Five more filed on 2026-10-17 are in no list below yet**: the FFI
-spike's #491, #492, #493 and #496; and the Rust reader's #495 (per-element
-recursion aborts on deep nesting). They are: the Rust audit's #314 (a
-decision), the Rust side's #332, **#467** (follow #463's port parity),
+**126 open** (2026-11-24, #811 closing with this PR): **#813** (re-derive a
+stored ladder on read? above), **#806** (PR #804's review: the one-row wrong
+link, above), Europe PMC's **#792** and **#793** (PR #790's review, above),
+the library's #755, #762 and **#778** (PR #777's review follow-ups, above),
+**#776** (PR #775's MECA follow-ups) and **#759** (measure the `/details`
+settle period) are the newest; #734, #733, #731, #730, #726, #725, #722, #718,
+#716 and #694 come before them; #577 stays open for its point 3, which PR #696
+left open (`gh issue list --state open --limit 400 --json number`,
+2026-11-17). #651 is #632's residual; #556–#734 are not yet sorted into the
+lists below. **PR #615's review filed** **#617** (both halves done, PRs #620
+and #692) and #618 (a part not reported may now have a blank description;
+fixed with #577 in PR #696, the maintainer's call of 2026-11-07). **#623**
+(pdf-4's review residuals: indent misses, a numbered quantity read as a
+subsection, the Rust failed-`/Title` test), **#605** (whether a truncated page
+is more than a warning; the maintainer's call) and **#595** (`render_html`'s
+weaker furniture rule; measure the move by diffing before choosing) and
+**#628**'s remaining causes are the PDF path's open work. **#528** and
+**#529** are PR #526's review's, both `find_passage` decisions: a superscript
+digit makes different numbers match exactly (`10³` vs `103`), and a quote
+whose seeds are all too common is rejected at 0.0. **#537** is #507's Rust/FFI
+half (refusing a non-ISO evidence date needs `retraction_status` to return a
+`Result`, an app API change); **#520** is the Rust store's import, which owes
+#522's nature rule too. **Five more filed on 2026-10-17 are in no list below
+yet**: the FFI spike's #491, #492, #493 and #496; and the Rust reader's #495
+(per-element recursion aborts on deep nesting). They are: the Rust audit's
+#314 (a decision), the Rust side's #332, **#467** (follow #463's port parity),
 **#468** (follow #227), **#471** (follow #470), **#476** (follow #474),
 **#483** (follow #475), #409 (follow #406), #411 (follow #407), #416 (follow
 #413/#415), #421 (follow #414), #426 (follow #423), #432 (follow #425/#429;
@@ -325,8 +329,8 @@ now also #145's five Python-only fixtures) and #436 (follow #172), and the
 Python list: #92, #94, #128, #137, #142, #143, #144, #150, #154, #156, #157,
 #173, #174, #175, #177, #178, #179, #197, #201, #204, #207, #209, #212, #222,
 #233, #235, #240, #242, #244, #245, #247, #249, #251, #252, #253, #260, #273,
-#275, #278, #279, #281, #282, #283, #286, #287, #288, #290, #291, #342,
-#465 (three local transport classes stay `transport-`; a decision), **#480**
+#275, #278, #279, #281, #282, #283, #286, #287, #288, #290, #291, #342, #465
+(three local transport classes stay `transport-`; a decision), **#480**
 (render affiliations in the cached HTML? a decision), **#481** (strip an
 affiliation's trailing `;`/`,`? a decision), and — **not filed**, open by
 decision since PR #479 and recorded only in `docs/DECISIONS.md` — whether a
