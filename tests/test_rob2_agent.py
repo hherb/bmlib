@@ -1041,14 +1041,13 @@ def test_escalation_is_asked_when_the_rule_needs_it() -> None:
 
 def test_escalation_is_not_needed_when_a_domain_failed() -> None:
     agent = make_agent(*_concerns_replies())
-    study, domains = _domains_of(agent)
+    _, domains = _domains_of(agent)
     failed = DomainFailed(Domain.D1, "down")
 
     assert agent.escalate_outcome("A trial", OUTCOME, failed, domains) is None
 
     assert agent.llm.chat.call_count == 5
     assert combine_outcome(OUTCOME, failed, domains, None).overall is None
-    assert study != failed
 
 
 def test_a_failed_escalation_is_kept_with_its_reason() -> None:
@@ -1088,7 +1087,6 @@ def test_the_steps_give_assess_s_run() -> None:
     held = Rob2Digests()
     study: DomainResult | None = None
     done: dict[int, list[DomainResult]] = {}
-    escalation: dict[int, Escalation | EscalationFailed | None] = {}
     results: list[OutcomeRob2] = []
     for step in plan_rob2(len(outcomes)):
         if step.kind == "domain":
@@ -1119,6 +1117,32 @@ def test_combine_outcome_refuses_domains_out_of_order() -> None:
         combine_outcome(OUTCOME, study, domains[::-1], None)
     with pytest.raises(ValueError, match="D2"):
         combine_outcome(OUTCOME, study, domains[:3], None)
+
+
+def test_combine_outcome_refuses_an_escalation_the_domains_do_not_call_for() -> None:
+    needing = make_agent(*_concerns_replies())
+    study, domains = _domains_of(needing)
+    low = make_agent(*low_run())
+    low_study, low_domains = _domains_of(low)
+    answer = Escalation(True, "R.")
+    failed = EscalationFailed("down", True, 503)
+
+    with pytest.raises(ValueError, match="none is asked"):
+        combine_outcome(OUTCOME, low_study, low_domains, answer)
+    with pytest.raises(ValueError, match="no escalation is asked"):
+        combine_outcome(OUTCOME, low_study, low_domains, failed)
+    with pytest.raises(ValueError, match="need the escalation"):
+        combine_outcome(OUTCOME, study, domains, None)
+    assert combine_outcome(OUTCOME, study, domains, failed).escalation_error == "down"
+
+
+def test_escalate_outcome_refuses_an_unknown_provider_before_any_request() -> None:
+    agent = make_agent(*_concerns_replies())
+    study, domains = _domains_of(agent)
+    agent.llm._get_provider = MagicMock(side_effect=ValueError("Unknown provider 'nosuch'"))
+    with pytest.raises(ValueError, match="nosuch"):
+        agent.escalate_outcome("A trial", OUTCOME, study, domains)
+    assert agent.llm.chat.call_count == 5
 
 
 def test_escalate_outcome_refuses_domains_out_of_order_before_any_request() -> None:

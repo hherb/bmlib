@@ -875,7 +875,8 @@ def domain_prompt_chars(domain: Domain, outcome: ProposedOutcome | None) -> int:
     query, each as a retry after an unparseable reply sends it.  D5 sends two
     kinds of question, each with its own system prompt: the facts, and a second
     look at an other measurement; this takes the larger.  A second look also
-    carries its measurement's passages, which this does not count.  A caller
+    carries its measurement's label, named text and passages, which this does
+    not count (it measures the look with an empty measurement).  A caller
     subtracts it from the window when sizing the paper's budget.
 
     Args:
@@ -986,7 +987,10 @@ class Rob2Step:
     ``kind`` is ``"domain"`` (``domain`` is set) or ``"escalation"``
     (``domain`` is ``None``). ``outcome`` is the index into the outcomes list
     the caller passes, or ``None`` for domain D1, which is judged once for the
-    whole paper.
+    whole paper.  Run an ``"escalation"`` step again whenever its outcome's D1
+    or any of its D2-D5 is run again: it sends no request when the question is
+    not needed, and an escalation kept from the earlier domains no longer fits
+    the new ones (:func:`combine_outcome` refuses it).
     """
 
     kind: Literal["domain", "escalation"]
@@ -1294,6 +1298,11 @@ class Rob2Agent(_FullTextAgent):
             study: D1's result.
             domains: D2-D5 of *outcome*.
 
+        Run this step again whenever its outcome's D1 or any of its D2-D5 is
+        run again: it sends no request when the question is not needed, and an
+        escalation kept from the earlier domains no longer fits the new ones
+        (:func:`combine_outcome` refuses it).
+
         Returns:
             ``None`` when the domains do not call for the question (nothing was
             asked); the model's :class:`Escalation`; or an
@@ -1309,6 +1318,7 @@ class Rob2Agent(_FullTextAgent):
         judgements = _judgements(study, domains)
         if judgements is None or not needs_escalation_decision(judgements):
             return None
+        self._check_provider()
         assessed = [d for d in domains if isinstance(d, DomainAssessment)]
         assert isinstance(study, DomainAssessment)  # _judgements returned five
         label = f"RoB 2 escalation of {(title or '').strip()[:LABEL_CHARS]!r}"
@@ -1345,12 +1355,15 @@ def combine_outcome(
         escalation: What :meth:`Rob2Agent.escalate_outcome` gave.
 
     Raises:
-        ValueError: *domains* is not D2-D5 in order (a programming error).
+        ValueError: *domains* is not D2-D5 in order, or *escalation* does not
+            fit them: one given (an answer or a failure) where the domains do
+            not call for the question, or ``None`` where they do (a stale
+            escalation; see :meth:`Rob2Agent.escalate_outcome`).
     """
     _check_outcome_domains(domains)
     answer = escalation if isinstance(escalation, Escalation) else None
     failed = escalation if isinstance(escalation, EscalationFailed) else None
-    return OutcomeRob2(
+    combined = OutcomeRob2(
         outcome.name,
         list(domains),
         answer,
@@ -1359,3 +1372,8 @@ def combine_outcome(
         False if failed is None else failed.retryable,
         None if failed is None else failed.status,
     )
+    _check_overall(study, combined)
+    judgements = _judgements(study, domains)
+    if escalation is None and judgements is not None and needs_escalation_decision(judgements):
+        raise ValueError("the domains need the escalation, and none was given")
+    return combined

@@ -1049,8 +1049,9 @@ pub fn domain_prompt(
 /// prompts for the domain's query, each as a retry after an unparseable reply
 /// sends it. D5 sends two kinds of question, each with its own system prompt,
 /// the facts and a second look at an other measurement; this takes the larger.
-/// A second look also carries its measurement's passages, which this does not
-/// count. A caller subtracts it from the window when sizing the paper's
+/// A second look also carries its measurement's label, named text and
+/// passages, which this does not count (it measures the look with an empty
+/// measurement). A caller subtracts it from the window when sizing the paper's
 /// budget. Python's `domain_prompt_chars`.
 ///
 /// # Errors
@@ -1158,7 +1159,11 @@ pub enum Rob2Step {
         /// The outcome's index, `None` for D1.
         outcome: Option<usize>,
     },
-    /// The escalation decision for the outcome at this index.
+    /// The escalation decision for the outcome at this index. Run it again
+    /// whenever that outcome's D1 or any of its D2-D5 is run again: it sends
+    /// no request when the question is not needed, and an escalation kept from
+    /// the earlier domains no longer fits the new ones (`combine_outcome`
+    /// refuses it).
     Escalation {
         /// The outcome's index.
         outcome: usize,
@@ -1559,7 +1564,10 @@ impl<'a> Rob2Agent<'a> {
     /// (design §4.7): `domains` are D2-D5 of `outcome`, `study` is D1.
     ///
     /// A failed or unreadable answer is [`Rob2Escalation::Failed`], never a
-    /// default answer.
+    /// default answer. Run this step again whenever the outcome's D1 or any of
+    /// its D2-D5 is run again: it sends no request when the question is not
+    /// needed, and an escalation kept from the earlier domains no longer fits
+    /// the new ones ([`combine_outcome`] refuses it).
     ///
     /// # Errors
     ///
@@ -1657,7 +1665,10 @@ fn assert_outcome_domains(domains: &[DomainResult]) {
 /// # Panics
 ///
 /// When `domains` is not D2-D5 in order, a programming error as in
-/// [`rob2_overall`].
+/// [`rob2_overall`]; or when `escalation` does not fit them: an answer or a
+/// failure given where the domains do not call for the question, or
+/// [`Rob2Escalation::NotNeeded`] where they do (a stale escalation; see
+/// [`Rob2Agent::escalate_outcome`]).
 #[must_use]
 pub fn combine_outcome(
     outcome: &ProposedOutcome,
@@ -1676,7 +1687,12 @@ pub fn combine_outcome(
         } => (None, Some(reason), retryable, status),
     };
     let overall = rob2_overall(study, &domains, escalation.as_ref());
-    OutcomeRob2 {
+    let needed = judgements(study, &domains).is_some_and(|j| needs_escalation_decision(&j));
+    assert!(
+        !needed || escalation.is_some() || escalation_error.is_some(),
+        "the domains need the escalation, and none was given"
+    );
+    let combined = OutcomeRob2 {
         outcome: outcome.name.clone(),
         domains,
         escalation,
@@ -1684,7 +1700,11 @@ pub fn combine_outcome(
         escalation_retryable,
         escalation_status,
         overall,
+    };
+    if let Err(message) = check_overall(study, &combined) {
+        panic!("{message}");
     }
+    combined
 }
 
 /// The paper one run reads: what is sent and what quotes are checked against.
@@ -2797,6 +2817,41 @@ pub(crate) mod tests {
         let (study, mut domains) = steps_of(&mut Rob2Agent::new(&mut chat), &sbp);
         domains.reverse();
         let _ = combine_outcome(&sbp, &study, domains, Rob2Escalation::NotNeeded);
+    }
+
+    /// The three escalations the domains do not fit, each refused.
+    fn refused(study: &DomainResult, domains: &[DomainResult], escalation: Rob2Escalation) -> bool {
+        let sbp = outcome("SBP");
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            combine_outcome(&sbp, study, domains.to_vec(), escalation)
+        }))
+        .is_err()
+    }
+
+    #[test]
+    fn combine_outcome_refuses_an_escalation_the_domains_do_not_call_for() {
+        let sbp = outcome("SBP");
+        let mut chat = Scripted::new(concerns_run());
+        let (study, domains) = steps_of(&mut Rob2Agent::new(&mut chat), &sbp);
+        let mut low = Scripted::new(low_run(1));
+        let (low_study, low_domains) = steps_of(&mut Rob2Agent::new(&mut low), &sbp);
+        let answer = || {
+            Rob2Escalation::Asked(Escalation {
+                escalate: true,
+                reasoning: "R.".into(),
+            })
+        };
+        let failure = || Rob2Escalation::Failed {
+            reason: "down".into(),
+            retryable: true,
+            status: Some(503),
+        };
+
+        assert!(refused(&low_study, &low_domains, answer()));
+        assert!(refused(&low_study, &low_domains, failure()));
+        assert!(refused(&study, &domains, Rob2Escalation::NotNeeded));
+        let kept = combine_outcome(&sbp, &study, domains, failure());
+        assert_eq!(kept.escalation_error.as_deref(), Some("down"));
     }
 
     #[test]
