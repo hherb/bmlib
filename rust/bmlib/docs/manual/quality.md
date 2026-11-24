@@ -782,12 +782,18 @@ re-asked or the paper condensed first) and returns a `DomainResult`, as
 calls ends the next as `Rob2RunError::Stopped` even where no request would
 have been sent (a cached failed digest); `assess` does the same.
 `Rob2RunError::WrongOutcome` (before any request) means D1 was given an
-outcome, or D2-D5 none. `Rob2Digests` is the caller's to keep for one paper,
-so a resumed run does not condense again.
+outcome, or D2-D5 none. `Rob2Digests` is the caller's to keep for one paper
+within one process; it is not stored, so a Continue from storage condenses
+again.
 `escalate_outcome(title, outcome, study, domains)` is a `Rob2Escalation`:
 `NotNeeded`, `Asked(Escalation)` or `Failed { reason, retryable, status }`.
 It and `combine_outcome` panic, before any request, when `domains` is not
-D2, D3, D4, D5 in order (Python raises `ValueError`).
+D2, D3, D4, D5 in order (Python raises `ValueError`). Run the escalation
+step again whenever its outcome's D1 or any of its D2-D5 is run again: it
+sends no request when the question is not needed, and an escalation kept from
+the earlier domains no longer fits the new ones. `combine_outcome` panics on
+such a stale one: `Asked` or `Failed` where the domains do not call for the
+question, or `NotNeeded` where they do.
 
 To size the paper to the window, `design_prompt_chars()`,
 `outcome_prompt_chars()` and `domain_prompt_chars(domain, outcome)` (an

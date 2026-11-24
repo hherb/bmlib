@@ -157,9 +157,10 @@ All notable changes to bmlib are documented here. The format is based on
 ### Changed
 
 - `Rob2Agent.assess` now reads the stop before every domain, so a stop set
-  mid-run ends the run as `STOPPED` even at a step that would send no
-  request (a cached failed digest); before, such a step could come back
-  a `DomainFailed`. Nothing else about its results changes.
+  mid-run ends the run as `STOPPED` even when its remaining steps would
+  send no request (a cached failed digest); before, such a run returned
+  complete although the stop was set. Nothing else about its results
+  changes.
 
 ## [0.14.0] — 2026-11-17
 

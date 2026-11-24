@@ -16,8 +16,10 @@ The Python library is documented separately, in the repository's
   `Rob2Agent::assess_domain` with `Rob2Digests`,
   `Rob2Agent::escalate_outcome` returning `Rob2Escalation` (`NotNeeded`,
   `Asked`, `Failed`), `combine_outcome` (it and `escalate_outcome` panic on
-  domains not in D2 to D5 order, Python's `ValueError`) and
-  `Rob2RunError::WrongOutcome`. `design_prompt_chars`,
+  domains not in D2 to D5 order, Python's `ValueError`; `combine_outcome`
+  also panics on an escalation the domains do not fit) and
+  `Rob2RunError::WrongOutcome` (**Breaking** for an exhaustive `match` on
+  `Rob2RunError`, which is not `#[non_exhaustive]`). `design_prompt_chars`,
   `outcome_prompt_chars` and `domain_prompt_chars` (`Result<usize, String>`)
   measure each step's prompt without the paper. `LlmQueryCondenser` gains
   `with_progress(callback)`, as Python's takes `progress`.
@@ -72,9 +74,10 @@ The Python library is documented separately, in the repository's
 ### Changed
 
 - `Rob2Agent::assess` now reads the stop before every domain, so a stop set
-  mid-run ends the run as `Stopped` even at a step that would send no
-  request (a cached failed digest); before, such a step could come back
-  `Failed`. Nothing else about its results changes.
+  mid-run ends the run as `Stopped` even when its remaining steps would
+  send no request (a cached failed digest); before, such a run came back
+  complete although the stop was set. Nothing else about its results
+  changes.
 
 ## [0.5.0] - 2026-11-17
 

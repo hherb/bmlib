@@ -13,8 +13,7 @@ the token link first, remove it after)._
 
 For StudyAnalyzer's Evidence weight tab (design
 `2026-11-24-evidence-weight-tab-design.md` §4), `assess` is a loop over steps
-a caller can drive itself, both languages, held together by
-`tests/fixtures/rob2_steps.json`:
+a caller drives itself, both languages, held by `tests/fixtures/rob2_steps.json`:
 
 - `plan_rob2(outcome_count)` and `Rob2Step`; `Rob2Agent::assess_domain` with
   `Rob2Digests` (one paper's condensations, held by the caller);
@@ -29,14 +28,13 @@ a caller can drive itself, both languages, held together by
   read before every domain, so a stop set mid-run ends it as Stopped even at
   a step that sends no request (a cached failed digest).
 - Docs: both quality manuals gain *RoB 2 a step at a time* (Rust's
-  doc-tested), both CHANGELOGs `[Unreleased]`.
-- **Next:** StudyAnalyzer's plan 2 (the tab) starts on this PR's merge, with
-  a re-pin of bmlib. **#813 stays open**, deliberately not in this branch.
+  doc-tested), both CHANGELOGs `[Unreleased]`. **Next:** StudyAnalyzer's plan 2
+  (the tab) starts on this PR's merge, with a re-pin. **#813 stays open**.
 
 ## Merged since the 0.14.0 release (all Unreleased; detail in the CHANGELOGs)
 
-- **The evidence-weight manuals** (#811, PR #814), doc-tested in Rust;
-  filed #813 (a stored ladder is not rebuilt on read).
+- **The evidence-weight manuals** (#811, PR #814); filed #813 (a stored
+  ladder is not rebuilt on read).
 - **The PRISMA 2020 agent and `omlx` in the manuals** (PR #812): both quality
   pages gain a PRISMA section (the Rust one doc-tested); `llm.md` an oMLX
   section and window row.
@@ -183,10 +181,12 @@ MedicalFactChecker's step 3 (re-pin the xcframework). Unreleased.
 
 ## Earlier: every bioRxiv/medRxiv posting, through `/details` (#341, PR #760)
 
-`biorxiv-details`/`medrxiv-details` read `/details` and are in
-`sync(sources=None)`; one row per DOI, newest posting by integer `version`.
-**`DETAILS_SETTLE_DAYS` = 7 is a bound; measuring it is #759.** BMLibrarian
-bumps its pin once released; MECA bulk is the expected next request.
+`biorxiv-details`/`medrxiv-details` read `/details` (30 records a page) and
+are in `sync(sources=None)` (the maintainer's call); records keep `source`
+`"biorxiv"`/`"medrxiv"`, one row per DOI, newest posting by integer
+`version`. **`DETAILS_SETTLE_DAYS` = 7 is a bound; measuring it is #759.**
+BMLibrarian bumps its pin once released; MECA bulk is the expected next
+request.
 Full-text tests script `content`, not `json()`; a JATS cached with the
 PDF-beside option off is not covered (the `shortcut:` in `_check_cache`).
 
