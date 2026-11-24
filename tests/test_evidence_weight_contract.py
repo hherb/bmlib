@@ -37,8 +37,19 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from bmlib.llm.data_types import LLMResponse
+from bmlib.quality.design_agent import DesignAgent
 from bmlib.quality.evidence_ladder import LadderSettings
 from bmlib.quality.evidence_weight import assess_unattended, evidence_weight_from_dict
+from bmlib.quality.outcome_agent import OutcomeAgent
+from bmlib.quality.rob2_agent import (
+    Rob2Agent,
+    Rob2Digests,
+    Rob2Run,
+    combine_outcome,
+    plan_rob2,
+)
+from bmlib.quality.rob2_algorithm import ROB2_ALGORITHM_VERSION
+from bmlib.quality.rob2_questions import ROB2_PROMPT_VERSION
 
 FIXTURE = Path(__file__).parent / "fixtures" / "evidence_weight.json"
 CONTRACT: dict[str, Any] = json.loads(FIXTURE.read_text(encoding="utf-8"))
@@ -88,6 +99,43 @@ def test_every_case_runs_to_the_expected_result_and_reads_back() -> None:
         assert result.to_dict() == case["expected"], case["name"]
         assert llm.chat.call_count == len(case["replies"]), case["name"]
         assert evidence_weight_from_dict(case["expected"]) == result, case["name"]
+
+
+def test_the_assessed_case_step_by_step() -> None:
+    """Design, outcomes, then plan_rob2's steps with one Rob2Digests give the fixture's run."""
+    case = CONTRACT["cases"][-1]
+    title, text, similarity = CONTRACT["title"], CONTRACT["text"], CONTRACT["min_similarity"]
+    llm = MagicMock()
+    llm.chat = MagicMock(
+        side_effect=[
+            LLMResponse(json.dumps(r), "test:model", 1, 1, "stop") for r in case["replies"]
+        ]
+    )
+    DesignAgent(llm, "test:model").propose(title, text, min_similarity=similarity)
+    outcomes = OutcomeAgent(llm, "test:model").propose(title, text, min_similarity=similarity)
+    agent = Rob2Agent(llm, "test:model")
+    digests = Rob2Digests()
+    study = None
+    domains: list[Any] = []
+    results = []
+    for step in plan_rob2(len(outcomes.outcomes)):
+        if step.kind == "domain":
+            proposed = None if step.outcome is None else outcomes.outcomes[step.outcome]
+            result = agent.assess_domain(
+                step.domain, title, text, proposed, min_similarity=similarity, digests=digests
+            )
+            if step.outcome is None:
+                study = result
+            else:
+                domains.append(result)
+        else:
+            proposed = outcomes.outcomes[step.outcome]
+            escalation = agent.escalate_outcome(title, proposed, study, domains)
+            results.append(combine_outcome(proposed, study, domains, escalation))
+            domains = []
+    run = Rob2Run(ROB2_ALGORITHM_VERSION, ROB2_PROMPT_VERSION, study, results)
+    assert run.to_dict() == case["expected"]["run"]
+    assert llm.chat.call_count == len(case["replies"])
 
 
 def test_every_refusal_names_what_does_not_add_up() -> None:
