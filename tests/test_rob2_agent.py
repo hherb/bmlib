@@ -1106,3 +1106,12 @@ def test_combine_outcome_refuses_domains_out_of_order() -> None:
         combine_outcome(OUTCOME, study, domains[::-1], None)
     with pytest.raises(ValueError, match="D2"):
         combine_outcome(OUTCOME, study, domains[:3], None)
+
+
+def test_escalate_outcome_refuses_domains_out_of_order_before_any_request() -> None:
+    agent = make_agent(*_concerns_replies(), {"escalate": True})
+    study, domains = _domains_of(agent)
+    for bad in (domains[::-1], domains[:3]):
+        with pytest.raises(ValueError, match="D2"):
+            agent.escalate_outcome("A trial", OUTCOME, study, bad)
+    assert agent.llm.chat.call_count == 5

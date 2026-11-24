@@ -1520,6 +1520,10 @@ impl<'a> Rob2Agent<'a> {
     /// # Errors
     ///
     /// [`Rob2RunError::Stopped`] when the stop is set.
+    ///
+    /// # Panics
+    ///
+    /// When `domains` is not D2-D5 in order, before any request.
     pub fn escalate_outcome(
         &mut self,
         title: &str,
@@ -1527,6 +1531,7 @@ impl<'a> Rob2Agent<'a> {
         study: &DomainResult,
         domains: &[DomainResult],
     ) -> Result<Rob2Escalation, Rob2RunError> {
+        assert_outcome_domains(domains);
         let needed = judgements(study, domains).is_some_and(|j| needs_escalation_decision(&j));
         let (true, DomainResult::Assessed(first)) = (needed, study) else {
             return Ok(Rob2Escalation::NotNeeded);
@@ -1590,6 +1595,17 @@ pub enum Rob2Escalation {
     },
 }
 
+/// Refuse `domains` that are not D2, D3, D4, D5 in order (a programming error).
+fn assert_outcome_domains(domains: &[DomainResult]) {
+    assert!(
+        domains
+            .iter()
+            .map(DomainResult::domain)
+            .eq(Domain::ALL[1..].iter().copied()),
+        "domains are not D2, D3, D4, D5 in order"
+    );
+}
+
 /// Combine one outcome's domains and its escalation into its [`OutcomeRob2`].
 ///
 /// `domains` must be D2, D3, D4, D5 in that order.
@@ -1605,13 +1621,7 @@ pub fn combine_outcome(
     domains: Vec<DomainResult>,
     escalation: Rob2Escalation,
 ) -> OutcomeRob2 {
-    assert!(
-        domains
-            .iter()
-            .map(DomainResult::domain)
-            .eq(Domain::ALL[1..].iter().copied()),
-        "domains are not D2, D3, D4, D5 in order"
-    );
+    assert_outcome_domains(&domains);
     let (escalation, escalation_error, escalation_retryable, escalation_status) = match escalation {
         Rob2Escalation::NotNeeded => (None, None, false, None),
         Rob2Escalation::Asked(answer) => (Some(answer), None, false, None),
@@ -2739,6 +2749,23 @@ pub(crate) mod tests {
         let (study, mut domains) = steps_of(&mut Rob2Agent::new(&mut chat), &sbp);
         domains.reverse();
         let _ = combine_outcome(&sbp, &study, domains, Rob2Escalation::NotNeeded);
+    }
+
+    #[test]
+    fn escalate_outcome_refuses_domains_out_of_order_before_any_request() {
+        let sbp = outcome("SBP");
+        let mut chat = Scripted::new(concerns_run());
+        let (study, domains) = steps_of(&mut Rob2Agent::new(&mut chat), &sbp);
+        let sent = chat.sent.len();
+        let mut reversed = domains.clone();
+        reversed.reverse();
+        for bad in [reversed, domains[..3].to_vec()] {
+            let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                Rob2Agent::new(&mut chat).escalate_outcome("A trial", &sbp, &study, &bad)
+            }));
+            assert!(caught.is_err());
+        }
+        assert_eq!(chat.sent.len(), sent);
     }
 
     #[test]

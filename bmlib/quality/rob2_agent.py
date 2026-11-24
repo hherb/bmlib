@@ -1269,9 +1269,11 @@ class Rob2Agent(_FullTextAgent):
 
         Raises:
             Rob2RunError: The stop was set.
-            ValueError: The model's provider is unknown.
+            ValueError: *domains* is not D2-D5 in order, or the model's provider
+                is unknown.
             ImportError: The provider's SDK is not installed.
         """
+        _check_outcome_domains(domains)
         judgements = _judgements(study, domains)
         if judgements is None or not needs_escalation_decision(judgements):
             return None
@@ -1288,6 +1290,12 @@ class Rob2Agent(_FullTextAgent):
         except _CallFailedError as exc:
             logger.warning("%s not had: %s", label, exc)
             return EscalationFailed(str(exc), exc.retryable, exc.status)
+
+
+def _check_outcome_domains(domains: Sequence[DomainResult]) -> None:
+    """Refuse *domains* that are not D2, D3, D4, D5 in order (a programming error)."""
+    if [d.domain for d in domains] != list(_OUTCOME_DOMAINS):
+        raise ValueError("domains are not D2, D3, D4, D5 in order")
 
 
 def combine_outcome(
@@ -1307,8 +1315,7 @@ def combine_outcome(
     Raises:
         ValueError: *domains* is not D2-D5 in order (a programming error).
     """
-    if [d.domain for d in domains] != list(_OUTCOME_DOMAINS):
-        raise ValueError("domains are not D2, D3, D4, D5 in order")
+    _check_outcome_domains(domains)
     answer = escalation if isinstance(escalation, Escalation) else None
     failed = escalation if isinstance(escalation, EscalationFailed) else None
     return OutcomeRob2(
