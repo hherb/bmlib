@@ -1341,6 +1341,7 @@ impl<'a> Rob2Agent<'a> {
         if (domain == Domain::D1) != outcome.is_none() {
             return Err(Rob2RunError::WrongOutcome);
         }
+        check_stop(self.stop).map_err(|_| Rob2RunError::Stopped)?;
         let paper = Paper {
             title: python_strip(title),
             stripped,
@@ -2426,6 +2427,25 @@ pub(crate) mod tests {
         );
         assert_eq!(result, Err(Rob2RunError::Stopped));
         assert_eq!(chat.sent.len(), 1);
+    }
+
+    #[test]
+    fn a_stop_set_before_the_call_is_stopped() {
+        let stop = AtomicBool::new(true);
+        let mut chat = Scripted::new(Vec::new());
+        let result = Rob2Agent::new(&mut chat)
+            .with_stop(&stop)
+            .with_condense_config(ProcessingConfig::default().with_max_context_chars(20))
+            .assess_domain(
+                Domain::D2,
+                "A trial",
+                TEXT,
+                Some(&outcome("SBP")),
+                SIM,
+                &mut Rob2Digests::default(),
+            );
+        assert_eq!(result, Err(Rob2RunError::Stopped));
+        assert!(chat.sent.is_empty());
     }
 
     #[test]

@@ -687,6 +687,17 @@ class TestTheAgent:
         assert raised.value.kind is Rob2RunErrorKind.STOPPED
         assert agent.llm.chat.call_count == 1
 
+    def test_a_stop_set_before_the_call_is_stopped(self) -> None:
+        stop = threading.Event()
+        stop.set()
+        agent = make_agent(stop=stop, condense_config=ProcessingConfig(max_context_chars=20))
+        with pytest.raises(Rob2RunError) as raised:
+            agent.assess_domain(
+                Domain.D2, "A trial", TEXT, OUTCOME, min_similarity=SIM, digests=Rob2Digests()
+            )
+        assert raised.value.kind is Rob2RunErrorKind.STOPPED
+        agent.llm.chat.assert_not_called()
+
     @pytest.mark.parametrize(("domain", "outcome"), [(Domain.D1, OUTCOME), (Domain.D4, None)])
     def test_the_wrong_outcome_is_refused(
         self, domain: Domain, outcome: ProposedOutcome | None
