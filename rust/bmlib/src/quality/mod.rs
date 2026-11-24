@@ -192,7 +192,7 @@ pub use quality_agent::{QualityAgent, ASSESSMENT_SYSTEM_PROMPT, ASSESSMENT_USER_
 pub use rob2_agent::{
     domain_prompt, escalation_message, plan_rob2, read_domain_reply, read_escalation_reply,
     rob2_overall, DomainAssessment, DomainResult, Escalation, MachineAnswer, OutcomeRob2,
-    Rob2Agent, Rob2Run, Rob2RunError, Rob2Step, NOT_APPLICABLE, ROB2_DOMAIN_PROMPT,
+    Rob2Agent, Rob2Digests, Rob2Run, Rob2RunError, Rob2Step, NOT_APPLICABLE, ROB2_DOMAIN_PROMPT,
     ROB2_SYSTEM_PROMPT,
 };
 pub use rob2_algorithm::{

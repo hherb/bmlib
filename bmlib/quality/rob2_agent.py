@@ -920,6 +920,8 @@ class Rob2RunErrorKind(Enum):
     STOPPED = "stopped"
     #: ``min_similarity`` was not a number in (0, 1]; no request was made.
     INVALID_SIMILARITY = "invalid_similarity"
+    #: D1 was given an outcome, or D2-D5 none; no request was made.
+    WRONG_OUTCOME = "wrong_outcome"
 
 
 class Rob2RunError(Exception):
@@ -977,6 +979,18 @@ def plan_rob2(outcome_count: int) -> list[Rob2Step]:
         plan.extend(Rob2Step("domain", d, outcome) for d in _OUTCOME_DOMAINS)
         plan.append(Rob2Step("escalation", None, outcome))
     return plan
+
+
+class Rob2Digests:
+    """The condensations of one paper, kept by the caller across ``assess_domain`` calls.
+
+    Each domain's digest is made once and reused for every outcome.  It holds
+    one paper's digests and must not be shared between papers; a new one
+    condenses again.
+    """
+
+    def __init__(self) -> None:
+        self._papers: dict[Domain, str | _CallFailedError] = {}
 
 
 class Rob2Agent(_FullTextAgent):
@@ -1050,6 +1064,61 @@ class Rob2Agent(_FullTextAgent):
             ]
             results.append(self._outcome(title, outcome, study, domains))
         return Rob2Run(ROB2_ALGORITHM_VERSION, ROB2_PROMPT_VERSION, study, results)
+
+    def assess_domain(
+        self,
+        domain: Domain,
+        title: str | None,
+        text: str | None,
+        outcome: ProposedOutcome | None,
+        *,
+        min_similarity: float,
+        digests: Rob2Digests,
+    ) -> DomainResult:
+        """Assess one domain: D1 for the trial (*outcome* ``None``), D2-D5 for one outcome.
+
+        Args:
+            domain: The domain to judge.
+            title: The paper's title.
+            text: The paper's full text.  Citation offsets are code points into
+                it, exactly as passed.
+            outcome: The outcome for D2-D5; ``None`` for D1.
+            min_similarity: How close a quote must be to a span of *text*.
+            digests: This paper's condensations, carried from call to call.
+
+        Returns:
+            The domain's result; a call that failed is a :class:`DomainFailed`.
+
+        Raises:
+            Rob2RunError: The input was refused before any request, or the
+                stop was set.
+            ValueError: The model's provider is unknown.
+            ImportError: The provider's SDK is not installed.
+        """
+        try:
+            similarity = check_min_similarity(min_similarity)
+        except ValueError as exc:
+            raise Rob2RunError(Rob2RunErrorKind.INVALID_SIMILARITY, str(exc)) from exc
+        original = text or ""
+        stripped = original.strip()
+        if not stripped:
+            raise Rob2RunError(Rob2RunErrorKind.EMPTY_INPUT, "the paper's text is empty")
+        if (domain is Domain.D1) != (outcome is None):
+            raise Rob2RunError(
+                Rob2RunErrorKind.WRONG_OUTCOME,
+                "D1 is assessed for the trial, D2-D5 for an outcome",
+            )
+        self._check_provider()
+        self._raise_if_stopped()
+        return self._domain(
+            domain,
+            (title or "").strip(),
+            stripped,
+            original,
+            outcome,
+            similarity,
+            digests._papers,
+        )
 
     def _paper(
         self,

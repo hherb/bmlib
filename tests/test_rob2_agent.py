@@ -39,6 +39,7 @@ from bmlib.quality.rob2_agent import (
     Escalation,
     OutcomeRob2,
     Rob2Agent,
+    Rob2Digests,
     Rob2Run,
     Rob2RunError,
     Rob2RunErrorKind,
@@ -611,6 +612,92 @@ class TestTheAgent:
         with pytest.raises(Rob2RunError) as raised:
             agent.assess("A trial", text, outcomes, min_similarity=similarity)
         assert raised.value.kind is kind
+        agent.llm.chat.assert_not_called()
+
+    def test_assess_domain_asks_one_domain(self) -> None:
+        agent = make_agent(reply(Domain.D3))
+        result = agent.assess_domain(
+            Domain.D3, " A trial ", TEXT, OUTCOME, min_similarity=SIM, digests=Rob2Digests()
+        )
+        assert sent(agent) == [domain_prompt(Domain.D3, "A trial", TEXT, OUTCOME)]
+        whole = make_agent(*low_run()).assess("A trial", TEXT, [OUTCOME], min_similarity=SIM)
+        assert result == whole.outcomes[0].domains[1]
+
+    def _two_outcomes_d2(
+        self, condenser: ScriptedCondenser, digests: list[Rob2Digests]
+    ) -> Rob2Agent:
+        text = TEXT + " " + "Filler sentence about nothing. " * 20
+        agent = make_agent(
+            reply(Domain.D2),
+            reply(Domain.D2),
+            condenser=condenser,
+            condense_config=ProcessingConfig(max_context_chars=200),
+        )
+        for outcome, held in zip([OUTCOME, SECOND], digests, strict=True):
+            agent.assess_domain(
+                Domain.D2, "A trial", text, outcome, min_similarity=SIM, digests=held
+            )
+        return agent
+
+    def test_a_digest_is_reused_for_the_same_domain(self) -> None:
+        condenser = ScriptedCondenser("A digest.")
+        held = Rob2Digests()
+        self._two_outcomes_d2(condenser, [held, held])
+        assert len(condenser.queries) == 1
+
+    def test_a_fresh_digests_condenses_again(self) -> None:
+        condenser = ScriptedCondenser("A digest.")
+        self._two_outcomes_d2(condenser, [Rob2Digests(), Rob2Digests()])
+        assert len(condenser.queries) == 2
+
+    def test_a_failed_digest_fails_every_outcome_once(self) -> None:
+        class Refusing(ScriptedCondenser):
+            def condense(self, query: str, *args: Any, **kwargs: Any) -> Any:
+                self.queries.append(query)
+                raise CondensationRefusedError("the digest does not fit")
+
+        text = TEXT + " " + "Filler sentence about nothing. " * 20
+        condenser = Refusing("unused")
+        agent = make_agent(
+            condenser=condenser, condense_config=ProcessingConfig(max_context_chars=200)
+        )
+        held = Rob2Digests()
+        for outcome in (OUTCOME, SECOND):
+            result = agent.assess_domain(
+                Domain.D2, "A trial", text, outcome, min_similarity=SIM, digests=held
+            )
+            assert isinstance(result, DomainFailed) and result.domain is Domain.D2
+        assert len(condenser.queries) == 1
+        agent.llm.chat.assert_not_called()
+
+    def test_a_stop_during_a_second_look_stops_the_step(self) -> None:
+        stop = threading.Event()
+        replies = iter(_response(json.dumps(r)) for r in [_d5_with_measurements(), _NOT_FOUND])
+
+        def answer(**kwargs: Any) -> LLMResponse:
+            stop.set()
+            return next(replies)
+
+        agent = make_agent(stop=stop)
+        agent.llm.chat.side_effect = answer
+        with pytest.raises(Rob2RunError) as raised:
+            agent.assess_domain(
+                Domain.D5, "A trial", TEXT, OUTCOME, min_similarity=SIM, digests=Rob2Digests()
+            )
+        assert raised.value.kind is Rob2RunErrorKind.STOPPED
+        assert agent.llm.chat.call_count == 1
+
+    @pytest.mark.parametrize(("domain", "outcome"), [(Domain.D1, OUTCOME), (Domain.D4, None)])
+    def test_the_wrong_outcome_is_refused(
+        self, domain: Domain, outcome: ProposedOutcome | None
+    ) -> None:
+        agent = make_agent(*low_run())
+        with pytest.raises(Rob2RunError) as raised:
+            agent.assess_domain(
+                domain, "A trial", TEXT, outcome, min_similarity=SIM, digests=Rob2Digests()
+            )
+        assert raised.value.kind is Rob2RunErrorKind.WRONG_OUTCOME
+        assert str(raised.value) == "D1 is assessed for the trial, D2-D5 for an outcome"
         agent.llm.chat.assert_not_called()
 
     def test_a_paper_over_the_window_is_condensed_per_domain(self) -> None:

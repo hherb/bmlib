@@ -1085,6 +1085,8 @@ pub enum Rob2RunError {
     Stopped,
     /// `min_similarity` was not a number in (0, 1]; no request was made.
     InvalidSimilarity,
+    /// D1 was given an outcome, or D2-D5 none; no request was made.
+    WrongOutcome,
 }
 
 impl fmt::Display for Rob2RunError {
@@ -1094,6 +1096,7 @@ impl fmt::Display for Rob2RunError {
             Rob2RunError::NoOutcomes => "no primary outcome to assess",
             Rob2RunError::Stopped => STOPPED_MESSAGE,
             Rob2RunError::InvalidSimilarity => "min_similarity must be a number in (0, 1]",
+            Rob2RunError::WrongOutcome => "D1 is assessed for the trial, D2-D5 for an outcome",
         })
     }
 }
@@ -1169,6 +1172,14 @@ fn split(failure: Failure) -> Result<(String, bool, Option<u16>), Rob2RunError> 
 
 /// The digests of one run, by domain: condensed once, reused for every outcome.
 type Papers = BTreeMap<Domain, Result<String, Failure>>;
+
+/// The condensations of one paper, kept by the caller across
+/// [`Rob2Agent::assess_domain`] calls so each domain's digest is made once.
+///
+/// It holds one paper's digests and must not be shared between papers; a new
+/// one condenses again.
+#[derive(Default)]
+pub struct Rob2Digests(Papers);
 
 /// Assesses a paper with RoB 2, one call per domain.
 ///
@@ -1301,6 +1312,42 @@ impl<'a> Rob2Agent<'a> {
             study,
             outcomes: results,
         })
+    }
+
+    /// Assess one domain: D1 for the trial (`outcome` `None`), D2-D5 for one
+    /// outcome. Citation offsets are code points into `text` exactly as passed.
+    ///
+    /// `digests` carries this paper's condensations from call to call.
+    ///
+    /// # Errors
+    ///
+    /// [`Rob2RunError`] when the input is refused before any request
+    /// (including [`Rob2RunError::WrongOutcome`]), or the stop is set. A
+    /// domain that could not be assessed is a [`DomainResult::Failed`].
+    pub fn assess_domain(
+        &mut self,
+        domain: Domain,
+        title: &str,
+        text: &str,
+        outcome: Option<&ProposedOutcome>,
+        min_similarity: f64,
+        digests: &mut Rob2Digests,
+    ) -> Result<DomainResult, Rob2RunError> {
+        check_similarity(min_similarity).map_err(|_| Rob2RunError::InvalidSimilarity)?;
+        let stripped = python_strip(text);
+        if stripped.is_empty() {
+            return Err(Rob2RunError::EmptyInput);
+        }
+        if (domain == Domain::D1) != outcome.is_none() {
+            return Err(Rob2RunError::WrongOutcome);
+        }
+        let paper = Paper {
+            title: python_strip(title),
+            stripped,
+            original: text,
+            min_similarity,
+        };
+        self.domain(domain, &paper, outcome, &mut digests.0)
     }
 
     /// The text `domain`'s call sends and whether it is a digest; condensed
@@ -2241,6 +2288,165 @@ pub(crate) mod tests {
         assert_eq!(
             assessed(&run.study).answers["1.1"].citations[0].text,
             RANDOM
+        );
+    }
+
+    /// A long text, over the 200-character window the step tests set.
+    fn long_text() -> String {
+        format!("{TEXT} {}", "Filler sentence about nothing. ".repeat(20))
+    }
+
+    /// A condenser whose every condensation fails, counting its attempts.
+    struct FailingCondenser(usize);
+
+    impl QueryCondenser for FailingCondenser {
+        fn condense(
+            &mut self,
+            _query: &str,
+            _text: &str,
+            _label: &str,
+            _config: &ProcessingConfig,
+        ) -> ProcessingResult {
+            self.0 += 1;
+            ProcessingResult::failed("down")
+        }
+    }
+
+    #[test]
+    fn assess_domain_asks_one_domain() {
+        let mut chat = Scripted::new(vec![reply(Domain::D3, &[])]);
+        let sbp = outcome("SBP");
+        let result = Rob2Agent::new(&mut chat)
+            .assess_domain(
+                Domain::D3,
+                " A trial ",
+                TEXT,
+                Some(&sbp),
+                SIM,
+                &mut Rob2Digests::default(),
+            )
+            .expect("step");
+        assert_eq!(
+            chat.sent,
+            [domain_prompt(Domain::D3, "A trial", TEXT, Some(&sbp)).unwrap()]
+        );
+        let mut again = Scripted::new(low_run(1));
+        let run = Rob2Agent::new(&mut again)
+            .assess("A trial", TEXT, &[sbp], SIM)
+            .expect("run");
+        assert_eq!(result, run.outcomes[0].domains[1]);
+    }
+
+    #[test]
+    fn a_digest_is_reused_for_the_same_domain() {
+        let text = long_text();
+        let (mut condenser, mut digests) = (Condenser(Vec::new()), Rob2Digests::default());
+        let mut chat = Scripted::new(vec![reply(Domain::D2, &[]), reply(Domain::D2, &[])]);
+        for name in ["SBP", "DBP"] {
+            Rob2Agent::new(&mut chat)
+                .with_condenser(&mut condenser)
+                .with_condense_config(ProcessingConfig::default().with_max_context_chars(200))
+                .assess_domain(
+                    Domain::D2,
+                    "A trial",
+                    &text,
+                    Some(&outcome(name)),
+                    SIM,
+                    &mut digests,
+                )
+                .expect("step");
+        }
+        assert_eq!(condenser.0.len(), 1);
+    }
+
+    #[test]
+    fn a_fresh_digests_condenses_again() {
+        let text = long_text();
+        let mut condenser = Condenser(Vec::new());
+        let mut chat = Scripted::new(vec![reply(Domain::D2, &[]), reply(Domain::D2, &[])]);
+        for name in ["SBP", "DBP"] {
+            Rob2Agent::new(&mut chat)
+                .with_condenser(&mut condenser)
+                .with_condense_config(ProcessingConfig::default().with_max_context_chars(200))
+                .assess_domain(
+                    Domain::D2,
+                    "A trial",
+                    &text,
+                    Some(&outcome(name)),
+                    SIM,
+                    &mut Rob2Digests::default(),
+                )
+                .expect("step");
+        }
+        assert_eq!(condenser.0.len(), 2);
+    }
+
+    #[test]
+    fn a_failed_digest_fails_every_outcome_once() {
+        let text = long_text();
+        let (mut condenser, mut digests) = (FailingCondenser(0), Rob2Digests::default());
+        let mut chat = Scripted::new(Vec::new());
+        for name in ["SBP", "DBP"] {
+            let result = Rob2Agent::new(&mut chat)
+                .with_condenser(&mut condenser)
+                .with_condense_config(ProcessingConfig::default().with_max_context_chars(200))
+                .assess_domain(
+                    Domain::D2,
+                    "A trial",
+                    &text,
+                    Some(&outcome(name)),
+                    SIM,
+                    &mut digests,
+                )
+                .expect("step");
+            assert!(matches!(
+                result,
+                DomainResult::Failed {
+                    domain: Domain::D2,
+                    ..
+                }
+            ));
+        }
+        assert_eq!(condenser.0, 1);
+        assert!(chat.sent.is_empty());
+    }
+
+    #[test]
+    fn a_stop_during_a_second_look_stops_the_step() {
+        let stop = AtomicBool::new(false);
+        let mut chat = Scripted::new(vec![d5_with_measurements()]);
+        chat.stop = Some((&stop, 1));
+        let result = Rob2Agent::new(&mut chat).with_stop(&stop).assess_domain(
+            Domain::D5,
+            "A trial",
+            TEXT,
+            Some(&outcome("SBP")),
+            SIM,
+            &mut Rob2Digests::default(),
+        );
+        assert_eq!(result, Err(Rob2RunError::Stopped));
+        assert_eq!(chat.sent.len(), 1);
+    }
+
+    #[test]
+    fn the_wrong_outcome_is_refused() {
+        let mut chat = Scripted::new(low_run(1));
+        let sbp = outcome("SBP");
+        for (domain, given) in [(Domain::D1, Some(&sbp)), (Domain::D4, None)] {
+            let result = Rob2Agent::new(&mut chat).assess_domain(
+                domain,
+                "A trial",
+                TEXT,
+                given,
+                SIM,
+                &mut Rob2Digests::default(),
+            );
+            assert_eq!(result, Err(Rob2RunError::WrongOutcome));
+        }
+        assert!(chat.sent.is_empty());
+        assert_eq!(
+            Rob2RunError::WrongOutcome.to_string(),
+            "D1 is assessed for the trial, D2-D5 for an outcome"
         );
     }
 
