@@ -187,6 +187,8 @@ MedicalFactChecker's step 3 (re-pin the xcframework). Unreleased.
 `sync(sources=None)`; one row per DOI, newest posting by integer `version`.
 **`DETAILS_SETTLE_DAYS` = 7 is a bound; measuring it is #759.** BMLibrarian
 bumps its pin once released; MECA bulk is the expected next request.
+Full-text tests script `content`, not `json()`; a JATS cached with the
+PDF-beside option off is not covered (the `shortcut:` in `_check_cache`).
 
 ## Release 0.13.0 / Rust crate 0.4.0 (released 2026-11-10)
 
@@ -226,9 +228,6 @@ the argument. **Bump `EMBEDDING_RECIPE_VERSION` with any change that can move
 a vector.** Filed from their reviews and open: #581, #582, #585, #577 (its point 3 left open by PR #696; #583, #572 and #618 since fixed), **#566** (Python's `get_model_metadata()` guesses), **#561** (Rust's
 `chat()` retries nothing).
 
-Plans 2a-2c (`lookup_record`, the embedder and its store, `PicoAgent`) have
-their app-side steps in those PRs' CHANGELOG entries.
-
 **Earlier StudyAnalyzer sessions** (PRs #524-#559; argument in
 `CHANGELOG.md`). Still open from them: **#537** (#507's Rust/FFI half),
 **#520** (the Rust store's import owes `RetractionIndex::build`'s all-`Other`
@@ -266,7 +265,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 - **Tests on `feat/rob2-steps`** (2026-11-25, no PostgreSQL DSN): Python
   11,179 passed + 201 skipped; ruff 0.15.20, ruff format and mypy clean;
   Rust `cargo test` 1,981 passed, clippy, `cargo fmt --check` and
-  `cargo doc -D warnings` clean (the manual's new example is a doc-test). At the release (2026-11-17) the release gates were rehearsed: `uv build`,
+  `cargo doc -D warnings` clean (the manual's new example is a doc-test).
+  At the release (2026-11-17) the release gates were rehearsed: `uv build`,
   `twine check --strict`, `py.typed` in the wheel, and 126 of 126 modules
   imported, one fresh interpreter each, in a core-only venv. On `main` before
   the release PR, `-p bmlib --no-default-features` passed 1,464 and clippy was
@@ -298,9 +298,9 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**126 open** (2026-11-25): **#813** (re-derive a
-stored ladder on read? above), **#806** (PR #804's review: the one-row wrong
-link, above), Europe PMC's **#792** and **#793** (PR #790's review, above),
+**126 open** (2026-11-25): **#813** (re-derive a stored ladder on read?
+above), **#806** (PR #804's review: the one-row wrong link, above),
+Europe PMC's **#792** and **#793** (PR #790's review, above),
 the library's #755, #762 and **#778** (PR #777's review follow-ups, above),
 **#776** (PR #775's MECA follow-ups) and **#759** (measure the `/details`
 settle period) are the newest; #734, #733, #731, #730, #726, #725, #722, #718,
