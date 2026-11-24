@@ -134,6 +134,8 @@ from bmlib.quality import (
     ProposedOutcome,
     QueryCondenser,
     RctLayout,
+    design_prompt_chars,
+    outcome_prompt_chars,
     read_design_reply,
     read_outcome_reply,
     # ... RoB 2's rules and its assessor
@@ -149,21 +151,27 @@ from bmlib.quality import (
     DomainFailed,
     DomainResult,
     Escalation,
+    EscalationFailed,
     Judgement,  # RoB 2's; PRISMA's is in prisma2020_models
     MachineAnswer,
     OutcomeRob2,
     Rob2Agent,
+    Rob2Digests,
     Rob2Error,
     Rob2Run,
     Rob2RunError,
     Rob2RunErrorKind,
+    Rob2Step,
     Scope,
     applicable_questions,
+    combine_outcome,
     domain_judgement,
     domain_prompt,
+    domain_prompt_chars,
     escalation_message,
     needs_escalation_decision,
     overall_judgement,
+    plan_rob2,
     questions,
     read_domain_reply,
     read_escalation_reply,
@@ -1534,6 +1542,36 @@ A `Rob2Run` carries `algorithm_version`, `prompt_version`, `study` (D1) and `out
 **A failing domain does not end the run.** A domain whose reply stays unreadable after the re-ask, or whose request or condensation fails, is a `DomainFailed`, logged at WARNING, and the other domains go on. A failed D1 leaves every outcome's `overall` `None`. Only a stop or refused input ends the run, as a `Rob2RunError` whose `kind` is a `Rob2RunErrorKind`: `EMPTY_INPUT`, `NO_OUTCOMES`, `INVALID_SIMILARITY` (all before any request) or `STOPPED`.
 
 **A stored run is re-checked as it is read.** `Rob2Run.from_dict` refuses another `algorithm_version`, a study that is not D1, an escalation given where none is asked, and an `overall` that does not follow from the domains. Reading a `DomainAssessment` back recomputes its judgement from its answers, refuses an answer to a question that does not apply, and for a D5 stored with its facts recomputes the answers from them. `domain_result_from_dict` and `d5_assessment` are in `bmlib.quality.rob2_agent`. `domain_prompt` builds the user turn of D1-D4 (D5's are `facts_prompt` and `second_look_prompt`, in `bmlib.quality.rob2_d5_facts`), and `ROB2_SYSTEM_PROMPT` and `ROB2_DOMAIN_PROMPT` are the fixed text around it.
+
+### RoB 2 a step at a time
+
+`assess` runs the whole plan at once. An app that shows progress, lets the reader stop and resume, or keeps each domain as it arrives drives the same steps itself. `plan_rob2(outcome_count)` lists them, in `assess`'s order: D1 once, then for each outcome D2 to D5 and its escalation. It is empty for no outcomes. A `Rob2Step` has `kind` (`"domain"` or `"escalation"`), `domain` (`None` for an escalation), `outcome` (an index into the outcomes you pass, `None` for D1) and `to_dict()`, whose wire form `tests/fixtures/rob2_steps.json` pins in both languages.
+
+```python
+from bmlib.quality import Rob2Digests, combine_outcome, plan_rob2
+
+digests = Rob2Digests()                  # one paper's condensations; a new one condenses again
+study, domains = None, {}
+for step in plan_rob2(len(outcomes)):
+    if step.kind == "domain":
+        outcome = None if step.outcome is None else outcomes[step.outcome]
+        result = agent.assess_domain(
+            step.domain, title, text, outcome, min_similarity=0.9, digests=digests
+        )
+        if step.outcome is None:
+            study = result
+        else:
+            domains.setdefault(step.outcome, []).append(result)
+    else:
+        i = step.outcome
+        escalation = agent.escalate_outcome(title, outcomes[i], study, domains[i])
+        rob2 = combine_outcome(outcomes[i], study, domains[i], escalation)
+```
+
+- `assess_domain` is one request-making call (two when a reply must be re-asked, more when the paper is condensed first). It returns a `DomainAssessment` or a `DomainFailed`, as `assess` records them. It reads the stop first, so a stop set between two calls ends the next as a `Rob2RunError` `STOPPED` even where no request would have been sent (a cached failed digest); `assess` does the same. A `WRONG_OUTCOME` refusal (before any request) means D1 was given an outcome, or D2-D5 none.
+- `escalate_outcome(title, outcome, study, domains)` returns `None` when no question is needed, an `Escalation` the model's answer, or an `EscalationFailed` (`reason`, `retryable`, `status`). `combine_outcome` turns the outcome's four domains and that answer into its `OutcomeRob2`, with `overall` computed exactly as `assess` does. Both refuse domains that are not D2, D3, D4, D5 in order (`ValueError`) before any request.
+- The `Rob2Digests` is the caller's to keep for one paper, so a resumed run does not condense again; it is not stored.
+- Size the paper to the window before a step with `design_prompt_chars()`, `outcome_prompt_chars()` and `domain_prompt_chars(domain, outcome)`: the characters of the longest prompt the step sends without the title and paper, counted as `part_prompt_chars` counts (a retry's correction note included). `domain_prompt_chars` raises `ValueError` for a wrong outcome. D5's measure leaves out a second look's measurement label, named text and passages, which vary with the paper's reply.
 
 ### The evidence ladder
 

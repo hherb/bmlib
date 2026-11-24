@@ -703,6 +703,100 @@ let weight = assess_unattended(&mut chat, Some(&mut condenser), None,
     &LadderSettings::default(), &AgentOptions::default(), title, &full_text, 0.9)?;
 ```
 
+**RoB 2 a step at a time.** `assess` runs the whole plan at once. An app
+that shows progress, lets the reader stop and resume, or keeps each domain
+as it arrives drives the same steps itself. `plan_rob2(outcome_count)` lists
+them in `assess`'s order: D1 once, then for each outcome D2 to D5 and its
+escalation; it is empty for no outcomes. A `Rob2Step` is
+`Domain { domain, outcome }` (`outcome` an index into the outcomes you pass,
+`None` for D1) or `Escalation { outcome }`, and `to_json` gives the wire form
+`tests/fixtures/rob2_steps.json` pins in both languages.
+
+```rust
+use bmlib::agents::{ChatJsonError, ChatJsonOutcome};
+use bmlib::llm::LLMMessage;
+use bmlib::quality::rob2_algorithm::Domain;
+use bmlib::quality::{
+    combine_outcome, plan_rob2, DomainResult, JsonChat, Judgement, ProposedOutcome, Rob2Agent,
+    Rob2Digests, Rob2Step,
+};
+use serde_json::{json, Map, Value};
+# struct Canned(Vec<Value>);
+# impl JsonChat for Canned {
+#     fn chat_json(&mut self, _: &[LLMMessage], _: f64, _: i64, _: usize, _: bool)
+#         -> Result<ChatJsonOutcome, ChatJsonError> {
+#         Ok(ChatJsonOutcome { value: self.0.remove(0), attempts: 1, repaired: false })
+#     }
+# }
+use bmlib::quality::rob2_d5_checks::D5_FACTS;
+
+let text = "Participants were randomly assigned 1:1. The primary outcome was mortality.";
+let outcome = ProposedOutcome {
+    name: "Mortality".into(), timepoint: None, result: None, result_error: None,
+    citations: vec![], quotes_not_found: vec![], contradicted: vec![], quotes_dropped: 0,
+};
+let domain = |answers: &[(&str, &str)]| json!({"answers": answers.iter()
+    .map(|(q, a)| (q.to_string(), json!({"answer": a, "quotes": [], "reasoning": ""})))
+    .collect::<Map<_, _>>()});
+let facts: Map<_, _> = D5_FACTS.iter()
+    .map(|f| (f.as_str().to_string(), json!({"present": false, "quotes": []})))
+    .collect();
+let mut chat = Canned(vec![
+    domain(&[("1.1", "Y"), ("1.2", "Y"), ("1.3", "N")]),
+    domain(&[("2.1", "N"), ("2.2", "N"), ("2.6", "Y")]),
+    domain(&[("3.1", "Y")]),
+    domain(&[("4.1", "N"), ("4.2", "N"), ("4.3", "N")]),
+    json!({"facts": facts, "other_measurements": [],
+           "main_analysis": {"differs": false, "planned": [], "reported": []}}),
+]);
+
+let plan = plan_rob2(1); // D1, D2, D3, D4, D5, then the escalation
+assert_eq!(plan.len(), 6);
+let mut agent = Rob2Agent::new(&mut chat);
+let mut digests = Rob2Digests::default(); // one paper's condensations
+let (mut study, mut domains) = (None, Vec::new());
+for step in &plan {
+    match *step {
+        Rob2Step::Domain { domain, outcome: index } => {
+            let one = index.map(|_| &outcome);
+            let result = agent.assess_domain(domain, "A trial", text, one, 0.9, &mut digests)?;
+            if domain == Domain::D1 { study = Some(result) } else { domains.push(result) }
+        }
+        Rob2Step::Escalation { .. } => {
+            let study = study.as_ref().expect("D1 comes first");
+            // D5 had no stated plan: one domain has some concerns, so no question is asked.
+            let escalation = agent.escalate_outcome("A trial", &outcome, study, &domains)?;
+            let rob2 = combine_outcome(&outcome, study, domains.clone(), escalation);
+            assert!(matches!(domains[3], DomainResult::Assessed(_)));
+            assert_eq!(rob2.overall, Some(Judgement::SomeConcerns));
+        }
+    }
+}
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+`assess_domain(domain, title, text, outcome, min_similarity, &mut digests)`
+makes one domain's request or requests (more than one when a reply is
+re-asked or the paper condensed first) and returns a `DomainResult`, as
+`assess` records it. It reads the stop first, so a stop set between two
+calls ends the next as `Rob2RunError::Stopped` even where no request would
+have been sent (a cached failed digest); `assess` does the same.
+`Rob2RunError::WrongOutcome` (before any request) means D1 was given an
+outcome, or D2-D5 none. `Rob2Digests` is the caller's to keep for one paper,
+so a resumed run does not condense again.
+`escalate_outcome(title, outcome, study, domains)` is a `Rob2Escalation`:
+`NotNeeded`, `Asked(Escalation)` or `Failed { reason, retryable, status }`.
+It and `combine_outcome` panic, before any request, when `domains` is not
+D2, D3, D4, D5 in order (Python raises `ValueError`).
+
+To size the paper to the window, `design_prompt_chars()`,
+`outcome_prompt_chars()` and `domain_prompt_chars(domain, outcome)` (an
+`Err(String)` for a wrong outcome) give the characters of the longest prompt
+each step sends without the title and paper, counted as `part_prompt_chars`
+counts. D5's measure leaves out a second look's measurement label, named
+text and passages, which vary with the reply. `LlmQueryCondenser::new(..)`
+also has `with_progress(callback)`, as Python's takes `progress`.
+
 Every result type has `to_json`, Python's `to_dict`, and a checked
 `from_json`. `EvidenceWeight::from_json` reads any status and refuses
 another `ladder_version`, settings that do not validate, parts of different

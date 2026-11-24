@@ -8,6 +8,23 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **RoB 2 a step at a time** (StudyAnalyzer's Evidence weight tab, design
+  `2026-11-24-evidence-weight-tab-design.md` §4; both languages, held
+  together by `tests/fixtures/rob2_steps.json`). `plan_rob2(outcome_count)`
+  lists the steps `Rob2Agent.assess` takes (D1, then per outcome D2 to D5 and
+  its escalation; none for no outcomes) as `Rob2Step`s;
+  `Rob2Agent.assess_domain(...)` judges one domain per call, with a
+  `Rob2Digests` the caller keeps so a paper condenses once (a wrong outcome
+  is `Rob2RunErrorKind.WRONG_OUTCOME`); `escalate_outcome(...)` returns
+  `None`, an `Escalation` or an `EscalationFailed`; `combine_outcome(...)`
+  builds the `OutcomeRob2`. Both refuse domains not in D2 to D5 order before
+  any request. `assess` is now a loop over these steps; its results, and the
+  fixtures `rob2_run.json`, `rob2_replies.json` and `evidence_weight.json`,
+  are unchanged. `design_prompt_chars()`, `outcome_prompt_chars()` and
+  `domain_prompt_chars(domain, outcome)` measure the longest prompt each
+  step sends without the title and paper, as `part_prompt_chars` does, so a
+  caller can size the paper to the window (D5's omits a second look's
+  label, named text and passages).
 - **An `omlx` provider**: a local [oMLX](https://github.com/jundot/omlx)
   server (MLX on Apple silicon) through its OpenAI-compatible API at
   `http://127.0.0.1:8000`, keyless and free, in both languages
@@ -136,6 +153,13 @@ All notable changes to bmlib are documented here. The format is based on
   context-window row in `docs/manual/llm.md`, and the provider lists in
   `rust/bmlib/docs/manual/llm.md`, the README and `CLAUDE.md` (PR #810
   added none of them).
+
+### Changed
+
+- `Rob2Agent.assess` now reads the stop before every domain, so a stop set
+  mid-run ends the run as `STOPPED` even at a step that would send no
+  request (a cached failed digest); before, such a step could come back
+  a `DomainFailed`. Nothing else about its results changes.
 
 ## [0.14.0] — 2026-11-17
 
