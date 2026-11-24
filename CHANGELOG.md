@@ -112,6 +112,18 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Documentation
 
+- **The unattended evidence weight is in both quality manuals** (#811).
+  `docs/manual/quality.md` gains *Unattended evidence weight*:
+  `assess_unattended` and its three results, the design and outcome
+  proposals, RoB 2's decision rules, the RoB 2 assessor (D5 from facts
+  included), the evidence ladder and condensing long papers;
+  `rust/bmlib/docs/manual/quality.md` gains the doc-tested *Evidence weight*.
+  The Python page's import list is again the whole of `bmlib.quality.__all__`
+  (128 names). Docs only; nothing in the API changed. The doc comments of
+  Rust's `DesignAgent::new`, `OutcomeAgent::new` and `Rob2Agent::new` said
+  "the Cochrane assessor's defaults", whose `max_tokens` is 4096; theirs is
+  16384, and they now say so. A stored ladder is not rebuilt on read (#813,
+  a decision), and both pages say so.
 - **The PRISMA 2020 agent is in both quality manuals**:
   `docs/manual/quality.md` and the doc-tested
   `rust/bmlib/docs/manual/quality.md` now cover the checklist, the split,

@@ -3,14 +3,16 @@
 Tiered study-quality assessment: free classification from PubMed publication
 types (Tier 1), a cheap LLM classifier (Tier 2), a deep LLM assessment
 (Tier 3) and a Cochrane-aligned risk-of-bias assessment (Tier 4), plus the
-rule-based extractors and the PICO agent, which stand outside the tiers. The
-Python page is [quality.md](../../../../docs/manual/quality.md); this one
-describes the Rust API and where it differs.
+rule-based extractors, the PICO and PRISMA 2020 agents and the unattended
+evidence-weight pipeline (design, primary outcomes, RoB 2, evidence ladder),
+which stand outside the tiers. The Python page is
+[quality.md](../../../../docs/manual/quality.md); this one describes the Rust
+API and where it differs.
 
 | Need | Feature |
 |---|---|
-| Tier 1, the models, the filter, the tier rules, the extractors, the Cochrane formatters | none |
-| The LLM tiers and `PicoAgent` against your own `JsonChat` | none |
+| Tier 1, the models, the filter, the tier rules, the extractors, the Cochrane formatters, the RoB 2 rules, the evidence ladder | none |
+| The LLM tiers, `PicoAgent`, `Prisma2020Agent` and the evidence-weight agents against your own `JsonChat` | none |
 | `LlmChat` over a real `LlmClient` | none, plus a transport (`http-ureq`, default, for `bmlib::http::UreqClient`) |
 
 Most names are re-exported at `bmlib::quality`. The pipeline functions
@@ -501,3 +503,206 @@ let prepared = agent.prepare_part(title, &full_text, &ids)?;
 `part_prompt_chars(&ids)` and `suitability_prompt_chars()` measure the prompt
 around the paper, as Python's do. The results carry `to_json`, Python's
 `to_dict`, key for key.
+
+## Evidence weight
+
+*(0.14.0)* `assess_unattended` takes one paper from full text to a number,
+with nobody confirming a step: the design proposal, then the primary
+outcomes, then RoB 2 over all of them, then an evidence ladder per outcome,
+then the paper's weight. The rules (which designs are covered, the RoB 2
+tables, the ladder's steps and weights, what counts as a failure) are
+Python's, in
+[quality.md](../../../../docs/manual/quality.md#unattended-evidence-weight-0140);
+this section gives the Rust shapes. Every name below is re-exported at
+`bmlib::quality`, and `Judgement` there is RoB 2's.
+
+The decision rules and the ladder are pure functions, with no model:
+
+```rust
+use bmlib::quality::{
+    build_ladder, domain_judgement, overall_judgement, paper_weight, start_level, Answer,
+    Answers, Domain, EffectScale, Judgement, LadderReason, LadderSettings, Level,
+    ReportedResult, Rob2Error, StudyDesign,
+};
+
+// Domain 1 from its signalling answers.
+let mut answers = Answers::new();
+answers.insert("1.1".into(), Answer::Y);
+answers.insert("1.2".into(), Answer::Py);
+answers.insert("1.3".into(), Answer::N);
+assert_eq!(domain_judgement(Domain::D1, &answers)?, Judgement::Low);
+answers.insert("1.2".into(), Answer::Ni);
+assert_eq!(domain_judgement(Domain::D1, &answers)?, Judgement::SomeConcerns);
+answers.remove("1.3"); // an applicable question unanswered is refused
+assert_eq!(domain_judgement(Domain::D1, &answers),
+           Err(Rob2Error::MissingAnswer { question: "1.3".into() }));
+
+// Two domains with some concerns and none high: the assessor decides.
+use Judgement::{Low, SomeConcerns};
+let domains = [SomeConcerns, Low, Low, Low, SomeConcerns];
+assert_eq!(overall_judgement(&domains, None), Err(Rob2Error::EscalationUndecided));
+assert_eq!(overall_judgement(&domains, Some(false))?, SomeConcerns);
+
+// The ladder: an RCT starts high; some concerns and a small trial cost a level each.
+let start = start_level(StudyDesign::Rct).expect("an RCT has a ladder");
+let result = ReportedResult {
+    measure: "risk ratio".into(), scale: EffectScale::Ratio, estimate: 0.7,
+    ci_low: Some(0.55), ci_high: Some(0.88), ci_level: Some(0.95), n_analysed: Some(240),
+};
+let ladder = build_ladder(start, SomeConcerns, Some(&result), &LadderSettings::default())?;
+assert_eq!((ladder.level, ladder.weight), (Level::Low, 0.4));
+assert_eq!(ladder.steps[1].reason, LadderReason::SmallTrial { n: 240, threshold: 400 });
+assert_eq!(paper_weight(&[ladder]), Some(0.4));
+assert_eq!(start_level(StudyDesign::CohortProspective), None); // not covered
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+The pipeline asks through one `JsonChat`, in order: the design, the
+outcomes, D1 once for the trial, then D2, D3, D4 and D5 for each outcome,
+and an escalation question for an outcome that needs one. D5 asks no
+signalling question: the model reports facts about the plan
+(`rob2_d5_checks::D5_FACTS`), and code answers 5.1-5.3 from them.
+
+```rust
+use bmlib::agents::{ChatJsonError, ChatJsonOutcome};
+use bmlib::llm::LLMMessage;
+use bmlib::quality::rob2_d5_checks::D5_FACTS;
+use bmlib::quality::{
+    assess_unattended, AgentOptions, EvidenceWeight, JsonChat, Judgement, LadderSettings,
+    Level,
+};
+use serde_json::{json, Map, Value};
+# struct Canned(Vec<Value>);
+# impl JsonChat for Canned {
+#     fn chat_json(&mut self, _: &[LLMMessage], _: f64, _: i64, _: usize, _: bool)
+#         -> Result<ChatJsonOutcome, ChatJsonError> {
+#         Ok(ChatJsonOutcome { value: self.0.remove(0), attempts: 1, repaired: false })
+#     }
+# }
+
+let allocated = "Participants were randomly assigned 1:1 to metformin or placebo.";
+let primary = "The primary outcome was all-cause mortality at 28 days.";
+let text = format!("{allocated} Allocation was concealed centrally. {primary}");
+
+let domain = |answers: &[(&str, &str)]| json!({"answers": answers.iter()
+    .map(|(q, a)| (q.to_string(), json!({"answer": a, "quotes": [], "reasoning": ""})))
+    .collect::<Map<_, _>>()});
+let facts: Map<_, _> = D5_FACTS.iter()
+    .map(|f| (f.as_str().to_string(), json!({"present": false, "quotes": []})))
+    .collect();
+let mut chat = Canned(vec![
+    json!({"study_design": "rct", "rct_layout": "parallel", "quotes": [allocated]}),
+    json!({"primary_outcomes": [{"name": "All-cause mortality", "timepoint": "28 days",
+        "quotes": [primary], "result": {"measure": "risk ratio", "scale": "ratio",
+        "estimate": 0.7, "ci_low": 0.55, "ci_high": 0.88, "ci_level": 95, "n_analysed": 1200}}]}),
+    domain(&[("1.1", "Y"), ("1.2", "Y"), ("1.3", "N")]),
+    domain(&[("2.1", "N"), ("2.2", "N"), ("2.6", "Y")]),
+    domain(&[("3.1", "Y")]),
+    domain(&[("4.1", "N"), ("4.2", "N"), ("4.3", "N")]),
+    // D5: no fact about the plan stated, so 5.1-5.3 are NI: some concerns.
+    json!({"facts": facts, "other_measurements": [],
+           "main_analysis": {"differs": false, "planned": [], "reported": []}}),
+]);
+let weight = assess_unattended(&mut chat, None, None, &LadderSettings::default(),
+                               &AgentOptions::default(), "A trial", &text, 0.9)?;
+assert_eq!(EvidenceWeight::from_json(&weight.to_json())?, weight);
+
+let EvidenceWeight::Assessed { assessed, paper_weight, condensed, .. } = weight else {
+    panic!("a parallel-group RCT with a primary outcome is assessed");
+};
+assert_eq!(assessed[0].rob2.overall, Some(Judgement::SomeConcerns));
+assert_eq!(assessed[0].ladder.as_ref().map(|l| l.level), Some(Level::Moderate));
+assert_eq!((paper_weight, condensed), (Some(0.7), false));
+
+// A design the RoB 2 questions do not cover ends after one request.
+let mut chat = Canned(vec![json!({"study_design": "cohort_prospective", "quotes": []})]);
+let weight = assess_unattended(&mut chat, None, None, &LadderSettings::default(),
+                               &AgentOptions::default(), "A cohort", &text, 0.9)?;
+assert!(matches!(weight, EvidenceWeight::NotCovered { .. }));
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+**The result.** `EvidenceWeight` is `NotCovered { design }` (not a
+parallel-group RCT: `start_level` is `None` or `RctLayout::is_covered` is
+false), `NoPrimaryOutcome { design, outcomes }`, or `Assessed`, which holds
+the proposals, the `Rob2Run`, one `AssessedOutcome` per outcome in order,
+`paper_weight`, `condensed` (true if any step saw a digest), and the
+`ladder_version` (`LADDER_VERSION`) and `LadderSettings` the ladders were
+built with. An `AssessedOutcome` has exactly one of `ladder` and
+`ladder_error`: the error says why there is none (a domain or the escalation
+failed, so `rob2.overall` is `None`; the reported result was refused; the
+result cannot be laddered). `paper_weight` is the largest ladder weight,
+`None` when no ladder was built. A failure is never a score.
+
+**Errors.** `assess_unattended` is `Err(EvidenceWeightError)` only when a
+step could not be made at all, wrapping that step's own error:
+`Proposal(ProposalError)` for the design or outcome proposal (`EmptyInput`,
+`CondensationFailed`, `RequestFailed { message, retryable, status }`,
+`Unreadable`, `Stopped`, and `InvalidSimilarity` where Python raises
+`ValueError`), or `Rob2(Rob2RunError)` (`EmptyInput`, `NoOutcomes`,
+`Stopped`, `InvalidSimilarity`). A domain whose request fails or whose
+reply stays unreadable is not an error: it is `DomainResult::Failed
+{ domain, reason, retryable, status }` in the run, and the outcomes it
+touches are not assessed. A failed escalation is
+`OutcomeRob2::escalation_error`, with `escalation_retryable` and
+`escalation_status`. Retry only when `retryable`; a 401 or 403 means the
+key. `ProposalError` is `#[non_exhaustive]`.
+
+**Options.** `AgentOptions` (temperature, `max_tokens`, `max_retries`,
+`condense_config`) reaches all three agents; its `Default` is theirs,
+`max_tokens` 16,384 since a reasoning model's thinking counts against it.
+`num_ctx` belongs to the chat (`LlmChat::with_num_ctx`), where Python takes
+it as a keyword argument. `stop` is read before each request.
+`LadderSettings::default()` is the shipped ladder; `validate` refuses a
+weight outside 0 to 1 or weights that increase down the ladder, and
+`build_ladder` and deserialisation call it. `build_ladder` is `Err(String)`
+for such settings or a `ReportedResult` that fails `validate`; nothing is
+repaired.
+
+**The steps alone.** A reader who confirms each step uses the agents
+directly: `DesignAgent::propose(title, text, min_similarity)` gives a
+`DesignProposal` (`design`, `rct_layout` set exactly for an RCT, quotes
+located as in PICO), `OutcomeAgent::propose` an `OutcomeProposal` of
+`ProposedOutcome`s (a `ci_level` printed as `95` is read as 0.95; an
+unreadable or incoherent `result` is that outcome's `result_error`, and the
+outcome stays), and `Rob2Agent::assess(title, text, &outcomes,
+min_similarity)` a `Rob2Run`. Each has `PicoAgent`'s builders (`with_stop`,
+`with_condenser`, `with_temperature`, `with_max_tokens`,
+`with_max_retries`, `with_condense_config`). The replies are read by pure
+functions: `read_design_reply`, `read_outcome_reply`, `read_domain_reply`
+(`NOT_APPLICABLE`, also `N/A` or `Not applicable`, is unanswered; an answer
+to a question that does not apply is listed in `ignored`) and
+`read_escalation_reply`. `domain_prompt` and `escalation_message` build the
+user turns, `rob2_overall` the overall judgement of one outcome (`None` when
+it is not assessed). The prompts are constants (`DESIGN_SYSTEM_PROMPT`,
+`DESIGN_TASK_PROMPT`, `DESIGN_CONDENSE_QUERY`, the `OUTCOME_*` ones,
+`ROB2_SYSTEM_PROMPT`, `ROB2_DOMAIN_PROMPT`), and the results record the
+wording that asked them (`DESIGN_PROMPT_VERSION`, `OUTCOME_PROMPT_VERSION`,
+`rob2_questions::ROB2_PROMPT_VERSION`) and the rules that judged them
+(`ROB2_ALGORITHM_VERSION`). In `rob2_algorithm`, `questions(domain)` lists a
+domain's ids, `applicable_questions` those the answers so far open,
+`needs_escalation_decision` whether the assessor must decide, and
+`Domain::ALL` is Python's `DOMAINS_ALL`; D1 is `Scope::Study`, the rest
+`Scope::Outcome`.
+
+**Long papers.** Text over the threshold (48,000 characters) needs a
+`QueryCondenser`: each step condenses once for its own query, RoB 2 once
+per domain. `LlmQueryCondenser::new(&context_model, temperature,
+max_tokens)` is the production one; without one the step fails as
+`CondensationFailed` (a RoB 2 domain as `DomainResult::Failed`), where
+Python condenses through the agent's own client. Quotes are always located
+in the text as passed, never in a digest.
+
+```rust,ignore
+let mut condenser = LlmQueryCondenser::new(&my_context_model, 0.1, 4096);
+let weight = assess_unattended(&mut chat, Some(&mut condenser), None,
+    &LadderSettings::default(), &AgentOptions::default(), title, &full_text, 0.9)?;
+```
+
+Every result type has `to_json`, Python's `to_dict`, and a checked
+`from_json`. `EvidenceWeight::from_json` reads any status and refuses
+another `ladder_version`, settings that do not validate, parts of different
+lengths and a `paper_weight` that is not the largest ladder weight, but
+does not rebuild a stored ladder from its inputs (#813);
+`Rob2Run::from_json` refuses a run judged by other rules and an `overall`
+that does not follow from its domains.

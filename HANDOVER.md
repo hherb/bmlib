@@ -1,7 +1,7 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-23 (**the PRISMA 2020 and oMLX manuals, the PR on
-`docs/prisma-omlx-manual`**).
+_Last updated: 2026-11-24 (**the evidence-weight manuals, #811, the PR on
+`docs/evidence-weight-manual`**).
 **0.14.0 is tagged and released on GitHub** (`v0.14.0` on `e7b7c98a`, PR
 #801); `release.yml` run 44306259452 **still waits at the `pypi` gate for the
 maintainer** (last checked 2026-11-22), so PyPI still serves 0.13.0. **Crate
@@ -9,22 +9,26 @@ maintainer** (last checked 2026-11-22), so PyPI still serves 0.13.0. **Crate
 worktree of `e7b7c98a` (`HANDOVER_RUST.md`, *Publishing to crates.io*: remake
 the token link first, remove it after)._
 
-## This session: the PRISMA 2020 agent and `omlx` reach the manuals (PR open)
+## This session: the evidence weight reaches the manuals (#811, PR open)
 
-- **Docs only, no code change.** Neither quality manual mentioned PRISMA.
-  `docs/manual/quality.md` gains *PRISMA 2020 agent* (the checklist, the
-  split, sizing the budget, the three calls, the strict-evidence rule,
-  failures, long papers), with an example run against a scripted client.
-  `rust/bmlib/docs/manual/quality.md` gains *PRISMA 2020*, doc-tested. The
-  oMLX provider (PR #810) gets a section and a window row in
-  `docs/manual/llm.md`, and a mention in the Rust `llm.md`, the README and
-  `CLAUDE.md`.
-- **Filed #811**: the evidence-weight pipeline (RoB 2, the evidence ladder,
-  the design and outcome agents, `assess_unattended`; 66 exports) is in
-  neither quality manual. The Python page used to claim its import list was
-  all of `__all__`; it now cites #811. Re-measure with the snippet in #811.
+- **Docs, plus three Rust doc comments.** `docs/manual/quality.md` gains
+  *Unattended evidence weight* (`assess_unattended` and its three results,
+  the design and outcome proposals, RoB 2's rules, the RoB 2 assessor with D5
+  from facts, the ladder, long papers). Its examples were run against a
+  scripted client. `rust/bmlib/docs/manual/quality.md` gains *Evidence
+  weight*, doc-tested. The Python import list equals `bmlib.quality.__all__`
+  again (128 names, checked with `ast`). Three Rust constructors' doc
+  comments said "the Cochrane assessor's defaults" though their `max_tokens`
+  is 16384; fixed.
+- **Filed #813** (a decision): a stored ladder is not rebuilt on read, so
+  one contradicting its outcome's RoB 2 judgement reads back, in both
+  languages. Every other derived value in the result is re-checked.
 
 ## Merged since the 0.14.0 release (all Unreleased; detail in the CHANGELOGs)
+
+- **The PRISMA 2020 agent and `omlx` in the manuals** (PR #812): both quality
+  pages gain a PRISMA section (the Rust one doc-tested); `llm.md` an oMLX
+  section and window row.
 
 - **An `omlx` provider** (PR #810): a local oMLX server (MLX on Apple
   silicon) at `127.0.0.1:8000`, keyless and free, both languages; the window
@@ -253,10 +257,10 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache; **0.14.0 makes nothing stored stale** and labels bioRxiv and
   medRxiv full-text sources with their version on a re-fetch. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests on `docs/prisma-omlx-manual`** (2026-11-23, PostgreSQL 18 DSN on
+- **Tests on `docs/evidence-weight-manual`** (2026-11-24, PostgreSQL 18 DSN on
   port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,332 passed + 23 skipped;
-  ruff 0.15.20 and mypy clean; Rust `cargo test -p bmlib --doc manual` 61
-  passed. On `feat/prisma-unasked-807` (2026-11-22) Rust
+  ruff 0.15.20 and mypy clean; Rust `cargo test -p bmlib --doc manual` 63
+  passed, `cargo fmt --check` and `cargo doc -D warnings` clean. On `feat/prisma-unasked-807` (2026-11-22) Rust
   `cargo test -p bmlib -p bmlib-ffi` 1,951 passed on macOS, clippy and `cargo fmt --check` clean; the Rust oracle 46
   clean. `postgres_live` was not re-run (no Rust SQL changed; 15 passed on
   #794's branch). At the release
@@ -291,8 +295,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**125 open** (2026-11-23): **#811** (the evidence-weight pipeline's manual
-sections, above), **#806** (PR #804's review: the one-row wrong link, above),
+**126 open** (2026-11-24, #811 closing with this PR): **#813** (re-derive a
+stored ladder on read? above), **#806** (PR #804's review: the one-row wrong link, above),
 Europe PMC's **#792** and **#793** (PR #790's review,
 above), the library's #755, #762 and **#778** (PR #777's review follow-ups,
 above), **#776** (PR #775's

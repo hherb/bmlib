@@ -28,6 +28,13 @@ Tier 2 runs by default when Tier 1's metadata result is not confident enough (`u
 | `prisma2020_parts` | `plan_parts`, `PartPlan`, `PartsError`, `part_query` — a run split to a reply budget *(unreleased)* | **No — called directly** |
 | `prisma2020_models` | `read_part_reply`, `shown_judgement`, `ItemAssessment`, `PartAssessment`, `Suitability` *(unreleased)* | **No — produced by `prisma2020_agent`** |
 | `prisma2020_agent` | `Prisma2020Agent` — PRISMA 2020 reporting, a part at a time, every judgement backed by a located quote *(unreleased)* | **No — called directly** |
+| `design_agent` | `DesignAgent`, `DesignProposal`, `ProposalError`, `QueryCondenser` — the paper's own design and RCT layout *(0.14.0)* | **No — called by `assess_unattended`, or directly** |
+| `outcome_agent` | `OutcomeAgent`, `OutcomeProposal`, `ProposedOutcome` — the primary outcomes and their results *(0.14.0)* | **No — called by `assess_unattended`, or directly** |
+| `rob2_algorithm` | RoB 2's decision rules: `Answer`, `Domain`, `Judgement`, `domain_judgement`, `overall_judgement` *(0.14.0)* | **No — read by `rob2_agent`** |
+| `rob2_agent` | `Rob2Agent`, `Rob2Run`, `OutcomeRob2`, `DomainAssessment` — RoB 2, one call per domain *(0.14.0)* | **No — called by `assess_unattended`, or directly** |
+| `rob2_questions`, `rob2_d5_facts`, `rob2_d5_checks` | RoB 2's questions in bmlib's words; D5 from facts *(0.14.0)* | **No — read by `rob2_agent`** |
+| `evidence_ladder` | `build_ladder`, `EvidenceLadder`, `LadderSettings`, `ReportedResult`, `paper_weight` *(0.14.0)* | **No — called by `assess_unattended`, or directly** |
+| `evidence_weight` | `assess_unattended` — paper to evidence weight, unattended *(0.14.0)* | **No — called directly** |
 | `cochrane_models` | Nine-domain RoB + study-characteristics dataclasses, plus `collapse_risk_of_bias()` | **Yes — produced by `cochrane_assessor`, bridged onto `BiasRisk`** |
 | `cochrane_formatter` | Markdown / HTML Cochrane table renderers | **No — standalone** |
 | `extractors` | Rule-based, LLM-free extraction functions | **No — standalone** |
@@ -99,20 +106,98 @@ from bmlib.quality import (
     read_part_reply,
     shown_judgement,
     suitability_prompt_chars,
+    # The unattended evidence weight (0.14.0)
+    assess_unattended,
+    evidence_weight_from_dict,
+    Assessed,
+    AssessedOutcome,
+    EvidenceWeight,
+    EvidenceWeightError,
+    NoPrimaryOutcome,
+    NotCovered,
+    # ... its design and outcome proposals
+    DESIGN_CONDENSE_QUERY,
+    DESIGN_PROMPT_VERSION,
+    DESIGN_SYSTEM_PROMPT,
+    DESIGN_TASK_PROMPT,
+    DesignAgent,
+    DesignProposal,
+    LlmQueryCondenser,
+    OUTCOME_CONDENSE_QUERY,
+    OUTCOME_PROMPT_VERSION,
+    OUTCOME_SYSTEM_PROMPT,
+    OUTCOME_TASK_PROMPT,
+    OutcomeAgent,
+    OutcomeProposal,
+    ProposalError,
+    ProposalErrorKind,
+    ProposedOutcome,
+    QueryCondenser,
+    RctLayout,
+    read_design_reply,
+    read_outcome_reply,
+    # ... RoB 2's rules and its assessor
+    DOMAINS_ALL,
+    NOT_APPLICABLE,
+    ROB2_ALGORITHM_VERSION,
+    ROB2_DOMAIN_PROMPT,
+    ROB2_SYSTEM_PROMPT,
+    Answer,
+    Answers,
+    Domain,
+    DomainAssessment,
+    DomainFailed,
+    DomainResult,
+    Escalation,
+    Judgement,  # RoB 2's; PRISMA's is in prisma2020_models
+    MachineAnswer,
+    OutcomeRob2,
+    Rob2Agent,
+    Rob2Error,
+    Rob2Run,
+    Rob2RunError,
+    Rob2RunErrorKind,
+    Scope,
+    applicable_questions,
+    domain_judgement,
+    domain_prompt,
+    escalation_message,
+    needs_escalation_decision,
+    overall_judgement,
+    questions,
+    read_domain_reply,
+    read_escalation_reply,
+    rob2_overall,
+    # ... and the evidence ladder
+    LADDER_VERSION,
+    EffectScale,
+    EvidenceLadder,
+    LadderReason,
+    LadderSettings,
+    LadderStep,
+    Level,
+    ReportedResult,
+    build_ladder,
+    paper_weight,
+    start_level,
 )
 ```
 
-The list above is `bmlib.quality.__all__` less the unattended evidence-weight pipeline (RoB 2, the evidence ladder, the design and outcome agents and `assess_unattended`), which `__all__` exports too but this page does not yet document (#811). Everything else must be imported from its submodule:
+The list above is the complete `bmlib.quality.__all__`. Everything else must be imported from its submodule:
 
 ```python
 from bmlib.quality.cochrane_formatter import format_complete_assessment_markdown
 from bmlib.quality.cochrane_models import ROB_JUDGEMENT_LOW, VALID_ROB_JUDGEMENTS
 from bmlib.quality.data_models import DESIGN_TO_RANDOMIZED, STUDY_DESIGN_MAPPING
+from bmlib.quality.evidence_ladder import settings_from_wire, settings_to_wire
 from bmlib.quality.extractors import find_sample_size, get_extracted_study_type
 from bmlib.quality.metadata_filter import classify_from_metadata
 from bmlib.quality.prisma2020_checklist import item
 from bmlib.quality.prisma2020_models import Judgement, read_suitability
 from bmlib.quality.quality_agent import QualityAgent
+from bmlib.quality.rob2_agent import d5_assessment, domain_result_from_dict
+from bmlib.quality.rob2_d5_facts import d5_answers
+from bmlib.quality.rob2_questions import ROB2_PROMPT_VERSION, question_text
 from bmlib.quality.scoring_models import ALL_DIMENSIONS, DIMENSION_SAMPLE_SIZE
 from bmlib.quality.study_classifier import StudyClassifier
 ```
@@ -1219,6 +1304,284 @@ Each part condenses for its own items, so a long paper costs one map-reduce per 
 ### The Rust port
 
 `bmlib::quality::Prisma2020Agent` is the same agent, its prompts byte-identical: `Prisma2020Agent::new(&mut chat)` with `PicoAgent`'s builders, returning `Result<_, PrismaError>`. Where Python raises `ValueError`, Rust returns `PrismaError::InvalidItems`, `InvalidSimilarity`, `PreparedOverBudget` or `PreparedUnderBudget`, and `PartsError` is wrapped as `PrismaError::Parts`. Oversized text needs a condenser (`PrismaCondenser::new(&context_model, temperature, max_tokens)`). Without one it is `CondensationFailed`. See the [Rust manual](../../rust/bmlib/docs/manual/quality.md#prisma-2020). `tests/fixtures/prisma2020_checklist.json` and `prisma2020_parts.json` pin the checklist and the split in both languages, and `rust/oracle/dump_prisma2020_agent.py` holds the whole agent to the same results and messages over scripted replies.
+
+## Unattended evidence weight *(0.14.0)*
+
+`assess_unattended` (`bmlib.quality.evidence_weight`) turns a randomised trial's full text into one number: how much weight its evidence deserves. It was built for StudyAnalyzer's evidence weight. The pipeline has five steps, and each is also usable on its own:
+
+1. **The design** ([`DesignAgent`](#the-design-proposal)). The paper's own study design and, for a randomised trial, its layout. Anything but a parallel-group RCT stops here.
+2. **The primary outcomes** ([`OutcomeAgent`](#the-primary-outcomes)). The outcomes the paper itself calls primary, each with the result it reports. A trial with none stops here.
+3. **RoB 2** ([`Rob2Agent`](#the-rob-2-assessor)). Cochrane's risk-of-bias tool, one model call per domain: D1 once for the trial, D2 to D5 for each primary outcome. Code, not the model, turns the answers into judgements ([`rob2_algorithm`](#rob-2-decision-rules)).
+4. **The evidence ladder** ([`build_ladder`](#the-evidence-ladder)). A GRADE-style ladder per outcome: it starts at `high` and steps down for risk of bias and imprecision. Pure code, no model.
+5. **The paper's weight** (`paper_weight`). The largest weight among the outcomes' ladders.
+
+"Unattended" means the machine's proposals are accepted as they come. An app where a reader confirms each step calls the pieces directly instead. As with [`PicoAgent`](#pico-agent-0120), every quote the model gives is located by [`find_passage`](citations.md) in the text you passed, and citation offsets are code points into that text.
+
+```python
+from bmlib.quality import (
+    Assessed,
+    EvidenceWeightError,
+    LadderSettings,
+    NoPrimaryOutcome,
+    NotCovered,
+    assess_unattended,
+    evidence_weight_from_dict,
+)
+
+try:
+    weight = assess_unattended(
+        client,
+        "anthropic:claude-sonnet-5-5",
+        settings=LadderSettings(),         # the shipped ladder; every number can be tuned
+        title=title,
+        text=full_text,
+        min_similarity=0.9,
+    )
+except EvidenceWeightError as exc:
+    cause = exc.cause                      # the step's own ProposalError or Rob2RunError
+    if getattr(cause, "retryable", False):
+        ...                                # a request failed and a retry may cure it
+    raise
+
+if isinstance(weight, NotCovered):
+    print("not a parallel-group RCT:", weight.design.design, weight.design.rct_layout)
+elif isinstance(weight, NoPrimaryOutcome):
+    print("the paper names no primary outcome")
+else:
+    print("paper weight", weight.paper_weight)   # None when no ladder could be built
+    for one in weight.assessed:
+        if one.ladder is None:
+            print(one.outcome.name, "no ladder:", one.ladder_error)
+        else:
+            print(one.outcome.name, one.rob2.overall, one.ladder.level, one.ladder.weight)
+
+store(json.dumps(weight.to_dict()))        # and evidence_weight_from_dict later
+```
+
+For a trial with one primary outcome and no step that needs condensing or an escalation question, that is seven requests: the design, the outcomes, D1, D2, D3, D4 and D5.
+
+### `assess_unattended`
+
+```python
+assess_unattended(
+    llm_client: LLMClient,
+    model: str,
+    *,
+    settings: LadderSettings,
+    title: str | None,
+    text: str | None,
+    min_similarity: float,
+    stop: threading.Event | Callable[[], bool] | None = None,
+    condenser: QueryCondenser | None = None,
+    temperature: float = 0.1,
+    max_tokens: int = 16384,
+    max_retries: int = 3,
+    condense_config: ProcessingConfig | None = None,   # max_context_chars defaults to 48,000
+    num_ctx: int | None = None,
+) -> NotCovered | NoPrimaryOutcome | Assessed
+```
+
+- **Every option reaches all three agents** (design, outcomes, RoB 2). One model answers every step.
+- **`settings` is required.** The ladder's numbers are the caller's choice, so a stored result records them (below).
+- **`max_tokens` defaults to 16,384** for every full-text agent (design, outcome, RoB 2, PRISMA), since a reasoning model's thinking counts against it. It is a ceiling, not a cost. Clip it to the model's own limit where that is lower. `PicoAgent` and the Cochrane assessor keep 4,096.
+- **`min_similarity`, `num_ctx`, `stop`** behave as `PicoAgent`'s. A `min_similarity` outside (0, 1], NaN or a `bool` is refused before any request.
+
+`EvidenceWeight` is the union of the three results:
+
+| Result | When | Holds |
+|---|---|---|
+| `NotCovered` | The design is not an RCT, or an RCT whose layout is not `parallel`. One request was made. | `design` |
+| `NoPrimaryOutcome` | A parallel-group RCT in which the model found no primary outcome. RoB 2 was not asked. | `design`, `outcomes` (empty, but it may say it was condensed) |
+| `Assessed` | A parallel-group RCT taken through every step. | `design`, `outcomes`, `run` (the `Rob2Run`), `assessed` (one `AssessedOutcome` per outcome, in order), `paper_weight`, `condensed`, `ladder_version`, `settings` |
+
+**A failure is never a score.** An `AssessedOutcome` has a `ladder`, or `None` with the reason in `ladder_error`. There is no ladder when the outcome's RoB 2 overall judgement is `None` (a domain or the escalation question failed; the error names which), when its reported result was refused (`result_error`), or when `build_ladder` refused the result. An outcome whose paper reports no effect at all still gets a ladder: it steps down for having no interval. `paper_weight` is the largest weight among the ladders built, `None` when there are none. `condensed` is true when the model saw a digest in any step.
+
+**A stored result is read back exactly or refused.** `to_dict()` writes the wire form Rust's `serde` writes, tagged by `status` (`"not_covered"`, `"no_primary_outcome"` or `"assessed"`). `evidence_weight_from_dict()` reads any of the three back. It raises `ValueError` for an unknown status, a field absent or of the wrong type, a `ladder_version` other than `LADDER_VERSION`, settings that do not validate, outcomes, RoB 2 results and assessed outcomes that do not match one for one, an outcome with both a ladder and a ladder error (or neither), and a `paper_weight` that is not the largest ladder weight. Each part re-checks its own rules as it is read (see each step below), so a stored result whose judgements do not follow from its answers is refused. **A stored ladder is not rebuilt from its inputs**, so one that contradicts its outcome's RoB 2 judgement or result still reads back (#813).
+
+`EvidenceWeightError` means a step could not be made at all, and `cause` is that step's own error: a `ProposalError` from the design or outcome step, or a `Rob2RunError` from RoB 2 (a stop, or input refused before any request). Retry only when `cause.retryable` is true; a `ProposalError` carries `status` too, and 401 or 403 means the key. A domain that fails inside RoB 2 is **not** an `EvidenceWeightError`: it is recorded in the run, and the outcome gets no ladder. What no retry can cure (an unknown provider, a missing SDK, a bmlib defect) propagates unwrapped, as from `PicoAgent`.
+
+### The design proposal
+
+```python
+DesignAgent(
+    llm: LLMClient,
+    model: str,
+    template_engine: TemplateEngine | None = None,    # unused; accepted as every agent does
+    temperature: float = 0.1,
+    max_tokens: int = 16384,
+    condense_config: ProcessingConfig | None = None,   # max_context_chars defaults to 48,000
+    num_ctx: int | None = None,
+    stop: threading.Event | Callable[[], bool] | None = None,
+    condense_progress: ProgressCallback | None = None,
+    condenser: QueryCondenser | None = None,           # defaults to LlmQueryCondenser(self)
+    max_retries: int = 3,                              # chat_json's attempts per question
+)
+
+propose(title: str | None, text: str | None, *, min_similarity: float) -> DesignProposal
+read_design_reply(data: dict, text: str, min_similarity: float) -> DesignProposal
+```
+
+The model names the design of the study the paper reports, not of the studies it cites, as one of the labels in `DESIGN_TASK_PROMPT`. For an RCT it also names the layout, an `RctLayout`:
+
+| `RctLayout` | Meaning | Covered by RoB 2's core questions |
+|---|---|---|
+| `PARALLEL` | Participants randomised individually to parallel groups | Yes (`is_covered()`) |
+| `CLUSTER` | Groups of participants randomised | No |
+| `CROSSOVER` | Each participant receives the arms in turn | No |
+| `OTHER` | Any other randomised layout | No |
+
+`RctLayout` sits beside `StudyDesign`, which is unchanged, so the tiers and their stored values are not moved.
+
+`DesignProposal` carries `design` (a `StudyDesign`, never `UNKNOWN`), `rct_layout` (set exactly when the design is `RCT`), `citations`, `quotes_not_found`, `contradicted` (as PICO's `quotes_contradicted`), `quotes_dropped` (a count), `reasoning`, `condensed` and `prompt_version` (`DESIGN_PROMPT_VERSION`, 1).
+
+**A design is never guessed.** `read_design_reply` refuses a label the study-design lookup does not know (or `unknown`), a missing layout on an RCT, a layout on another design, and a layout that is not one of the four. The agent asks once more, then fails with `UNREADABLE`.
+
+### The primary outcomes
+
+```python
+OutcomeAgent(...)   # DesignAgent's arguments
+
+propose(title: str | None, text: str | None, *, min_similarity: float) -> OutcomeProposal
+read_outcome_reply(data: dict, text: str, min_similarity: float) -> OutcomeProposal
+```
+
+The model lists only the outcomes the paper itself calls primary (co-primary outcomes included), never one it judges important. An empty list is a valid answer. `OutcomeProposal` carries `outcomes`, `condensed` and `prompt_version` (`OUTCOME_PROMPT_VERSION`, 1).
+
+Each `ProposedOutcome` carries `name`, `timepoint` (`None` if the paper does not say), `result`, `result_error`, `citations`, `quotes_not_found`, `contradicted` and `quotes_dropped`. The `result` is a `ReportedResult` (see [the ladder](#the-evidence-ladder)), or `None` when the paper reports no effect estimate.
+
+**A bad result costs only that outcome's result.** The model copies the interval's level as printed, so a level in (1, 100) is read as a percentage (95 is 0.95) and one in (0, 1) as a fraction. A result that cannot be read (a bound printed as "NR", a null estimate, a scale that is neither `ratio` nor `difference`, a level that is neither), a `result` that is not an object, and one that reads but is incoherent (bounds the wrong way round, a ratio at or below 0) leave `result` `None` and give the reason, naming the field, in `result_error`. The outcome itself stays. Only a structural problem refuses the reply: the reply or an outcome not an object, `primary_outcomes` not a list, an outcome without a name or without a `result` key.
+
+### Proposal failures
+
+Both agents raise `ProposalError`, whose `kind` is a `ProposalErrorKind`:
+
+| Kind | Cause |
+|---|---|
+| `EMPTY_INPUT` | The text is empty; no request was made |
+| `INVALID_SIMILARITY` | `min_similarity` is not a number in (0, 1]; no request was made |
+| `REQUEST_FAILED` | A request failed or was refused. `retryable` and `status` are set as on `PicoError` (only this kind carries them) |
+| `UNREADABLE` | No reply could be read after the re-ask, a reply was cut at `max_tokens`, or it named something outside the allowed set |
+| `CONDENSATION_FAILED` | The paper did not fit and could not be condensed to fit |
+| `STOPPED` | The caller's stop was set |
+
+### RoB 2 decision rules
+
+`bmlib.quality.rob2_algorithm` holds the mapping tables of the RoB 2 guidance of 22 August 2019 (the parallel-group tool, effect of assignment) as pure functions, with no model and no wording. `ROB2_ALGORITHM_VERSION` names them.
+
+```python
+from bmlib.quality import Answer, Domain, Judgement, applicable_questions, domain_judgement
+from bmlib.quality import needs_escalation_decision, overall_judgement
+
+domain_judgement(Domain.D1, {"1.1": Answer.Y, "1.2": Answer.PY, "1.3": Answer.N})
+# Judgement.LOW
+
+applicable_questions(Domain.D2, {"2.1": Answer.N, "2.2": Answer.N})
+# ['2.1', '2.2', '2.6']: 2.3-2.5 do not apply, and 2.7 waits for 2.6's answer
+
+five = [Judgement.LOW, Judgement.SOME_CONCERNS, Judgement.SOME_CONCERNS, Judgement.LOW, Judgement.LOW]
+needs_escalation_decision(five)            # True: none high, two with some concerns
+overall_judgement(five, escalate=False)    # Judgement.SOME_CONCERNS
+```
+
+| Name | What it is |
+|---|---|
+| `Answer` | `Y`, `PY`, `PN`, `N`, `NI`. `Answer.parse` ignores case and surrounding space. `"NA"` is not an answer: a question that does not apply is not answered |
+| `Judgement` | `LOW`, `SOME_CONCERNS`, `HIGH` (PRISMA's `Judgement` is another type, in `prisma2020_models`) |
+| `Domain`, `DOMAINS_ALL` | `D1` to `D5`. `scope()` is a `Scope`: `STUDY` for D1 (randomisation), `OUTCOME` for the rest |
+| `Answers` | A mapping from question id (`"2.3"`) to `Answer`; a question not asked is absent |
+| `questions(domain)` | The domain's question ids, in order (22 in all) |
+| `applicable_questions(domain, answers)` | The questions to ask, given the answers so far. A question whose prerequisite is unanswered is not listed |
+| `domain_judgement(domain, answers)` | The domain's judgement. Answers to questions that do not apply are ignored |
+| `needs_escalation_decision(five)` | True when no domain is high and two or more have some concerns: the guidance then leaves the overall judgement to the assessor |
+| `overall_judgement(five, escalate=None)` | The overall judgement from the five domain judgements, D1 first. `escalate` decides between some concerns and high when an escalation decision is needed |
+
+**Nothing is defaulted.** A refusal is a `Rob2Error` (a `ValueError`) whose `kind` names it, as Rust's variants do: `MissingAnswer` (an applicable question unanswered; `question`), `UnknownQuestion` (an id outside the domain; `question`), `NotAllowed` (3.2 does not allow NI; `question`, `answer`), `UnreadableAnswer` (`value`) and `EscalationUndecided` (an escalation decision needed and `escalate` is `None`).
+
+### The RoB 2 assessor
+
+```python
+Rob2Agent(...)   # DesignAgent's arguments
+
+assess(title: str | None, text: str | None, outcomes: Sequence[ProposedOutcome],
+       *, min_similarity: float) -> Rob2Run
+```
+
+The model answers RoB 2's signalling questions one domain per call: D1 once for the trial, then D2, D3, D4 and D5 for each outcome in turn, each outcome's name, time point and result in the prompt. The 22 questions are in bmlib's own words (`bmlib.quality.rob2_questions`, `ROB2_PROMPT_VERSION` 5). RoB 2's guidance is CC BY-NC-ND 4.0, so its text is not copied. Each question says when it applies, where in the paper to look, and what counts as each answer.
+
+`read_domain_reply(domain, data, text, min_similarity)` reads one domain's reply:
+
+- An answer is `Y`, `PY`, `PN`, `N` or `NI`, in any case. `NA`, `N/A` and `Not applicable` read as unanswered.
+- Which questions apply is decided from the answers that can be read, before anything is refused.
+- It refuses an applicable question left unanswered (or `NA`), an answer that cannot be read, and an answer the question does not allow. The message names the field (`answers.2.3.answer`).
+- Answers to questions that do not apply are left out, readable or not, and their ids listed in `ignored`.
+- `domain_judgement` gives the judgement, and every quote is located in the text as passed, never in a digest.
+
+**D5 asks no signalling question.** The model reports facts about the plan behind the outcome instead, each with quotes: a plan cited, dated before or after the data, the measure, time point and analysis fixed in advance, and a switch of the outcome with its reason. It also lists the other measurements of the outcome the paper names, and sets the main analysis against the one reported. A fact counts only when the model claims it, one of its quotes is found in the paper, and the quote can show it (`bmlib.quality.rob2_d5_checks`: a dated plan needs a date or a before-phrase, a switch the language of a change, a measure the outcome's name, a time point a time, and a measure, time point or analysis must be stated as set in advance). A measurement with no result in the reply gets a second, narrow look. It counts as missing only when neither look finds a passage with a number or a pointer to a figure, table or supplement; a failed look leaves it undecided. Code then answers 5.1 to 5.3 (`rob2_d5_facts.d5_answers`) and RoB 2's rules judge. The assessment keeps the facts in `facts`.
+
+When an outcome needs an escalation decision, one more call asks the model whether the concerns together warrant high risk of bias (`escalation_message`, `read_escalation_reply`).
+
+A `Rob2Run` carries `algorithm_version`, `prompt_version`, `study` (D1) and `outcomes`, one `OutcomeRob2` per outcome in the order given. Each `OutcomeRob2` carries:
+
+- `outcome`, the outcome's name.
+- `domains`, D2 to D5 in order. Each is a `DomainResult`: a `DomainAssessment` (`domain`, `answers` by id, each a `MachineAnswer`, `judgement`, `condensed`, `ignored`, and for D5 `facts`) or a `DomainFailed` (`domain`, `reason`, `retryable`, `status`).
+- `escalation`, an `Escalation` (`escalate`, `reasoning`), or `None` when none was needed or it could not be had.
+- `overall`, the overall judgement (`rob2_overall`), or `None`, "not assessed", when any of D1 to D5 failed or a needed escalation could not be had. It is never guessed.
+- `escalation_error`, `escalation_retryable` and `escalation_status`, when the escalation question failed.
+
+`MachineAnswer` carries `answer`, `citations`, `quotes_not_found`, `contradicted`, `quotes_dropped` and `reasoning`. The answer stands even when its quotes are not found.
+
+**A failing domain does not end the run.** A domain whose reply stays unreadable after the re-ask, or whose request or condensation fails, is a `DomainFailed`, logged at WARNING, and the other domains go on. A failed D1 leaves every outcome's `overall` `None`. Only a stop or refused input ends the run, as a `Rob2RunError` whose `kind` is a `Rob2RunErrorKind`: `EMPTY_INPUT`, `NO_OUTCOMES`, `INVALID_SIMILARITY` (all before any request) or `STOPPED`.
+
+**A stored run is re-checked as it is read.** `Rob2Run.from_dict` refuses another `algorithm_version`, a study that is not D1, an escalation given where none is asked, and an `overall` that does not follow from the domains. Reading a `DomainAssessment` back recomputes its judgement from its answers, refuses an answer to a question that does not apply, and for D5 recomputes the answers from the facts. `domain_result_from_dict` and `d5_assessment` are in `bmlib.quality.rob2_agent`. `domain_prompt` builds a domain's user turn, and `ROB2_SYSTEM_PROMPT` and `ROB2_DOMAIN_PROMPT` are the fixed text around it.
+
+### The evidence ladder
+
+```python
+start_level(design: StudyDesign) -> Level | None
+build_ladder(start: Level, rob_overall: Judgement, result: ReportedResult | None,
+             settings: LadderSettings) -> EvidenceLadder
+paper_weight(ladders: list[EvidenceLadder]) -> float | None
+```
+
+Pure functions, no model (`bmlib.quality.evidence_ladder`, `LADDER_VERSION` `"ladder/1"`). `start_level` is `Level.HIGH` for an RCT and `None` (not covered) for every other design. `Level` is `HIGH`, `MODERATE`, `LOW` or `VERY_LOW`.
+
+`build_ladder` takes these steps down:
+
+| Step (`LadderReason.kind`) | When | Levels (`LadderSettings`, default) |
+|---|---|---|
+| `risk_of_bias` | Always, for the RoB 2 overall judgement | 0 for low, `some_concerns_steps` (1), `high_steps` (2) |
+| `no_interval` | No result, or no interval | `no_interval_steps` (1) |
+| `crosses_no_effect` | The interval includes no effect (1.0 on a ratio, 0.0 on a difference) | `crosses_no_effect_steps` (1) |
+| `small_trial` | Fewer analysed than `small_trial_n` (400) | `small_trial_steps` (1) |
+| `sample_size_unknown` | The number analysed is not reported | 0: shown, costs nothing |
+
+The imprecision steps together cost at most `max_imprecision_steps` (2), the cap trimming the last steps first, and the level never drops below `VERY_LOW`. The end level's table weight is the number: `weight_high` 1.0, `weight_moderate` 0.7, `weight_low` 0.4, `weight_very_low` 0.1.
+
+```python
+from bmlib.quality import EffectScale, Judgement, LadderSettings, Level, ReportedResult, build_ladder
+
+result = ReportedResult("mean difference", EffectScale.DIFFERENCE, -1.2,
+                        ci_low=-3.0, ci_high=0.6, ci_level=0.95, n_analysed=150)
+ladder = build_ladder(Level.HIGH, Judgement.SOME_CONCERNS, result, LadderSettings())
+ladder.level, ladder.weight
+# (Level.VERY_LOW, 0.1): some concerns 1, crosses no effect 1, small trial 1
+```
+
+`EvidenceLadder` carries `start`, `steps` (each a `LadderStep`: `reason`, `levels`), `level` and `weight`. `to_wire()` and `EvidenceLadder.from_wire()` are its wire form; reading one back does not re-derive its steps.
+
+`ReportedResult` carries `measure` (free text), `scale` (an `EffectScale`: `RATIO` or `DIFFERENCE`), `estimate`, and optionally `ci_low`, `ci_high`, `ci_level` (a fraction) and `n_analysed`. **An incoherent result is refused, never repaired**: `validate()`, which `build_ladder` calls, raises `ValueError` naming the field for bounds given alone, a number that is not finite, `ci_low <= estimate <= ci_high` not holding, a ratio value at or below 0, a `ci_level` outside (0, 1), or an `n_analysed` that is not a whole number fitting 32 bits.
+
+`LadderSettings` is frozen and checked on construction, with Rust's messages: step counts fit 8 bits, `small_trial_n` 32 bits, each weight is a finite number from 0 to 1, and the weights do not increase down the ladder. `settings_to_wire` and `settings_from_wire` (in `bmlib.quality.evidence_ladder`) are its wire form; reading defaults an absent field and refuses an unknown one. **`small_trial_n` is GRADE's rule-of-thumb optimal information size, a default to tune, not a measurement.**
+
+### Long papers
+
+Nothing is truncated. Each of the three agents condenses a paper over `condense_config.max_context_chars` by the verbatim-passage map-reduce `PicoAgent` uses, gathering what its own question needs: `DESIGN_CONDENSE_QUERY`, `OUTCOME_CONDENSE_QUERY`, and one query per RoB 2 domain (condensed once per run per domain). Quotes are always located in the original text. Each result says whether the model saw a digest (`condensed`), and `Assessed.condensed` is true when any step did.
+
+The condenser is a seam. `QueryCondenser` is a protocol with one method, `condense(query, text, label, config, *, stage)`, returning `(digest, notes, status)`. `LlmQueryCondenser(agent, progress=None)` is the default, the map-reduce over the agent's own model, stop and `num_ctx`. Pass your own as `condenser=`, to `assess_unattended` or to any agent, for a cheaper model or a cached digest.
+
+### The Rust port
+
+`bmlib::quality::evidence_weight::assess_unattended` is the same flow, its prompts byte-identical. Every step takes one `AgentOptions` (whose `Default` is the agents' own), and `num_ctx` belongs to the chat. Where Python raises `ValueError`, Rust returns an error variant; the wire forms are the same key for key, and `EvidenceWeight::from_json` refuses what `evidence_weight_from_dict` refuses. See the [Rust manual](../../rust/bmlib/docs/manual/quality.md#evidence-weight). Contracts hold the two languages together: `tests/fixtures/rob2_algorithm.json`, `evidence_ladder.json`, `design_replies.json`, `outcome_replies.json`, `rob2_replies.json`, `rob2_run.json`, `rob2_d5_checks.json`, `rob2_d5_facts.json` and `evidence_weight.json`.
 
 ## Cochrane Formatters
 
