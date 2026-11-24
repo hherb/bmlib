@@ -61,6 +61,7 @@ from bmlib.quality.design_agent import (
     ProposalError,
     ProposalErrorKind,
     QueryCondenser,
+    design_prompt_chars,
     read_design_reply,
 )
 from bmlib.quality.evidence_ladder import (
@@ -99,6 +100,7 @@ from bmlib.quality.outcome_agent import (
     OutcomeAgent,
     OutcomeProposal,
     ProposedOutcome,
+    outcome_prompt_chars,
     read_outcome_reply,
 )
 from bmlib.quality.pico_agent import PICO_PARTS, PicoAgent, verify_quotes
@@ -161,6 +163,7 @@ from bmlib.quality.rob2_agent import (
     Rob2Step,
     combine_outcome,
     domain_prompt,
+    domain_prompt_chars,
     escalation_message,
     plan_rob2,
     read_domain_reply,
@@ -285,6 +288,7 @@ __all__ = [
     "ProposalError",
     "ProposalErrorKind",
     "QueryCondenser",
+    "design_prompt_chars",
     "read_design_reply",
     # Primary outcomes and their results
     "OUTCOME_CONDENSE_QUERY",
@@ -294,6 +298,7 @@ __all__ = [
     "OutcomeAgent",
     "OutcomeProposal",
     "ProposedOutcome",
+    "outcome_prompt_chars",
     "read_outcome_reply",
     # The RoB 2 assessor
     "NOT_APPLICABLE",
@@ -313,6 +318,7 @@ __all__ = [
     "Rob2RunErrorKind",
     "Rob2Step",
     "domain_prompt",
+    "domain_prompt_chars",
     "escalation_message",
     "combine_outcome",
     "plan_rob2",

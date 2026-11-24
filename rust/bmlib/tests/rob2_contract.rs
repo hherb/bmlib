@@ -21,10 +21,12 @@
 //! wording and its renderings, each domain and escalation reply's reading or
 //! refusal, and a whole run that must round-trip unchanged.
 
-use bmlib::quality::outcome_agent::ProposedOutcome;
+use bmlib::quality::design_agent::design_prompt_chars;
+use bmlib::quality::outcome_agent::{outcome_prompt_chars, ProposedOutcome};
 use bmlib::quality::rob2_agent::{
-    domain_prompt, escalation_message, plan_rob2, read_domain_reply, read_escalation_reply,
-    DomainAssessment, Escalation, Rob2Run, ROB2_DOMAIN_PROMPT, ROB2_SYSTEM_PROMPT,
+    domain_prompt, domain_prompt_chars, escalation_message, plan_rob2, read_domain_reply,
+    read_escalation_reply, DomainAssessment, Escalation, Rob2Run, ROB2_DOMAIN_PROMPT,
+    ROB2_SYSTEM_PROMPT,
 };
 use bmlib::quality::rob2_algorithm::{questions, Domain};
 use bmlib::quality::rob2_questions::{
@@ -180,5 +182,23 @@ fn the_plan_is_the_contracts() {
         let count = usize::try_from(case["outcomes"].as_u64().expect("outcomes")).expect("count");
         let plan: Vec<Value> = plan_rob2(count).iter().map(|s| s.to_json()).collect();
         assert_eq!(Value::Array(plan), case["steps"]);
+    }
+}
+
+#[test]
+fn the_prompt_sizes_are_the_contracts() {
+    let sizes =
+        serde_json::from_str::<Value>(STEPS).expect("the fixture is JSON")["prompt_chars"].clone();
+    let as_size = |value: &Value| usize::try_from(value.as_u64().expect("a size")).expect("size");
+    assert_eq!(design_prompt_chars(), as_size(&sizes["design"]));
+    assert_eq!(outcome_prompt_chars(), as_size(&sizes["outcomes"]));
+    let outcome =
+        ProposedOutcome::from_json(&replies()["outcome"]).expect("the fixture's first outcome");
+    let domains = sizes["domains"].as_object().expect("domains");
+    assert_eq!(domains.len(), Domain::ALL.len());
+    for d in Domain::ALL {
+        let given = (d != Domain::D1).then_some(&outcome);
+        let size = domain_prompt_chars(d, given).expect("a matching outcome");
+        assert_eq!(size, as_size(&domains[&format!("{d:?}")]), "{d:?}");
     }
 }

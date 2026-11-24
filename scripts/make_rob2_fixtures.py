@@ -40,8 +40,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from bmlib.quality.design_agent import design_prompt_chars
 from bmlib.quality.evidence_ladder import EffectScale, ReportedResult
-from bmlib.quality.outcome_agent import ProposedOutcome
+from bmlib.quality.outcome_agent import ProposedOutcome, outcome_prompt_chars
 from bmlib.quality.rob2_agent import (
     ROB2_DOMAIN_PROMPT,
     ROB2_SYSTEM_PROMPT,
@@ -52,6 +53,7 @@ from bmlib.quality.rob2_agent import (
     Rob2Run,
     d5_assessment,
     domain_prompt,
+    domain_prompt_chars,
     escalation_message,
     plan_rob2,
     read_domain_reply,
@@ -360,7 +362,15 @@ def build_steps() -> dict[str, Any]:
         "plans": [
             {"outcomes": n, "steps": [step.to_dict() for step in plan_rob2(n)]}
             for n in STEP_PLAN_OUTCOMES
-        ]
+        ],
+        "prompt_chars": {
+            "design": design_prompt_chars(),
+            "outcomes": outcome_prompt_chars(),
+            "domains": {
+                domain.value: domain_prompt_chars(domain, None if domain is Domain.D1 else OUTCOME)
+                for domain in Domain
+            },
+        },
     }
 
 

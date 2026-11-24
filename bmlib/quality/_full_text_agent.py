@@ -32,10 +32,11 @@ its own copy of the same rules.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from enum import Enum
 from typing import Any, Protocol, TypeVar
 
+from bmlib.agents import JSON_CORRECTION_NOTE
 from bmlib.agents.base import BaseAgent, ChatJsonError, ChatJsonTruncatedError, ChatStoppedError
 from bmlib.context_processor import ProcessingConfig, ProcessingStatus, ProcessingStoppedError
 from bmlib.llm import LLMClient, LLMMessage, LLMResponse
@@ -114,6 +115,26 @@ class QueryCondenser(Protocol):
     ) -> tuple[str, list[str], ProcessingStatus]:
         """Return ``(digest, notes, status)`` or raise ``CondensationRefusedError``."""
         ...
+
+
+def step_prompt_chars(asks: Sequence[tuple[str, str]], query: str) -> int:
+    """The characters of the longest prompt one step sends, without the paper.
+
+    Each of *asks* is a ``(system prompt, question as sent with an empty title
+    and paper)``.  The step's longest request is its system prompt plus the
+    longer of its question and the two condensation prompts for *query* (with
+    empty content), as a retry after an unparseable reply sends it: with
+    :data:`~bmlib.agents.JSON_CORRECTION_NOTE` after a blank line.  A
+    condensation request sends no system prompt, so for it this is an upper
+    bound.  A caller subtracts it from the window when sizing the paper's
+    budget.
+    """
+    condensing = max(
+        len(template.replace("{query}", query).replace("{content}", ""))
+        for template in (PICO_CONDENSE_EXTRACTION_PROMPT, PICO_CONDENSE_CONSOLIDATION_PROMPT)
+    )
+    longest = max(len(system) + max(len(question), condensing) for system, question in asks)
+    return longest + len("\n\n") + len(JSON_CORRECTION_NOTE)
 
 
 class LlmQueryCondenser:

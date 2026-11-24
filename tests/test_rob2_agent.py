@@ -25,12 +25,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bmlib.agents.base import JSON_CORRECTION_NOTE
 from bmlib.citations import PassageContradiction
 from bmlib.context_processor import ProcessingConfig, ProcessingStatus
 from bmlib.llm.data_types import LLMResponse
 from bmlib.quality._condense import CondensationRefusedError
 from bmlib.quality.evidence_ladder import EffectScale, ReportedResult
 from bmlib.quality.outcome_agent import ProposedOutcome
+from bmlib.quality.pico_agent import (
+    PICO_CONDENSE_CONSOLIDATION_PROMPT,
+    PICO_CONDENSE_EXTRACTION_PROMPT,
+)
 from bmlib.quality.pico_models import PicoContradictedQuote
 from bmlib.quality.rob2_agent import (
     ROB2_SYSTEM_PROMPT,
@@ -47,6 +52,7 @@ from bmlib.quality.rob2_agent import (
     Rob2RunErrorKind,
     combine_outcome,
     domain_prompt,
+    domain_prompt_chars,
     escalation_message,
     plan_rob2,
     read_domain_reply,
@@ -60,12 +66,19 @@ from bmlib.quality.rob2_algorithm import (
     questions,
 )
 from bmlib.quality.rob2_d5_checks import D5_FACTS
-from bmlib.quality.rob2_d5_facts import D5_FACTS_SYSTEM_PROMPT, facts_prompt
+from bmlib.quality.rob2_d5_facts import (
+    D5_FACTS_SYSTEM_PROMPT,
+    D5_SECOND_LOOK_SYSTEM_PROMPT,
+    OtherMeasurement,
+    facts_prompt,
+    second_look_prompt,
+)
 from bmlib.quality.rob2_questions import (
     D5_OUTCOME_SWITCHING,
     ESCALATION_PROMPT,
     ROB2_CONDENSE_QUERIES,
     ROB2_PROMPT_VERSION,
+    condense_query,
     domain_title,
     question_text,
 )
@@ -1115,3 +1128,37 @@ def test_escalate_outcome_refuses_domains_out_of_order_before_any_request() -> N
         with pytest.raises(ValueError, match="D2"):
             agent.escalate_outcome("A trial", OUTCOME, study, bad)
     assert agent.llm.chat.call_count == 5
+
+
+_CORRECTION = len("\n\n") + len(JSON_CORRECTION_NOTE)
+
+
+def _condensing(query: str) -> int:
+    """The longer condensation prompt for *query*, with empty content."""
+    return max(
+        len(t.replace("{query}", query).replace("{content}", ""))
+        for t in (PICO_CONDENSE_EXTRACTION_PROMPT, PICO_CONDENSE_CONSOLIDATION_PROMPT)
+    )
+
+
+def test_domain_prompt_chars_counts_the_sent_prompt() -> None:
+    sent = len(ROB2_SYSTEM_PROMPT) + len(domain_prompt(Domain.D3, "", "", OUTCOME)) + _CORRECTION
+    assert domain_prompt_chars(Domain.D3, OUTCOME) == sent
+    assert sent >= len(ROB2_SYSTEM_PROMPT) + _condensing(condense_query(Domain.D3)) + _CORRECTION
+    assert domain_prompt_chars(Domain.D1, None) == (
+        len(ROB2_SYSTEM_PROMPT) + len(domain_prompt(Domain.D1, "", "", None)) + _CORRECTION
+    )
+
+
+def test_domain_prompt_chars_refuses_an_outcome_that_does_not_match() -> None:
+    with pytest.raises(ValueError):
+        domain_prompt_chars(Domain.D1, OUTCOME)
+    with pytest.raises(ValueError):
+        domain_prompt_chars(Domain.D2, None)
+
+
+def test_d5_counts_the_larger_of_facts_and_second_look() -> None:
+    facts = len(D5_FACTS_SYSTEM_PROMPT) + len(facts_prompt("", "", OUTCOME))
+    look = OtherMeasurement(label="", named=[], result=[])
+    second = len(D5_SECOND_LOOK_SYSTEM_PROMPT) + len(second_look_prompt("", "", OUTCOME, look))
+    assert domain_prompt_chars(Domain.D5, OUTCOME) == max(facts, second) + _CORRECTION

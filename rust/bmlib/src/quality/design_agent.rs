@@ -33,7 +33,8 @@ use crate::quality::cochrane_assessor::{
 use crate::quality::data_models::{study_design_from_str, RctLayout, StudyDesign};
 use crate::quality::full_text_agent::DEFAULT_MAX_TOKENS;
 use crate::quality::full_text_agent::{
-    ask_until_readable, check_similarity, check_stop, condense_once, Failure, Sampling, LABEL_CHARS,
+    ask_until_readable, check_similarity, check_stop, condense_once, step_prompt_chars, Failure,
+    Sampling, LABEL_CHARS,
 };
 pub use crate::quality::full_text_agent::{LlmQueryCondenser, QueryCondenser};
 use crate::quality::pico_agent::verify_quotes;
@@ -285,6 +286,17 @@ fn field<'v>(value: &'v Value, key: &str) -> Result<&'v Value, String> {
     value.get(key).ok_or_else(|| format!("{key} is missing"))
 }
 
+/// The characters of the longest prompt the design step sends, without the paper
+/// and its title: the system prompt plus the longer of the question (as sent,
+/// with an empty title and paper) and the two condensation prompts, each as a
+/// retry after an unparseable reply sends it. A caller subtracts it from the
+/// window when sizing the paper's budget. Python's `design_prompt_chars`.
+#[must_use]
+pub fn design_prompt_chars() -> usize {
+    let question = format!("{DESIGN_TASK_PROMPT}\n\nPaper Title: \n\nPaper Text:\n");
+    step_prompt_chars(&[(DESIGN_SYSTEM_PROMPT, question)], DESIGN_CONDENSE_QUERY)
+}
+
 /// Read the model's reply and verify its quotes against `text`. Python's
 /// `read_design_reply`.
 ///
@@ -493,10 +505,14 @@ impl<'a> DesignAgent<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agents::JSON_CORRECTION_NOTE;
     use crate::agents::{ChatJsonError, ChatJsonOutcome};
     use crate::context_processor::ProcessingResult;
     use crate::llm::LLMMessage;
     use crate::quality::agent_chat::JsonChat;
+    use crate::quality::pico_agent::{
+        PICO_CONDENSE_CONSOLIDATION_PROMPT, PICO_CONDENSE_EXTRACTION_PROMPT,
+    };
     use serde_json::json;
     use std::sync::atomic::AtomicBool;
 
@@ -863,5 +879,27 @@ mod tests {
             Some(RctLayout::Crossover)
         );
         assert_eq!(RctLayout::from_wire("Parallel"), None);
+    }
+
+    #[test]
+    fn design_prompt_chars_counts_the_sent_prompt() {
+        let question = format!("{DESIGN_TASK_PROMPT}\n\nPaper Title: \n\nPaper Text:\n");
+        let correction = "\n\n".len() + JSON_CORRECTION_NOTE.chars().count();
+        let sent = DESIGN_SYSTEM_PROMPT.chars().count() + question.chars().count() + correction;
+        assert_eq!(design_prompt_chars(), sent);
+        let condensing = [
+            PICO_CONDENSE_EXTRACTION_PROMPT,
+            PICO_CONDENSE_CONSOLIDATION_PROMPT,
+        ]
+        .iter()
+        .map(|t| {
+            t.replace("{query}", DESIGN_CONDENSE_QUERY)
+                .replace("{content}", "")
+                .chars()
+                .count()
+        })
+        .max()
+        .expect("two prompts");
+        assert!(question.chars().count() >= condensing);
     }
 }

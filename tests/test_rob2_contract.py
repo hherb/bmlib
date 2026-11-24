@@ -32,7 +32,8 @@ from typing import Any
 
 import pytest
 
-from bmlib.quality.outcome_agent import ProposedOutcome
+from bmlib.quality.design_agent import design_prompt_chars
+from bmlib.quality.outcome_agent import ProposedOutcome, outcome_prompt_chars
 from bmlib.quality.rob2_agent import (
     ROB2_DOMAIN_PROMPT,
     ROB2_SYSTEM_PROMPT,
@@ -40,6 +41,7 @@ from bmlib.quality.rob2_agent import (
     Escalation,
     Rob2Run,
     domain_prompt,
+    domain_prompt_chars,
     escalation_message,
     plan_rob2,
     read_domain_reply,
@@ -159,3 +161,14 @@ def test_the_plan_is_the_contracts() -> None:
     steps: dict[str, Any] = json.loads((FIXTURES / "rob2_steps.json").read_text("utf-8"))
     for case in steps["plans"]:
         assert [s.to_dict() for s in plan_rob2(case["outcomes"])] == case["steps"]
+
+
+def test_the_prompt_sizes_are_the_contracts() -> None:
+    make = _generator()
+    sizes = json.loads((FIXTURES / "rob2_steps.json").read_text("utf-8"))["prompt_chars"]
+    assert design_prompt_chars() == sizes["design"]
+    assert outcome_prompt_chars() == sizes["outcomes"]
+    assert sizes["domains"].keys() == {d.value for d in Domain}
+    for domain in Domain:
+        outcome = None if domain is Domain.D1 else make.OUTCOME
+        assert domain_prompt_chars(domain, outcome) == sizes["domains"][domain.value]

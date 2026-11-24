@@ -50,7 +50,8 @@ use crate::quality::cochrane_assessor::{
 };
 use crate::quality::full_text_agent::DEFAULT_MAX_TOKENS;
 use crate::quality::full_text_agent::{
-    ask_until_readable, check_similarity, check_stop, condense_once, Failure, Sampling, LABEL_CHARS,
+    ask_until_readable, check_similarity, check_stop, condense_once, step_prompt_chars, Failure,
+    Sampling, LABEL_CHARS,
 };
 pub use crate::quality::full_text_agent::{LlmQueryCondenser, QueryCondenser};
 use crate::quality::outcome_agent::ProposedOutcome;
@@ -1042,6 +1043,49 @@ pub fn domain_prompt(
     }
 }
 
+/// The characters of the longest prompt `domain`'s step sends, without the
+/// paper and its title: the step's system prompt plus the longer of its
+/// question (as sent, with an empty title and paper) and the two condensation
+/// prompts for the domain's query, each as a retry after an unparseable reply
+/// sends it. D5 sends two kinds of question, each with its own system prompt,
+/// the facts and a second look at an other measurement; this takes the larger.
+/// A second look also carries its measurement's passages, which this does not
+/// count. A caller subtracts it from the window when sizing the paper's
+/// budget. Python's `domain_prompt_chars`.
+///
+/// # Errors
+///
+/// As [`domain_prompt`]: an outcome given for D1, or none for D2-D5.
+pub fn domain_prompt_chars(
+    domain: Domain,
+    outcome: Option<&ProposedOutcome>,
+) -> Result<usize, String> {
+    let question = domain_prompt(domain, "", "", outcome)?;
+    let asks = match (domain, outcome) {
+        (Domain::D5, Some(outcome)) => {
+            let look = OtherMeasurement {
+                label: String::new(),
+                named: Vec::new(),
+                result: Vec::new(),
+                second_look: None,
+                second_look_error: None,
+                quotes_not_found: Vec::new(),
+                contradicted: Vec::new(),
+                quotes_dropped: 0,
+            };
+            vec![
+                (D5_FACTS_SYSTEM_PROMPT, facts_prompt("", "", outcome)),
+                (
+                    D5_SECOND_LOOK_SYSTEM_PROMPT,
+                    second_look_prompt("", "", outcome, &look),
+                ),
+            ]
+        }
+        _ => vec![(ROB2_SYSTEM_PROMPT, question)],
+    };
+    Ok(step_prompt_chars(&asks, condense_query(domain)))
+}
+
 /// The user turn of the escalation question: the outcome and all five domains,
 /// each its title and judgement, then one line per answer with its reasoning.
 /// Python's `escalation_message`.
@@ -1654,10 +1698,14 @@ struct Paper<'p> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::agents::JSON_CORRECTION_NOTE;
     use crate::agents::{ChatJsonError, ChatJsonOutcome};
     use crate::context_processor::{ProcessingResult, ProcessingStatus};
     use crate::llm::LLMMessage;
     use crate::quality::evidence_ladder::{EffectScale, ReportedResult};
+    use crate::quality::pico_agent::{
+        PICO_CONDENSE_CONSOLIDATION_PROMPT, PICO_CONDENSE_EXTRACTION_PROMPT,
+    };
     use crate::quality::rob2_questions::ROB2_CONDENSE_QUERIES;
     use std::sync::atomic::Ordering;
 
@@ -2908,5 +2956,71 @@ pub(crate) mod tests {
         bare.result = None;
         let prompt = domain_prompt(Domain::D2, "t", "p", Some(&bare)).expect("prompt");
         assert!(prompt.contains("Timepoint: not stated\nReported result: none extracted"));
+    }
+
+    #[test]
+    fn domain_prompt_chars_counts_the_sent_prompt() {
+        let outcome = outcome("Systolic blood pressure");
+        let correction = "\n\n".len() + JSON_CORRECTION_NOTE.chars().count();
+        let sent = ROB2_SYSTEM_PROMPT.chars().count()
+            + domain_prompt(Domain::D3, "", "", Some(&outcome))
+                .expect("a prompt")
+                .chars()
+                .count()
+            + correction;
+        assert_eq!(domain_prompt_chars(Domain::D3, Some(&outcome)), Ok(sent));
+        let query = condense_query(Domain::D3);
+        let condensing = [
+            PICO_CONDENSE_EXTRACTION_PROMPT,
+            PICO_CONDENSE_CONSOLIDATION_PROMPT,
+        ]
+        .iter()
+        .map(|t| {
+            t.replace("{query}", query)
+                .replace("{content}", "")
+                .chars()
+                .count()
+        })
+        .max()
+        .expect("two prompts");
+        assert!(sent >= ROB2_SYSTEM_PROMPT.chars().count() + condensing + correction);
+        let d1 = ROB2_SYSTEM_PROMPT.chars().count()
+            + domain_prompt(Domain::D1, "", "", None)
+                .expect("a prompt")
+                .chars()
+                .count()
+            + correction;
+        assert_eq!(domain_prompt_chars(Domain::D1, None), Ok(d1));
+    }
+
+    #[test]
+    fn domain_prompt_chars_refuses_an_outcome_that_does_not_match() {
+        let outcome = outcome("Systolic blood pressure");
+        assert!(domain_prompt_chars(Domain::D1, Some(&outcome)).is_err());
+        assert!(domain_prompt_chars(Domain::D2, None).is_err());
+    }
+
+    #[test]
+    fn d5_counts_the_larger_of_facts_and_second_look() {
+        let outcome = outcome("Systolic blood pressure");
+        let look = OtherMeasurement {
+            label: String::new(),
+            named: Vec::new(),
+            result: Vec::new(),
+            second_look: None,
+            second_look_error: None,
+            quotes_not_found: Vec::new(),
+            contradicted: Vec::new(),
+            quotes_dropped: 0,
+        };
+        let facts =
+            D5_FACTS_SYSTEM_PROMPT.chars().count() + facts_prompt("", "", &outcome).chars().count();
+        let second = D5_SECOND_LOOK_SYSTEM_PROMPT.chars().count()
+            + second_look_prompt("", "", &outcome, &look).chars().count();
+        let correction = "\n\n".len() + JSON_CORRECTION_NOTE.chars().count();
+        assert_eq!(
+            domain_prompt_chars(Domain::D5, Some(&outcome)),
+            Ok(facts.max(second) + correction)
+        );
     }
 }

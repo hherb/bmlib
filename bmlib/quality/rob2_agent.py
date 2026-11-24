@@ -59,6 +59,7 @@ from bmlib.quality._full_text_agent import (
     UnreadableReplyError,
     _FullTextAgent,
     check_min_similarity,
+    step_prompt_chars,
 )
 from bmlib.quality.design_agent import _wire
 from bmlib.quality.evidence_ladder import U32_MAX
@@ -86,6 +87,7 @@ from bmlib.quality.rob2_d5_facts import (
     DIFFERING_ANALYSIS,
     MISSING_MEASUREMENT,
     D5Facts,
+    OtherMeasurement,
     d5_answers,
     facts_prompt,
     read_facts_reply,
@@ -121,6 +123,7 @@ __all__ = [
     "combine_outcome",
     "d5_assessment",
     "domain_prompt",
+    "domain_prompt_chars",
     "domain_result_from_dict",
     "escalation_message",
     "plan_rob2",
@@ -862,6 +865,35 @@ def d5_assessment(facts: D5Facts) -> DomainAssessment:
 
 
 # --- The prompts ---
+
+
+def domain_prompt_chars(domain: Domain, outcome: ProposedOutcome | None) -> int:
+    """The characters of the longest prompt *domain*'s step sends, without the paper.
+
+    The step's system prompt plus the longer of its question (as sent, with an
+    empty title and paper) and the two condensation prompts for the domain's
+    query, each as a retry after an unparseable reply sends it.  D5 sends two
+    kinds of question, each with its own system prompt: the facts, and a second
+    look at an other measurement; this takes the larger.  A second look also
+    carries its measurement's passages, which this does not count.  A caller
+    subtracts it from the window when sizing the paper's budget.
+
+    Args:
+        domain: The domain asked.
+        outcome: The outcome assessed; ``None`` for D1, required for D2-D5.
+
+    Raises:
+        ValueError: An outcome given for D1, or none for D2-D5.
+    """
+    if domain is Domain.D5 and outcome is not None:
+        look = OtherMeasurement(label="", named=[], result=[])
+        asks = [
+            (D5_FACTS_SYSTEM_PROMPT, facts_prompt("", "", outcome)),
+            (D5_SECOND_LOOK_SYSTEM_PROMPT, second_look_prompt("", "", outcome, look)),
+        ]
+    else:
+        asks = [(ROB2_SYSTEM_PROMPT, domain_prompt(domain, "", "", outcome))]
+    return step_prompt_chars(asks, condense_query(domain))
 
 
 def domain_prompt(domain: Domain, title: str, paper: str, outcome: ProposedOutcome | None) -> str:
