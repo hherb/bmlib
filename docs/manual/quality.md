@@ -1358,7 +1358,7 @@ else:
 store(json.dumps(weight.to_dict()))        # and evidence_weight_from_dict later
 ```
 
-For a trial with one primary outcome and no step that needs condensing or an escalation question, that is seven requests: the design, the outcomes, D1, D2, D3, D4 and D5.
+For a trial with one primary outcome, every reply readable the first time, and no step that needs condensing, no second look in D5 and no escalation question, that is seven requests: the design, the outcomes, D1, D2, D3, D4 and D5. A reply that cannot be read is asked once more, and D5 takes a second look at each other measurement whose result it did not find.
 
 ### `assess_unattended`
 
@@ -1390,7 +1390,7 @@ assess_unattended(
 
 | Result | When | Holds |
 |---|---|---|
-| `NotCovered` | The design is not an RCT, or an RCT whose layout is not `parallel`. One request was made. | `design` |
+| `NotCovered` | The design is not an RCT, or an RCT whose layout is not `parallel`. Only the design was asked (one request, unless it was condensed or re-asked). | `design` |
 | `NoPrimaryOutcome` | A parallel-group RCT in which the model found no primary outcome. RoB 2 was not asked. | `design`, `outcomes` (empty, but it may say it was condensed) |
 | `Assessed` | A parallel-group RCT taken through every step. | `design`, `outcomes`, `run` (the `Rob2Run`), `assessed` (one `AssessedOutcome` per outcome, in order), `paper_weight`, `condensed`, `ladder_version`, `settings` |
 
@@ -1413,7 +1413,7 @@ DesignAgent(
     num_ctx: int | None = None,
     stop: threading.Event | Callable[[], bool] | None = None,
     condense_progress: ProgressCallback | None = None,
-    condenser: QueryCondenser | None = None,           # defaults to LlmQueryCondenser(self)
+    condenser: QueryCondenser | None = None,           # defaults to LlmQueryCondenser(self, condense_progress)
     max_retries: int = 3,                              # chat_json's attempts per question
 )
 
@@ -1449,7 +1449,7 @@ The model lists only the outcomes the paper itself calls primary (co-primary out
 
 Each `ProposedOutcome` carries `name`, `timepoint` (`None` if the paper does not say), `result`, `result_error`, `citations`, `quotes_not_found`, `contradicted` and `quotes_dropped`. The `result` is a `ReportedResult` (see [the ladder](#the-evidence-ladder)), or `None` when the paper reports no effect estimate.
 
-**A bad result costs only that outcome's result.** The model copies the interval's level as printed, so a level in (1, 100) is read as a percentage (95 is 0.95) and one in (0, 1) as a fraction. A result that cannot be read (a bound printed as "NR", a null estimate, a scale that is neither `ratio` nor `difference`, a level that is neither), a `result` that is not an object, and one that reads but is incoherent (bounds the wrong way round, a ratio at or below 0) leave `result` `None` and give the reason, naming the field, in `result_error`. The outcome itself stays. Only a structural problem refuses the reply: the reply or an outcome not an object, `primary_outcomes` not a list, an outcome without a name or without a `result` key.
+**A bad result costs only that outcome's result.** The model copies the interval's level as printed, so a level in (1, 100) is read as a percentage (95 is 0.95) and one in (0, 1) as a fraction. A result that cannot be read (a bound printed as "NR", a null estimate, a scale that is neither `ratio` nor `difference`, a level that is neither), a `result` that is not an object, and one that reads but is incoherent (bounds the wrong way round, a ratio at or below 0) leave `result` `None` and give the reason, naming the field, in `result_error`. The outcome itself stays. Only a structural problem refuses the reply: the reply or an outcome not an object, `primary_outcomes` not a list, an outcome with no name or a blank one, a `timepoint` that is not text, or an outcome without a `result` key.
 
 ### Proposal failures
 
@@ -1511,7 +1511,8 @@ The model answers RoB 2's signalling questions one domain per call: D1 once for 
 `read_domain_reply(domain, data, text, min_similarity)` reads one domain's reply:
 
 - An answer is `Y`, `PY`, `PN`, `N` or `NI`, in any case. `NA`, `N/A` and `Not applicable` read as unanswered.
-- Which questions apply is decided from the answers that can be read, before anything is refused.
+- It first refuses a reply or `answers` that is not an object, and an id that is not one of the domain's questions.
+- Which questions apply is then decided from the answers that can be read, before anything else is refused.
 - It refuses an applicable question left unanswered (or `NA`), an answer that cannot be read, and an answer the question does not allow. The message names the field (`answers.2.3.answer`).
 - Answers to questions that do not apply are left out, readable or not, and their ids listed in `ignored`.
 - `domain_judgement` gives the judgement, and every quote is located in the text as passed, never in a digest.
@@ -1532,7 +1533,7 @@ A `Rob2Run` carries `algorithm_version`, `prompt_version`, `study` (D1) and `out
 
 **A failing domain does not end the run.** A domain whose reply stays unreadable after the re-ask, or whose request or condensation fails, is a `DomainFailed`, logged at WARNING, and the other domains go on. A failed D1 leaves every outcome's `overall` `None`. Only a stop or refused input ends the run, as a `Rob2RunError` whose `kind` is a `Rob2RunErrorKind`: `EMPTY_INPUT`, `NO_OUTCOMES`, `INVALID_SIMILARITY` (all before any request) or `STOPPED`.
 
-**A stored run is re-checked as it is read.** `Rob2Run.from_dict` refuses another `algorithm_version`, a study that is not D1, an escalation given where none is asked, and an `overall` that does not follow from the domains. Reading a `DomainAssessment` back recomputes its judgement from its answers, refuses an answer to a question that does not apply, and for D5 recomputes the answers from the facts. `domain_result_from_dict` and `d5_assessment` are in `bmlib.quality.rob2_agent`. `domain_prompt` builds a domain's user turn, and `ROB2_SYSTEM_PROMPT` and `ROB2_DOMAIN_PROMPT` are the fixed text around it.
+**A stored run is re-checked as it is read.** `Rob2Run.from_dict` refuses another `algorithm_version`, a study that is not D1, an escalation given where none is asked, and an `overall` that does not follow from the domains. Reading a `DomainAssessment` back recomputes its judgement from its answers, refuses an answer to a question that does not apply, and for a D5 stored with its facts recomputes the answers from them. `domain_result_from_dict` and `d5_assessment` are in `bmlib.quality.rob2_agent`. `domain_prompt` builds the user turn of D1-D4 (D5's are `facts_prompt` and `second_look_prompt`, in `bmlib.quality.rob2_d5_facts`), and `ROB2_SYSTEM_PROMPT` and `ROB2_DOMAIN_PROMPT` are the fixed text around it.
 
 ### The evidence ladder
 
@@ -1581,7 +1582,7 @@ The condenser is a seam. `QueryCondenser` is a protocol with one method, `conden
 
 ### The Rust port
 
-`bmlib::quality::evidence_weight::assess_unattended` is the same flow, its prompts byte-identical. Every step takes one `AgentOptions` (whose `Default` is the agents' own), and `num_ctx` belongs to the chat. Where Python raises `ValueError`, Rust returns an error variant; the wire forms are the same key for key, and `EvidenceWeight::from_json` refuses what `evidence_weight_from_dict` refuses. See the [Rust manual](../../rust/bmlib/docs/manual/quality.md#evidence-weight). Contracts hold the two languages together: `tests/fixtures/rob2_algorithm.json`, `evidence_ladder.json`, `design_replies.json`, `outcome_replies.json`, `rob2_replies.json`, `rob2_run.json`, `rob2_d5_checks.json`, `rob2_d5_facts.json` and `evidence_weight.json`.
+`bmlib::quality::evidence_weight::assess_unattended` is the same flow, its prompts byte-identical. `assess_unattended` takes one `AgentOptions` (whose `Default` is the agents' own) for every step, where the agents themselves take builders, and `num_ctx` belongs to the chat. Where Python raises `ValueError`, Rust returns an error variant; the wire forms are the same key for key, and `EvidenceWeight::from_json` refuses what `evidence_weight_from_dict` refuses. See the [Rust manual](../../rust/bmlib/docs/manual/quality.md#evidence-weight). Contracts hold the two languages together: `tests/fixtures/rob2_algorithm.json`, `evidence_ladder.json`, `design_replies.json`, `outcome_replies.json`, `rob2_replies.json`, `rob2_run.json`, `rob2_d5_checks.json`, `rob2_d5_facts.json` and `evidence_weight.json`.
 
 ## Cochrane Formatters
 

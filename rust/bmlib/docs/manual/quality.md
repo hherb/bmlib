@@ -558,10 +558,12 @@ assert_eq!(start_level(StudyDesign::CohortProspective), None); // not covered
 ```
 
 The pipeline asks through one `JsonChat`, in order: the design, the
-outcomes, D1 once for the trial, then D2, D3, D4 and D5 for each outcome,
-and an escalation question for an outcome that needs one. D5 asks no
-signalling question: the model reports facts about the plan
-(`rob2_d5_checks::D5_FACTS`), and code answers 5.1-5.3 from them.
+outcomes, D1 once for the trial, then for each outcome D2, D3, D4 and D5
+and, if it needs one, its escalation question. D5 asks no signalling
+question: the model reports facts about the plan
+(`rob2_d5_checks::D5_FACTS`), with a second look at each other measurement
+whose result it did not find, and code answers 5.1-5.3 from them. A reply
+that cannot be read is asked once more.
 
 ```rust
 use bmlib::agents::{ChatJsonError, ChatJsonOutcome};
@@ -638,12 +640,11 @@ result cannot be laddered). `paper_weight` is the largest ladder weight,
 step could not be made at all, wrapping that step's own error:
 `Proposal(ProposalError)` for the design or outcome proposal (`EmptyInput`,
 `CondensationFailed`, `RequestFailed { message, retryable, status }`,
-`Unreadable`, `Stopped`, and `InvalidSimilarity` where Python raises
-`ValueError`), or `Rob2(Rob2RunError)` (`EmptyInput`, `NoOutcomes`,
-`Stopped`, `InvalidSimilarity`). A domain whose request fails or whose
-reply stays unreadable is not an error: it is `DomainResult::Failed
-{ domain, reason, retryable, status }` in the run, and the outcomes it
-touches are not assessed. A failed escalation is
+`Unreadable`, `Stopped` and `InvalidSimilarity`), or `Rob2(Rob2RunError)`
+(`EmptyInput`, `NoOutcomes`, `Stopped`, `InvalidSimilarity`). A domain whose
+request fails or whose reply stays unreadable is not an error: it is
+`DomainResult::Failed { domain, reason, retryable, status }` in the run, and
+the outcomes it touches are not assessed. A failed escalation is
 `OutcomeRob2::escalation_error`, with `escalation_retryable` and
 `escalation_status`. Retry only when `retryable`; a 401 or 403 means the
 key. `ProposalError` is `#[non_exhaustive]`.
@@ -665,19 +666,22 @@ directly: `DesignAgent::propose(title, text, min_similarity)` gives a
 located as in PICO), `OutcomeAgent::propose` an `OutcomeProposal` of
 `ProposedOutcome`s (a `ci_level` printed as `95` is read as 0.95; an
 unreadable or incoherent `result` is that outcome's `result_error`, and the
-outcome stays), and `Rob2Agent::assess(title, text, &outcomes,
-min_similarity)` a `Rob2Run`. Each has `PicoAgent`'s builders (`with_stop`,
-`with_condenser`, `with_temperature`, `with_max_tokens`,
-`with_max_retries`, `with_condense_config`). The replies are read by pure
-functions: `read_design_reply`, `read_outcome_reply`, `read_domain_reply`
+outcome stays), and
+`Rob2Agent::assess(title, text, &outcomes, min_similarity)` a `Rob2Run`.
+Each has `PicoAgent`'s builders (`with_stop`, `with_condenser`,
+`with_temperature`, `with_max_tokens`, `with_max_retries`,
+`with_condense_config`). The replies are read by pure functions:
+`read_design_reply`, `read_outcome_reply`, `read_domain_reply`
 (`NOT_APPLICABLE`, also `N/A` or `Not applicable`, is unanswered; an answer
 to a question that does not apply is listed in `ignored`) and
-`read_escalation_reply`. `domain_prompt` and `escalation_message` build the
-user turns, `rob2_overall` the overall judgement of one outcome (`None` when
-it is not assessed). The prompts are constants (`DESIGN_SYSTEM_PROMPT`,
-`DESIGN_TASK_PROMPT`, `DESIGN_CONDENSE_QUERY`, the `OUTCOME_*` ones,
-`ROB2_SYSTEM_PROMPT`, `ROB2_DOMAIN_PROMPT`), and the results record the
-wording that asked them (`DESIGN_PROMPT_VERSION`, `OUTCOME_PROMPT_VERSION`,
+`read_escalation_reply`. `domain_prompt` (D1-D4),
+`rob2_d5_facts::facts_prompt` and `second_look_prompt` (D5) and
+`escalation_message` build the user turns, `rob2_overall` the overall
+judgement of one outcome (`None` when it is not assessed). The prompts are
+constants (`DESIGN_SYSTEM_PROMPT`, `DESIGN_TASK_PROMPT`,
+`DESIGN_CONDENSE_QUERY`, the `OUTCOME_*` ones, `ROB2_SYSTEM_PROMPT`,
+`ROB2_DOMAIN_PROMPT`), and the results record the wording that asked them
+(`DESIGN_PROMPT_VERSION`, `OUTCOME_PROMPT_VERSION`,
 `rob2_questions::ROB2_PROMPT_VERSION`) and the rules that judged them
 (`ROB2_ALGORITHM_VERSION`). In `rob2_algorithm`, `questions(domain)` lists a
 domain's ids, `applicable_questions` those the answers so far open,
