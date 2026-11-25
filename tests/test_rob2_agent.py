@@ -928,20 +928,26 @@ class TestD5FromFacts:
         assert d5.answers["5.2"].answer is Answer.PY
         assert d5.judgement is Judgement.HIGH
 
-    def test_a_failed_second_look_leaves_its_measurement_undecided(self) -> None:
+    @pytest.mark.parametrize(
+        ("code", "retryable", "status"), [(401, False, 401), (503, True, 503), (None, True, None)]
+    )
+    def test_a_failed_second_look_leaves_its_measurement_undecided(
+        self, code: int | None, retryable: bool, status: int | None
+    ) -> None:
         replies = low_run()[:-1] + [_d5_with_measurements(), _FOUND]
         agent = make_agent(*replies)
         responses = list(agent.llm.chat.side_effect)
         down = ConnectionError("down")
-        down.status_code = 503  # type: ignore[attr-defined]
+        if code is not None:
+            down.status_code = code  # type: ignore[attr-defined]
         agent.llm.chat.side_effect = [*responses[:5], down, responses[5]]
         run = agent.assess("A trial", TEXT, [OUTCOME], min_similarity=SIM)
         d5 = assessed(run.outcomes[0].domains[3])
         assert d5.facts is not None
         first = d5.facts.measurements[0]
         assert first.second_look is None and first.second_look_error
-        # #816: the caller backs off on a transient failure, skips a refused key.
-        assert (first.second_look_retryable, first.second_look_status) == (True, 503)
+        # #816: the caller backs off on a transient failure and stops on a refused key.
+        assert (first.second_look_retryable, first.second_look_status) == (retryable, status)
         assert not first.missing()
         assert d5.answers["5.2"].answer is Answer.PN
 

@@ -37,10 +37,11 @@ All notable changes to bmlib are documented here. The format is based on
   contract tests also check `assessed` and `paper_weight`. A failed D5 second
   look keeps `second_look_retryable` and `second_look_status` (wire
   `second_look_status_code`) beside `second_look_error` on its
-  `OtherMeasurement`; facts stored without them read as no failed request,
-  and either given without an error is refused (`rob2_d5_facts.json`).
-  `HTTP_STATUS_MIN` and `HTTP_STATUS_MAX` moved from `rob2_agent` to
-  `bmlib.quality._full_text_agent`.
+  `OtherMeasurement` (`rob2_d5_facts.json` regenerated); facts stored without
+  them read as not retryable and with no status, and either one set without
+  an error is refused. `HTTP_STATUS_MIN` and `HTTP_STATUS_MAX` are now
+  defined in `bmlib.quality._full_text_agent` and still importable from
+  `rob2_agent`.
 - **An `omlx` provider**: a local [oMLX](https://github.com/jundot/omlx)
   server (MLX on Apple silicon) through its OpenAI-compatible API at
   `http://127.0.0.1:8000`, keyless and free, in both languages

@@ -409,8 +409,10 @@ impl D5Facts {
     ///
     /// # Errors
     ///
-    /// A message naming the field that is absent or of the wrong type, or the
-    /// fact whose stored verdict is not the one the checks give.
+    /// A message naming the field that is absent or of the wrong type, a
+    /// second look's status that is not an HTTP status, a retry flag or
+    /// status given without an error, or the fact whose stored verdict is not
+    /// the one the checks give.
     pub fn from_json(value: &Value) -> Result<Self, String> {
         let data = object(value, "the facts")?;
         let outcome = field_text(data, "outcome", "")?.to_string();
@@ -478,7 +480,7 @@ impl D5Facts {
                 Some(Value::String(e)) => Some(e.clone()),
                 Some(_) => return Err(format!("{path}.second_look_error is not text")),
             };
-            // Absent in facts stored before the two fields existed: no failed request.
+            // Absent in facts stored before the two fields existed: not retryable, no status.
             let second_look_retryable = match item.get("second_look_retryable") {
                 None => false,
                 Some(Value::Bool(retryable)) => *retryable,

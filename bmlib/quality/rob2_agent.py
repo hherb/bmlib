@@ -54,6 +54,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
 
+# Public names of 0.14.0's rob2_agent, now defined beside _status_code; still importable here.
+from bmlib.quality._full_text_agent import HTTP_STATUS_MAX as HTTP_STATUS_MAX
+from bmlib.quality._full_text_agent import HTTP_STATUS_MIN as HTTP_STATUS_MIN
 from bmlib.quality._full_text_agent import (
     LABEL_CHARS,
     AgentFailure,
@@ -1299,8 +1302,8 @@ class Rob2Agent(_FullTextAgent):
         each other measurement that names no result; then the rules.
 
         A failed facts call (asked twice when unreadable) comes back as :class:`DomainFailed`;
-        a failed second look leaves its measurement undecided, its error kept; a stop ends the
-        run (``Rob2RunError``, raised by the call).
+        a failed second look leaves its measurement undecided, its error kept with whether a retry
+        may succeed and the HTTP status; a stop ends the run (``Rob2RunError``, raised by the call).
         """
         label = f"RoB 2 D5 of {title[:LABEL_CHARS]!r}"
         try:

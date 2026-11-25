@@ -402,8 +402,10 @@ class D5Facts:
         """Rebuild from :meth:`to_dict` output, recomputing every verdict.
 
         Raises:
-            ValueError: A field is absent or of the wrong type, or a stored
-                verdict is not the one the checks give, naming it.
+            ValueError: A field is absent or of the wrong type, a second look's
+                status is not an HTTP status, a retry flag or status is given
+                without an error, or a stored verdict is not the one the checks
+                give, naming it.
         """
         data = _object(data, "the facts")
         outcome = _field(data, "outcome", str, "text")
@@ -439,7 +441,7 @@ class D5Facts:
             error = item.get("second_look_error")
             if error is not None and not isinstance(error, str):
                 raise ValueError(f"{path}.second_look_error is not text")
-            # Absent in facts stored before the two fields existed: no failed request.
+            # Absent in facts stored before the two fields existed: not retryable, no status.
             retryable = item.get("second_look_retryable", False)
             if not isinstance(retryable, bool):
                 raise ValueError(f"{path}.second_look_retryable is not a boolean")

@@ -21,12 +21,18 @@ tab re-pins on #815. Both languages, as in #815:
   contract tests also check `assessed` and `paper_weight`.
 - A failed D5 second look keeps `second_look_retryable` and
   `second_look_status` (wire `second_look_status_code`) on its
-  `OtherMeasurement`. Facts stored without them read as no failed request;
-  either given without an error is refused. Python's `_status_code` and
-  `HTTP_STATUS_MIN`/`MAX` moved to `_full_text_agent` (rob2_d5_facts cannot
-  import rob2_agent). Only `rob2_d5_facts.json` changed.
+  `OtherMeasurement`. Facts stored without them read as not retryable and
+  with no status; either one set without an error is refused. Python's
+  `_status_code` and `HTTP_STATUS_MIN`/`MAX` moved to `_full_text_agent`
+  (rob2_d5_facts cannot import rob2_agent; `rob2_agent` re-exports the two
+  constants). Only `rob2_d5_facts.json` changed.
 - Rust `escalate_outcome` returns `Err(Rob2RunError::InvalidDomains(msg))`
   instead of panicking on a study that is not D1 or domains out of order.
+- **Deferred to #818** (finalcheck review): Rust `LadderSettings` built by a
+  struct literal can fail `validate()`, and `assess_outcome` then reports it
+  as every outcome's `ladder_error`, after `assess_unattended` has paid for
+  every call. Python refuses such settings at construction. The fix is a
+  breaking API choice for a released crate, so it is not part of this PR.
 - **Next:** StudyAnalyzer re-pins on this PR's merge and writes plan 2 (the
   tab). **#813 stays open**.
 

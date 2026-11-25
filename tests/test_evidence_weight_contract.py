@@ -29,6 +29,7 @@ import copy
 import importlib.util
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -154,6 +155,17 @@ def test_the_assessed_case_step_by_step() -> None:
     assert [a.to_dict() for a in assessed] == case["expected"]["assessed"]
     ladders = [a.ladder for a in assessed if a.ladder is not None]
     assert paper_weight(ladders) == case["expected"]["paper_weight"]
+    # The two ladder errors the fixture's outcomes do not reach, worded as Rust's test has them.
+    proposed, rob2 = outcomes.outcomes[0], run.outcomes[0]
+    assert proposed.result is not None and rob2.overall is not None
+    failed = replace(rob2, overall=None, escalation_error="HTTP 503: overloaded")
+    assert assess_outcome(start, run.study, proposed, failed, settings).ladder_error == (
+        "the outcome's risk of bias was not assessed: "
+        "the escalation question failed (HTTP 503: overloaded)"
+    )
+    unladdered = replace(proposed, result=replace(proposed.result, ci_low=0.75))
+    one = assess_outcome(start, run.study, unladdered, rob2, settings)
+    assert (one.ladder, one.ladder_error) == (None, "ci_low <= estimate <= ci_high does not hold")
 
 
 def test_every_refusal_names_what_does_not_add_up() -> None:

@@ -177,6 +177,18 @@ fn a_failed_second_looks_retry_info_reads_back_and_is_checked() {
         tampered["other_measurements"][2][key] = value;
         assert_eq!(D5Facts::from_json(&tampered).expect_err(key), message);
     }
+    // Either one alone, with no error, is refused too.
+    for (retryable, status) in [(json!(true), Value::Null), (json!(false), json!(503))] {
+        let mut tampered = stored.clone();
+        let item = &mut tampered["other_measurements"][2];
+        item["second_look_error"] = Value::Null;
+        item["second_look_retryable"] = retryable;
+        item["second_look_status_code"] = status;
+        assert_eq!(
+            D5Facts::from_json(&tampered).expect_err("given alone"),
+            "other_measurements[2].second_look_retryable or second_look_status_code given without an error"
+        );
+    }
 }
 
 #[test]

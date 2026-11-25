@@ -31,8 +31,8 @@ use bmlib::quality::evidence_weight::{
 use bmlib::quality::rob2_algorithm::ROB2_ALGORITHM_VERSION;
 use bmlib::quality::rob2_questions::ROB2_PROMPT_VERSION;
 use bmlib::quality::{
-    combine_outcome, plan_rob2, DesignAgent, DomainResult, OutcomeAgent, Rob2Agent, Rob2Digests,
-    Rob2Run, Rob2Step,
+    combine_outcome, plan_rob2, DesignAgent, DomainResult, OutcomeAgent, OutcomeRob2, Rob2Agent,
+    Rob2Digests, Rob2Run, Rob2Step,
 };
 use serde_json::Value;
 
@@ -242,5 +242,29 @@ fn the_assessed_case_step_by_step() {
     assert_eq!(
         serde_json::to_value(paper_weight(&ladders)).expect("a number or null"),
         case["expected"]["paper_weight"]
+    );
+
+    // The two ladder errors the fixture's outcomes do not reach, worded as Python's test has them.
+    let (proposed, rob2) = (&proposal.outcomes[0], &run.outcomes[0]);
+    let failed = OutcomeRob2 {
+        overall: None,
+        escalation_error: Some("HTTP 503: overloaded".to_string()),
+        ..rob2.clone()
+    };
+    assert_eq!(
+        assess_outcome(start, &run.study, proposed, &failed, &settings).ladder_error,
+        Some(
+            "the outcome's risk of bias was not assessed: \
+             the escalation question failed (HTTP 503: overloaded)"
+                .to_string()
+        )
+    );
+    let mut unladdered = proposed.clone();
+    unladdered.result.as_mut().expect("a result").ci_low = Some(0.75);
+    let one = assess_outcome(start, &run.study, &unladdered, rob2, &settings);
+    assert!(one.ladder.is_none());
+    assert_eq!(
+        one.ladder_error.as_deref(),
+        Some("ci_low <= estimate <= ci_high does not hold")
     );
 }

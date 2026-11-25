@@ -2402,30 +2402,32 @@ pub(crate) mod tests {
 
     #[test]
     fn a_failed_second_look_leaves_its_measurement_undecided() {
-        let mut chat = Scripted::new(d5_run(d5_with_measurements(), vec![found(), found()]));
-        chat.replies[5] = Err(ChatJsonError::Transport {
-            message: "down".into(),
-            attempts: 1,
-            retryable: true,
-            status: Some(503),
-        });
-        let run = Rob2Agent::new(&mut chat)
-            .assess("A trial", TEXT, &[outcome("SBP")], SIM)
-            .expect("run");
-        let d5 = d5_of(&run);
-        let first = &d5.facts.as_ref().expect("facts").measurements[0];
-        assert!(first.second_look.is_none());
-        assert!(first
-            .second_look_error
-            .as_deref()
-            .is_some_and(|e| e.contains("down")));
-        // #816: the caller backs off on a transient failure, skips a refused key.
-        assert_eq!(
-            (first.second_look_retryable, first.second_look_status),
-            (true, Some(503))
-        );
-        assert!(!first.missing());
-        assert_eq!(d5.answers["5.2"].answer, Answer::Pn);
+        // #816: the caller backs off on a transient failure and stops on a refused key.
+        for (retryable, status) in [(false, Some(401)), (true, Some(503)), (true, None)] {
+            let mut chat = Scripted::new(d5_run(d5_with_measurements(), vec![found(), found()]));
+            chat.replies[5] = Err(ChatJsonError::Transport {
+                message: "down".into(),
+                attempts: 1,
+                retryable,
+                status,
+            });
+            let run = Rob2Agent::new(&mut chat)
+                .assess("A trial", TEXT, &[outcome("SBP")], SIM)
+                .expect("run");
+            let d5 = d5_of(&run);
+            let first = &d5.facts.as_ref().expect("facts").measurements[0];
+            assert!(first.second_look.is_none());
+            assert!(first
+                .second_look_error
+                .as_deref()
+                .is_some_and(|e| e.contains("down")));
+            assert_eq!(
+                (first.second_look_retryable, first.second_look_status),
+                (retryable, status)
+            );
+            assert!(!first.missing());
+            assert_eq!(d5.answers["5.2"].answer, Answer::Pn);
+        }
     }
 
     #[test]
@@ -3099,11 +3101,18 @@ pub(crate) mod tests {
         let mut chat = Scripted::new(replies);
         let sbp = outcome("SBP");
         let (_, domains) = steps_of(&mut Rob2Agent::new(&mut chat), &sbp);
+        let refused =
+            Rob2Agent::new(&mut chat).escalate_outcome("A trial", &sbp, &domains[0], &domains);
         assert_eq!(
-            Rob2Agent::new(&mut chat).escalate_outcome("A trial", &sbp, &domains[0], &domains),
+            refused,
             Err(Rob2RunError::InvalidDomains(
                 "the study's domain is not D1".to_string()
             ))
+        );
+        // The text a caller reports is the message itself.
+        assert_eq!(
+            refused.unwrap_err().to_string(),
+            "the study's domain is not D1"
         );
         assert_eq!(
             combine_outcome(

@@ -796,14 +796,13 @@ Before any request it is `Err(Rob2RunError::InvalidDomains(message))` when
 `study` is not D1 or `domains` is not D2, D3, D4, D5 in order (Python raises
 `ValueError`), so a damaged stored row is an error to report, never a panic;
 `combine_outcome` returns the same message as an `Err(String)`. Run the
-escalation step again whenever
-its outcome's D1 or any of its D2-D5 is run again: it sends no request when
-the question is not needed, and an escalation kept from the earlier domains
-may no longer fit the new ones. `combine_outcome` refuses a stale one, with
-an `Err(String)`, only where the need for the question has changed: `Asked`
-or `Failed` where the domains do not call for the question, or `NotNeeded`
-where they do. Where both sets call for it, it cannot tell, so the caller
-runs the escalation again.
+escalation step again whenever its outcome's D1 or any of its D2-D5 is run
+again: it sends no request when the question is not needed, and an escalation
+kept from the earlier domains may no longer fit the new ones.
+`combine_outcome` refuses a stale one, with an `Err(String)`, only where the
+need for the question has changed: `Asked` or `Failed` where the domains do
+not call for the question, or `NotNeeded` where they do. Where both sets call
+for it, it cannot tell, so the caller runs the escalation again.
 
 `evidence_weight::assess_outcome(start, study, outcome, rob2, settings)` is
 the step after `combine_outcome`: the outcome's `AssessedOutcome`, with its
@@ -814,7 +813,7 @@ it (`start` is `start_level` of the design). The paper's weight is
 (written as `second_look_status_code`) on its `OtherMeasurement`, as
 `DomainResult::Failed` does, so the caller can back off on a passing failure
 and stop on a refused key (401, 403). Facts stored before those two fields
-read as no failed request.
+read as not retryable and with no status.
 
 To size the paper to the window, `design_prompt_chars()`,
 `outcome_prompt_chars()` and `domain_prompt_chars(domain, outcome)` (an

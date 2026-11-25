@@ -246,6 +246,16 @@ def test_a_failed_second_looks_retry_info_round_trips_and_is_checked():
         tampered["other_measurements"][0][key] = value
         with pytest.raises(ValueError, match=message):
             D5Facts.from_dict(tampered)
+    # Either one alone, with no error, is refused too.
+    for retryable, status in ((True, None), (False, 503)):
+        tampered = copy.deepcopy(stored)
+        tampered["other_measurements"][0].update(
+            second_look_error=None,
+            second_look_retryable=retryable,
+            second_look_status_code=status,
+        )
+        with pytest.raises(ValueError, match=r"given without an error$"):
+            D5Facts.from_dict(tampered)
 
 
 def test_the_prompts_carry_the_outcome_the_facts_and_the_paper():
