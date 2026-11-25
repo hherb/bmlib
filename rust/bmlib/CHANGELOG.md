@@ -15,15 +15,21 @@ The Python library is documented separately, in the repository's
   `CHANGELOG.md`'s). `quality::plan_rob2` and `Rob2Step`,
   `Rob2Step::from_json`, `Rob2Agent::assess_domain` with `Rob2Digests`,
   `Rob2Agent::escalate_outcome` returning `Rob2Escalation` (`NotNeeded`,
-  `Asked`, `Failed`; it panics on a study that is not D1 or domains not in
-  D2 to D5 order, Python's `ValueError`), `combine_outcome` (returning
+  `Asked`, `Failed`; a study that is not D1 or domains not in D2 to D5
+  order are `Err(Rob2RunError::InvalidDomains)`, Python's `ValueError`, #816),
+  `combine_outcome` (returning
   `Result<OutcomeRob2, String>`: those, and an escalation the domains do not
   fit, are an `Err`) and
-  `Rob2RunError::WrongOutcome` (**Breaking** for an exhaustive `match` on
-  `Rob2RunError`, which is not `#[non_exhaustive]`). `design_prompt_chars`,
+  `Rob2RunError::WrongOutcome` and `InvalidDomains` (**Breaking** for an
+  exhaustive `match` on `Rob2RunError`, which is not `#[non_exhaustive]`).
+  `design_prompt_chars`,
   `outcome_prompt_chars` and `domain_prompt_chars` (`Result<usize, String>`)
   measure each step's prompt without the paper. `LlmQueryCondenser` gains
-  `with_progress(callback)`, as Python's takes `progress`.
+  `with_progress(callback)`, as Python's takes `progress`. As in Python
+  (#816): `evidence_weight::assess_outcome` (re-exported from `quality`),
+  the step after `combine_outcome`, and `OtherMeasurement`'s
+  `second_look_retryable` and `second_look_status` (**Breaking** for a
+  struct literal).
 - **A PRISMA 2020 reporting agent** (as in Python; the argument is the root
   `CHANGELOG.md`'s). `quality::prisma2020_checklist` (`CHECKLIST`, `item`,
   `KEY_ITEMS`, `ChecklistItem`, `ChecklistSection`), `prisma2020_parts`

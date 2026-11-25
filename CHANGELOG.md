@@ -29,6 +29,18 @@ All notable changes to bmlib are documented here. The format is based on
   step sends without the title and paper, as `part_prompt_chars` does, so a
   caller can size the paper to the window (D5's omits a second look's
   label and named passages).
+- **The step after `combine_outcome`, and a second look's retry info**
+  (#816, both languages). `assess_outcome(start, study, outcome, rob2,
+  settings)` (`bmlib.quality.evidence_weight`) takes one combined outcome
+  through the ladder as `assess_unattended` does (which now calls it), so a
+  caller of the steps does not copy the ladder-error rules; the step-by-step
+  contract tests also check `assessed` and `paper_weight`. A failed D5 second
+  look keeps `second_look_retryable` and `second_look_status` (wire
+  `second_look_status_code`) beside `second_look_error` on its
+  `OtherMeasurement`; facts stored without them read as no failed request,
+  and either given without an error is refused (`rob2_d5_facts.json`).
+  `HTTP_STATUS_MIN` and `HTTP_STATUS_MAX` moved from `rob2_agent` to
+  `bmlib.quality._full_text_agent`.
 - **An `omlx` provider**: a local [oMLX](https://github.com/jundot/omlx)
   server (MLX on Apple silicon) through its OpenAI-compatible API at
   `http://127.0.0.1:8000`, keyless and free, in both languages

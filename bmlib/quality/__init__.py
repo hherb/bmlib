@@ -84,6 +84,7 @@ from bmlib.quality.evidence_weight import (
     EvidenceWeightError,
     NoPrimaryOutcome,
     NotCovered,
+    assess_outcome,
     assess_unattended,
     evidence_weight_from_dict,
 )
@@ -332,6 +333,7 @@ __all__ = [
     "EvidenceWeightError",
     "NoPrimaryOutcome",
     "NotCovered",
+    "assess_outcome",
     "assess_unattended",
     "evidence_weight_from_dict",
 ]

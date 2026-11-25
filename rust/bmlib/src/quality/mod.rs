@@ -150,7 +150,8 @@ pub use evidence_ladder::{
     LadderSettings, LadderStep, Level, ReportedResult, LADDER_VERSION,
 };
 pub use evidence_weight::{
-    assess_unattended, AgentOptions, AssessedOutcome, EvidenceWeight, EvidenceWeightError,
+    assess_outcome, assess_unattended, AgentOptions, AssessedOutcome, EvidenceWeight,
+    EvidenceWeightError,
 };
 pub use extractors::{
     calculate_sample_size_score, extract_sample_size_dimension, extract_study_type,

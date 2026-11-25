@@ -45,6 +45,8 @@
   ],
   "second_look": null,
   "second_look_error": null,
+  "second_look_retryable": false,
+  "second_look_status_code": null,
   "quotes_not_found": [],
   "contradicted": [],
   "quotes_dropped": 0
@@ -1303,6 +1305,8 @@
       ],
       "second_look": null,
       "second_look_error": null,
+      "second_look_retryable": false,
+      "second_look_status_code": null,
       "quotes_not_found": [],
       "contradicted": [],
       "quotes_dropped": 0
@@ -1329,6 +1333,8 @@
       ],
       "second_look": null,
       "second_look_error": null,
+      "second_look_retryable": false,
+      "second_look_status_code": null,
       "quotes_not_found": [],
       "contradicted": [],
       "quotes_dropped": 0
@@ -1339,6 +1345,8 @@
       "result": [],
       "second_look": null,
       "second_look_error": null,
+      "second_look_retryable": false,
+      "second_look_status_code": null,
       "quotes_not_found": [
        "at 24 weeks"
       ],
@@ -1359,6 +1367,8 @@
       "result": [],
       "second_look": null,
       "second_look_error": null,
+      "second_look_retryable": false,
+      "second_look_status_code": null,
       "quotes_not_found": [],
       "contradicted": [],
       "quotes_dropped": 0
@@ -1909,6 +1919,8 @@
      ],
      "second_look": null,
      "second_look_error": null,
+     "second_look_retryable": false,
+     "second_look_status_code": null,
      "quotes_not_found": [],
      "contradicted": [],
      "quotes_dropped": 0
@@ -1935,6 +1947,8 @@
      ],
      "second_look": [],
      "second_look_error": null,
+     "second_look_retryable": false,
+     "second_look_status_code": null,
      "quotes_not_found": [],
      "contradicted": [],
      "quotes_dropped": 0
@@ -1945,6 +1959,8 @@
      "result": [],
      "second_look": null,
      "second_look_error": "HTTP 503: overloaded",
+     "second_look_retryable": true,
+     "second_look_status_code": 503,
      "quotes_not_found": [
       "at 24 weeks"
      ],
@@ -1965,6 +1981,8 @@
      "result": [],
      "second_look": null,
      "second_look_error": "found is true but no quote was found in the paper",
+     "second_look_retryable": false,
+     "second_look_status_code": null,
      "quotes_not_found": [],
      "contradicted": [],
      "quotes_dropped": 0
@@ -2163,6 +2181,8 @@
       ],
       "second_look": null,
       "second_look_error": null,
+      "second_look_retryable": false,
+      "second_look_status_code": null,
       "quotes_not_found": [],
       "contradicted": [],
       "quotes_dropped": 0
@@ -2189,6 +2209,8 @@
       ],
       "second_look": [],
       "second_look_error": null,
+      "second_look_retryable": false,
+      "second_look_status_code": null,
       "quotes_not_found": [],
       "contradicted": [],
       "quotes_dropped": 0
@@ -2199,6 +2221,8 @@
       "result": [],
       "second_look": null,
       "second_look_error": "HTTP 503: overloaded",
+      "second_look_retryable": true,
+      "second_look_status_code": 503,
       "quotes_not_found": [
        "at 24 weeks"
       ],
@@ -2219,6 +2243,8 @@
       "result": [],
       "second_look": null,
       "second_look_error": "found is true but no quote was found in the paper",
+      "second_look_retryable": false,
+      "second_look_status_code": null,
       "quotes_not_found": [],
       "contradicted": [],
       "quotes_dropped": 0

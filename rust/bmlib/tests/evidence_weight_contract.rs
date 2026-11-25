@@ -24,8 +24,10 @@
 use bmlib::agents::{ChatJsonError, ChatJsonOutcome};
 use bmlib::llm::LLMMessage;
 use bmlib::quality::agent_chat::JsonChat;
-use bmlib::quality::evidence_ladder::LadderSettings;
-use bmlib::quality::evidence_weight::{assess_unattended, AgentOptions, EvidenceWeight};
+use bmlib::quality::evidence_ladder::{paper_weight, start_level, LadderSettings};
+use bmlib::quality::evidence_weight::{
+    assess_outcome, assess_unattended, AgentOptions, EvidenceWeight,
+};
 use bmlib::quality::rob2_algorithm::ROB2_ALGORITHM_VERSION;
 use bmlib::quality::rob2_questions::ROB2_PROMPT_VERSION;
 use bmlib::quality::{
@@ -146,7 +148,8 @@ fn every_refusal_names_what_does_not_add_up() {
 }
 
 /// The assessed case driven one step at a time (design, outcomes, then
-/// `plan_rob2`'s steps with one set of digests) assembles the same `Rob2Run`
+/// `plan_rob2`'s steps with one set of digests, then `assess_outcome` for each
+/// outcome) assembles the same `Rob2Run`, assessed outcomes and paper weight
 /// the fixture records for `assess_unattended`.
 #[test]
 fn the_assessed_case_step_by_step() {
@@ -162,7 +165,7 @@ fn the_assessed_case_step_by_step() {
     let mut chat = Scripted { replies, sent: 0 };
     let options = AgentOptions::default();
 
-    DesignAgent::new(&mut chat)
+    let design = DesignAgent::new(&mut chat)
         .with_temperature(options.temperature)
         .with_max_tokens(options.max_tokens)
         .with_max_retries(options.max_retries)
@@ -223,4 +226,21 @@ fn the_assessed_case_step_by_step() {
     };
     assert_eq!(run.to_json(), case["expected"]["run"]);
     assert_eq!(chat.sent, count);
+
+    // #816: the ladder step, outcome by outcome, gives the pipeline's assessed and weight.
+    let start = start_level(design.design).expect("an RCT");
+    let settings = LadderSettings::default();
+    let assessed: Vec<_> = proposal
+        .outcomes
+        .iter()
+        .zip(&run.outcomes)
+        .map(|(proposed, rob2)| assess_outcome(start, &run.study, proposed, rob2, &settings))
+        .collect();
+    let wire: Vec<Value> = assessed.iter().map(|a| a.to_json()).collect();
+    assert_eq!(Value::Array(wire), case["expected"]["assessed"]);
+    let ladders: Vec<_> = assessed.iter().filter_map(|a| a.ladder.clone()).collect();
+    assert_eq!(
+        serde_json::to_value(paper_weight(&ladders)).expect("a number or null"),
+        case["expected"]["paper_weight"]
+    );
 }

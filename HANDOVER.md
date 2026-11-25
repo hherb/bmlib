@@ -1,7 +1,7 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-25 (**RoB 2 a step at a time, the branch
-`feat/rob2-steps`**).
+_Last updated: 2026-11-25 (**the RoB 2 steps' gaps, #816, the branch
+`fix/rob2-steps-816`**).
 **0.14.0 is tagged and released on GitHub** (`v0.14.0` on `e7b7c98a`, PR
 #801); `release.yml` run 44306259452 **still waits at the `pypi` gate for the
 maintainer** (last checked 2026-11-22), so PyPI still serves 0.13.0. **Crate
@@ -9,39 +9,36 @@ maintainer** (last checked 2026-11-22), so PyPI still serves 0.13.0. **Crate
 worktree of `e7b7c98a` (`HANDOVER_RUST.md`, *Publishing to crates.io*: remake
 the token link first, remove it after)._
 
-## This session: RoB 2 a step at a time (branch `feat/rob2-steps`, PR #815)
+## This session: the RoB 2 steps' gaps (#816, branch `fix/rob2-steps-816`)
 
-For StudyAnalyzer's Evidence weight tab (design
-`2026-11-24-evidence-weight-tab-design.md` §4), `assess` is a loop over steps
-a caller drives itself, both languages, held by `tests/fixtures/rob2_steps.json`:
+Found by StudyAnalyzer PR #161's final review, before its Evidence weight
+tab re-pins on #815. Both languages, as in #815:
 
-- `plan_rob2(outcome_count)` and `Rob2Step`; `Rob2Agent::assess_domain` with
-  `Rob2Digests` (one paper's condensations, held by the caller);
-  `escalate_outcome` (Rust `Rob2Escalation`, Python `None | Escalation |
-  EscalationFailed`) and `combine_outcome`, which refuse domains out of D2-D5
-  order before any request.
-- `design_prompt_chars`, `outcome_prompt_chars`, `domain_prompt_chars`
-  (a step's longest prompt without the paper; D5's omits a second look's
-  label and named passages). Rust `LlmQueryCondenser::with_progress`.
-- Final review (finalcheck): a caller's `Rob2Digests` no longer keeps a failed
-  condensation (a Retry could never succeed; `assess` still keeps it for the
-  run) and starts again for another text or budget; a study that is not D1 is
-  refused; `Rob2Step` validates and reads back (`from_dict` / `from_json`,
-  refusals in `rob2_steps.json`); Rust `combine_outcome` returns `Result`
-  rather than panicking on a stale escalation. **Open by design:** a stale
-  escalation whose need did not change cannot be detected (`Escalation`
-  records nothing of the domains it answered), so the docs say the caller
-  re-runs it.
-- `assess`'s results and the fixtures `rob2_run.json`, `rob2_replies.json`
-  and `evidence_weight.json` are unchanged. One narrow change: the stop is
-  read before every domain, so a stop set mid-run ends it as Stopped even at
-  a step that sends no request (a cached failed digest).
-- Docs: both quality manuals gain *RoB 2 a step at a time* (Rust's
-  doc-tested), both CHANGELOGs `[Unreleased]`. **Next:** StudyAnalyzer's plan 2
-  (the tab) starts on this PR's merge, with a re-pin. **#813 stays open**.
+- `assess_outcome(start, study, outcome, rob2, settings)` in
+  `evidence_weight` (Rust re-exported from `quality`): one combined outcome
+  through the ladder, as `assess_unattended` does (it now calls it), so the
+  ladder-error rules stay private and are not copied. Both step-by-step
+  contract tests also check `assessed` and `paper_weight`.
+- A failed D5 second look keeps `second_look_retryable` and
+  `second_look_status` (wire `second_look_status_code`) on its
+  `OtherMeasurement`. Facts stored without them read as no failed request;
+  either given without an error is refused. Python's `_status_code` and
+  `HTTP_STATUS_MIN`/`MAX` moved to `_full_text_agent` (rob2_d5_facts cannot
+  import rob2_agent). Only `rob2_d5_facts.json` changed.
+- Rust `escalate_outcome` returns `Err(Rob2RunError::InvalidDomains(msg))`
+  instead of panicking on a study that is not D1 or domains out of order.
+- **Next:** StudyAnalyzer re-pins on this PR's merge and writes plan 2 (the
+  tab). **#813 stays open**.
 
 ## Merged since the 0.14.0 release (all Unreleased; detail in the CHANGELOGs)
 
+- **RoB 2 a step at a time** (PR #815; StudyAnalyzer's Evidence weight tab,
+  design §4): `plan_rob2` and `Rob2Step` (`from_dict`/`from_json`),
+  `Rob2Agent.assess_domain` with a caller-held `Rob2Digests` (a failed
+  condensation is not kept), `escalate_outcome`, `combine_outcome` (a stale
+  escalation is refused where its need changed; otherwise the caller re-runs
+  it), and `design_/outcome_/domain_prompt_chars`; `assess` is a loop over
+  the steps, its fixtures unchanged. `tests/fixtures/rob2_steps.json`.
 - **The evidence-weight manuals** (#811, PR #814); filed #813 (a stored
   ladder is not rebuilt on read).
 - **The PRISMA 2020 agent and `omlx` in the manuals** (PR #812): both quality

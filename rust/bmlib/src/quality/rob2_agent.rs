@@ -160,7 +160,7 @@ fn optional_text(data: &Map<String, Value>, key: &str) -> Result<Option<String>,
 const HTTP_STATUS_RANGE: std::ops::RangeInclusive<u64> = 100..=599;
 
 /// `data[key]`: required, an HTTP status or null.
-fn status_code(data: &Map<String, Value>, key: &str) -> Result<Option<u16>, String> {
+pub(crate) fn status_code(data: &Map<String, Value>, key: &str) -> Result<Option<u16>, String> {
     match data.get(key) {
         None => Err(format!("{key} is absent")),
         Some(Value::Null) => Ok(None),
@@ -1071,6 +1071,8 @@ pub fn domain_prompt_chars(
                 result: Vec::new(),
                 second_look: None,
                 second_look_error: None,
+                second_look_retryable: false,
+                second_look_status: None,
                 quotes_not_found: Vec::new(),
                 contradicted: Vec::new(),
                 quotes_dropped: 0,
@@ -1133,6 +1135,10 @@ pub enum Rob2RunError {
     InvalidSimilarity,
     /// D1 was given an outcome, or D2-D5 none; no request was made.
     WrongOutcome,
+    /// The escalation step was given a study that is not D1, or domains that
+    /// are not D2-D5 in order (a damaged stored row); no request was made.
+    /// The message says which.
+    InvalidDomains(String),
 }
 
 impl fmt::Display for Rob2RunError {
@@ -1143,6 +1149,7 @@ impl fmt::Display for Rob2RunError {
             Rob2RunError::Stopped => STOPPED_MESSAGE,
             Rob2RunError::InvalidSimilarity => "min_similarity must be a number in (0, 1]",
             Rob2RunError::WrongOutcome => "D1 is assessed for the trial, D2-D5 for an outcome",
+            Rob2RunError::InvalidDomains(message) => message,
         })
     }
 }
@@ -1654,7 +1661,12 @@ impl<'a> Rob2Agent<'a> {
                 |data| read_second_look(data, paper.original, paper.min_similarity),
             ) {
                 Ok(found) => item.second_look = Some(found),
-                Err(failure) => item.second_look_error = Some(split(failure)?.0),
+                Err(failure) => {
+                    let (reason, retryable, status) = split(failure)?;
+                    item.second_look_error = Some(reason);
+                    item.second_look_retryable = retryable;
+                    item.second_look_status = status;
+                }
             }
         }
         let mut assessment = d5_assessment(facts);
@@ -1676,12 +1688,9 @@ impl<'a> Rob2Agent<'a> {
     /// # Errors
     ///
     /// [`Rob2RunError::Stopped`] when the stop is set while the question is
-    /// asked.
-    ///
-    /// # Panics
-    ///
-    /// When `study` is not D1 or `domains` is not D2-D5 in order, before any
-    /// request (Python raises `ValueError`).
+    /// asked; [`Rob2RunError::InvalidDomains`] when `study` is not D1 or
+    /// `domains` is not D2-D5 in order, before any request (Python raises
+    /// `ValueError`).
     pub fn escalate_outcome(
         &mut self,
         title: &str,
@@ -1689,9 +1698,7 @@ impl<'a> Rob2Agent<'a> {
         study: &DomainResult,
         domains: &[DomainResult],
     ) -> Result<Rob2Escalation, Rob2RunError> {
-        if let Err(message) = check_outcome_domains(study, domains) {
-            panic!("{message}");
-        }
+        check_outcome_domains(study, domains).map_err(Rob2RunError::InvalidDomains)?;
         let needed = judgements(study, domains).is_some_and(|j| needs_escalation_decision(&j));
         let (true, DomainResult::Assessed(first)) = (needed, study) else {
             return Ok(Rob2Escalation::NotNeeded);
@@ -2400,7 +2407,7 @@ pub(crate) mod tests {
             message: "down".into(),
             attempts: 1,
             retryable: true,
-            status: None,
+            status: Some(503),
         });
         let run = Rob2Agent::new(&mut chat)
             .assess("A trial", TEXT, &[outcome("SBP")], SIM)
@@ -2412,6 +2419,11 @@ pub(crate) mod tests {
             .second_look_error
             .as_deref()
             .is_some_and(|e| e.contains("down")));
+        // #816: the caller backs off on a transient failure, skips a refused key.
+        assert_eq!(
+            (first.second_look_retryable, first.second_look_status),
+            (true, Some(503))
+        );
         assert!(!first.missing());
         assert_eq!(d5.answers["5.2"].answer, Answer::Pn);
     }
@@ -2434,6 +2446,10 @@ pub(crate) mod tests {
             .second_look_error
             .as_deref()
             .is_some_and(|e| e.contains("no quote")));
+        assert_eq!(
+            (first.second_look_retryable, first.second_look_status),
+            (false, None)
+        );
         assert_eq!(d5.answers["5.2"].answer, Answer::Pn);
         assert!(d5.answers["5.2"]
             .reasoning
@@ -3083,13 +3099,11 @@ pub(crate) mod tests {
         let mut chat = Scripted::new(replies);
         let sbp = outcome("SBP");
         let (_, domains) = steps_of(&mut Rob2Agent::new(&mut chat), &sbp);
-        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            Rob2Agent::new(&mut chat).escalate_outcome("A trial", &sbp, &domains[0], &domains)
-        }));
-        let message = caught.expect_err("a panic");
         assert_eq!(
-            message.downcast_ref::<String>().map(String::as_str),
-            Some("the study's domain is not D1")
+            Rob2Agent::new(&mut chat).escalate_outcome("A trial", &sbp, &domains[0], &domains),
+            Err(Rob2RunError::InvalidDomains(
+                "the study's domain is not D1".to_string()
+            ))
         );
         assert_eq!(
             combine_outcome(
@@ -3155,11 +3169,13 @@ pub(crate) mod tests {
         let sent = chat.sent.len();
         let mut reversed = domains.clone();
         reversed.reverse();
-        for bad in [reversed, domains[..3].to_vec()] {
-            let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                Rob2Agent::new(&mut chat).escalate_outcome("A trial", &sbp, &study, &bad)
-            }));
-            assert!(caught.is_err());
+        // #816: a damaged stored row is an error the caller reports, never a panic.
+        for (given, bad) in [(&study, reversed), (&study, domains[..3].to_vec())] {
+            let refused = Rob2Agent::new(&mut chat).escalate_outcome("A trial", &sbp, given, &bad);
+            let Err(Rob2RunError::InvalidDomains(message)) = refused else {
+                panic!("not refused: {refused:?}");
+            };
+            assert_eq!(Err(message), check_outcome_domains(given, &bad));
         }
         assert_eq!(chat.sent.len(), sent);
     }
@@ -3357,6 +3373,8 @@ pub(crate) mod tests {
             result: Vec::new(),
             second_look: None,
             second_look_error: None,
+            second_look_retryable: false,
+            second_look_status: None,
             quotes_not_found: Vec::new(),
             contradicted: Vec::new(),
             quotes_dropped: 0,

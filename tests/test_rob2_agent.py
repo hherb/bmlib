@@ -932,12 +932,16 @@ class TestD5FromFacts:
         replies = low_run()[:-1] + [_d5_with_measurements(), _FOUND]
         agent = make_agent(*replies)
         responses = list(agent.llm.chat.side_effect)
-        agent.llm.chat.side_effect = [*responses[:5], ConnectionError("down"), responses[5]]
+        down = ConnectionError("down")
+        down.status_code = 503  # type: ignore[attr-defined]
+        agent.llm.chat.side_effect = [*responses[:5], down, responses[5]]
         run = agent.assess("A trial", TEXT, [OUTCOME], min_similarity=SIM)
         d5 = assessed(run.outcomes[0].domains[3])
         assert d5.facts is not None
         first = d5.facts.measurements[0]
         assert first.second_look is None and first.second_look_error
+        # #816: the caller backs off on a transient failure, skips a refused key.
+        assert (first.second_look_retryable, first.second_look_status) == (True, 503)
         assert not first.missing()
         assert d5.answers["5.2"].answer is Answer.PN
 
@@ -951,6 +955,7 @@ class TestD5FromFacts:
         first = d5.facts.measurements[0]
         assert first.undecided() and not first.missing()
         assert first.second_look_error is not None and "no quote" in first.second_look_error
+        assert (first.second_look_retryable, first.second_look_status) == (False, None)
         assert d5.answers["5.2"].answer is Answer.PN
 
     def test_a_stop_between_second_looks_ends_the_run(self) -> None:

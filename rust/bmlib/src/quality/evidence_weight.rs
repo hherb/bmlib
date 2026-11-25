@@ -40,7 +40,7 @@ use crate::quality::cochrane_assessor::{
 };
 use crate::quality::design_agent::{DesignAgent, DesignProposal, ProposalError, QueryCondenser};
 use crate::quality::evidence_ladder::{
-    build_ladder, paper_weight, start_level, EvidenceLadder, LadderSettings, LADDER_VERSION,
+    build_ladder, paper_weight, start_level, EvidenceLadder, LadderSettings, Level, LADDER_VERSION,
 };
 use crate::quality::full_text_agent::DEFAULT_MAX_TOKENS;
 use crate::quality::outcome_agent::{OutcomeAgent, OutcomeProposal, ProposedOutcome};
@@ -372,6 +372,40 @@ fn ladder_error(
         .map(|error| format!("the reported result was refused: {error}"))
 }
 
+/// Take one outcome's combined RoB 2 result through the evidence ladder.
+///
+/// The step after [`crate::quality::combine_outcome`] for a caller that
+/// drives RoB 2 a step at a time; [`assess_unattended`] calls it for every
+/// outcome. `start` is the design's [`start_level`], `study` the run's D1.
+/// An outcome whose risk of bias was not assessed (naming each failed domain
+/// and a failed escalation), whose reported result was refused, or whose
+/// result cannot be laddered has `ladder` `None` and the reason in
+/// `ladder_error`, never a score. The paper's weight is then
+/// [`paper_weight`] of the ladders that were built.
+#[must_use]
+pub fn assess_outcome(
+    start: Level,
+    study: &DomainResult,
+    outcome: &ProposedOutcome,
+    rob2: &OutcomeRob2,
+    settings: &LadderSettings,
+) -> AssessedOutcome {
+    let mut error = ladder_error(study, outcome, rob2);
+    let mut ladder = None;
+    if let (None, Some(overall)) = (&error, rob2.overall) {
+        match build_ladder(start, overall, outcome.result.as_ref(), settings) {
+            Ok(built) => ladder = Some(built),
+            Err(message) => error = Some(message),
+        }
+    }
+    AssessedOutcome {
+        outcome: outcome.clone(),
+        rob2: rob2.clone(),
+        ladder,
+        ladder_error: error,
+    }
+}
+
 /// Whether the model saw a digest in the design, outcome or any RoB 2 step.
 fn any_condensed(design: &DesignProposal, outcomes: &OutcomeProposal, run: &Rob2Run) -> bool {
     design.condensed
@@ -458,22 +492,7 @@ pub fn assess_unattended(
         .outcomes
         .iter()
         .zip(&run.outcomes)
-        .map(|(proposed, rob2)| {
-            let mut error = ladder_error(&run.study, proposed, rob2);
-            let mut ladder = None;
-            if let (None, Some(overall)) = (&error, rob2.overall) {
-                match build_ladder(start, overall, proposed.result.as_ref(), settings) {
-                    Ok(built) => ladder = Some(built),
-                    Err(message) => error = Some(message),
-                }
-            }
-            AssessedOutcome {
-                outcome: proposed.clone(),
-                rob2: rob2.clone(),
-                ladder,
-                ladder_error: error,
-            }
-        })
+        .map(|(proposed, rob2)| assess_outcome(start, &run.study, proposed, rob2, settings))
         .collect();
     let paper_weight = weight_of(&assessed);
     let condensed = any_condensed(&design, &outcomes, &run);
@@ -494,7 +513,6 @@ mod tests {
     use super::*;
     use crate::agents::{ChatJsonError, ChatJsonOutcome};
     use crate::llm::LLMMessage;
-    use crate::quality::evidence_ladder::Level;
     use crate::quality::rob2_agent::tests::{
         low_run, Condenser, PLANNED_HOSPITALISATION, SIM, TEXT as RANDOMISED,
     };

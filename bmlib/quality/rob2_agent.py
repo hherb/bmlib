@@ -59,6 +59,7 @@ from bmlib.quality._full_text_agent import (
     AgentFailure,
     UnreadableReplyError,
     _FullTextAgent,
+    _status_code,
     check_min_similarity,
     step_prompt_chars,
 )
@@ -199,25 +200,6 @@ def _object(value: object, what: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"{what} is not an object")
     return value
-
-
-#: The lowest and highest HTTP status a stored ``status_code`` may hold.
-HTTP_STATUS_MIN = 100
-HTTP_STATUS_MAX = 599
-
-
-def _status_code(data: dict[str, Any], key: str) -> int | None:
-    """``data[key]``: required, an HTTP status or null, else ``ValueError``."""
-    if key not in data:
-        raise ValueError(f"{key} is absent")
-    status = data[key]
-    if status is not None and (
-        isinstance(status, bool)
-        or not isinstance(status, int)
-        or not HTTP_STATUS_MIN <= status <= HTTP_STATUS_MAX
-    ):
-        raise ValueError(f"{key} is not null or an HTTP status")
-    return status
 
 
 def _optional_text(data: dict[str, Any], key: str) -> str | None:
@@ -1346,6 +1328,8 @@ class Rob2Agent(_FullTextAgent):
             except _CallFailedError as exc:
                 logger.warning("%s not had: %s", look, exc)
                 item.second_look_error = str(exc)
+                item.second_look_retryable = exc.retryable
+                item.second_look_status = exc.status
         assessment = d5_assessment(facts)
         assessment.condensed = condensed
         return assessment
