@@ -26,7 +26,7 @@ use bmlib::llm::LLMMessage;
 use bmlib::quality::agent_chat::JsonChat;
 use bmlib::quality::evidence_ladder::{paper_weight, start_level, LadderSettings};
 use bmlib::quality::evidence_weight::{
-    assess_outcome, assess_unattended, AgentOptions, EvidenceWeight,
+    assess_outcome, assess_unattended, AgentOptions, EvidenceWeight, EvidenceWeightError,
 };
 use bmlib::quality::rob2_algorithm::ROB2_ALGORITHM_VERSION;
 use bmlib::quality::rob2_questions::ROB2_PROMPT_VERSION;
@@ -147,6 +147,21 @@ fn every_refusal_names_what_does_not_add_up() {
     }
 }
 
+/// #813: a `ladder_error` stored where the inputs build a ladder is refused
+/// (two changes, so not one of the fixture's refusals; Python's unit test has it).
+#[test]
+fn a_ladder_error_where_a_ladder_can_be_built_is_refused() {
+    let fixture = fixture();
+    let mut wire = fixture["cases"][3]["expected"].clone();
+    wire["assessed"][0]["ladder"] = Value::Null;
+    wire["assessed"][0]["ladder_error"] = Value::from("x");
+    assert_eq!(
+        EvidenceWeight::from_json(&wire).expect_err("refused"),
+        "assessed[0]'s ladder or ladder_error is not the one its design, \
+         RoB 2 result, reported result and settings give"
+    );
+}
+
 /// The assessed case driven one step at a time (design, outcomes, then
 /// `plan_rob2`'s steps with one set of digests, then `assess_outcome` for each
 /// outcome) assembles the same `Rob2Run`, assessed outcomes and paper weight
@@ -235,7 +250,8 @@ fn the_assessed_case_step_by_step() {
         .iter()
         .zip(&run.outcomes)
         .map(|(proposed, rob2)| assess_outcome(start, &run.study, proposed, rob2, &settings))
-        .collect();
+        .collect::<Result<_, _>>()
+        .expect("valid settings");
     let wire: Vec<Value> = assessed.iter().map(|a| a.to_json()).collect();
     assert_eq!(Value::Array(wire), case["expected"]["assessed"]);
     let ladders: Vec<_> = assessed.iter().filter_map(|a| a.ladder.clone()).collect();
@@ -252,7 +268,9 @@ fn the_assessed_case_step_by_step() {
         ..rob2.clone()
     };
     assert_eq!(
-        assess_outcome(start, &run.study, proposed, &failed, &settings).ladder_error,
+        assess_outcome(start, &run.study, proposed, &failed, &settings)
+            .expect("valid settings")
+            .ladder_error,
         Some(
             "the outcome's risk of bias was not assessed: \
              the escalation question failed (HTTP 503: overloaded)"
@@ -261,10 +279,22 @@ fn the_assessed_case_step_by_step() {
     );
     let mut unladdered = proposed.clone();
     unladdered.result.as_mut().expect("a result").ci_low = Some(0.75);
-    let one = assess_outcome(start, &run.study, &unladdered, rob2, &settings);
+    let one = assess_outcome(start, &run.study, &unladdered, rob2, &settings).expect("valid");
     assert!(one.ladder.is_none());
     assert_eq!(
         one.ladder_error.as_deref(),
         Some("ci_low <= estimate <= ci_high does not hold")
+    );
+
+    // #818: invalid settings are the call's error, never the outcome's ladder_error.
+    let invalid = LadderSettings {
+        weight_high: 0.2,
+        weight_low: 0.9,
+        ..LadderSettings::default()
+    };
+    let reason = invalid.validate().expect_err("invalid");
+    assert_eq!(
+        assess_outcome(start, &run.study, proposed, rob2, &invalid),
+        Err(EvidenceWeightError::InvalidSettings(reason))
     );
 }

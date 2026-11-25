@@ -641,13 +641,15 @@ step could not be made at all, wrapping that step's own error:
 `Proposal(ProposalError)` for the design or outcome proposal (`EmptyInput`,
 `CondensationFailed`, `RequestFailed { message, retryable, status }`,
 `Unreadable`, `Stopped` and `InvalidSimilarity`), or `Rob2(Rob2RunError)`
-(`EmptyInput`, `NoOutcomes`, `Stopped`, `InvalidSimilarity`). A domain whose
+(`EmptyInput`, `NoOutcomes`, `Stopped`, `InvalidSimilarity`), or
+`InvalidSettings(String)` for `LadderSettings` that fail `validate()`
+(possible only from a struct literal), refused before any request. A domain whose
 request fails or whose reply stays unreadable is not an error: it is
 `DomainResult::Failed { domain, reason, retryable, status }` in the run, and
 the outcomes it touches are not assessed. A failed escalation is
 `OutcomeRob2::escalation_error`, with `escalation_retryable` and
 `escalation_status`. Retry only when `retryable`; a 401 or 403 means the
-key. `ProposalError` is `#[non_exhaustive]`.
+key. `ProposalError` and `EvidenceWeightError` are `#[non_exhaustive]`.
 
 **Options.** `AgentOptions` (temperature, `max_tokens`, `max_retries`,
 `condense_config`) reaches all three agents; its `Default` is theirs,
@@ -807,7 +809,9 @@ for it, it cannot tell, so the caller runs the escalation again.
 `evidence_weight::assess_outcome(start, study, outcome, rob2, settings)` is
 the step after `combine_outcome`: the outcome's `AssessedOutcome`, with its
 ladder or the reason there is none, exactly as `assess_unattended` builds
-it (`start` is `start_level` of the design). The paper's weight is
+it (`start` is `start_level` of the design), or
+`Err(EvidenceWeightError::InvalidSettings)` for settings that fail
+`validate()`, never an outcome's `ladder_error`. The paper's weight is
 `paper_weight` of the ladders built. A failed second look in D5 keeps
 `second_look_error` with `second_look_retryable` and `second_look_status`
 (written as `second_look_status_code`) on its `OtherMeasurement`, as
@@ -826,7 +830,8 @@ also has `with_progress(callback)`, as Python's takes `progress`.
 Every result type has `to_json`, Python's `to_dict`, and a checked
 `from_json`. `EvidenceWeight::from_json` reads any status and refuses
 another `ladder_version`, settings that do not validate, parts of different
-lengths and a `paper_weight` that is not the largest ladder weight, but
-does not rebuild a stored ladder from its inputs (#813);
+lengths, a design the ladder does not cover and a `paper_weight` that is
+not the largest ladder weight, and rebuilds each stored ladder or ladder
+error with `assess_outcome`, refusing the result unless it matches (#813);
 `Rob2Run::from_json` refuses a run judged by other rules and an `overall`
 that does not follow from its domains.

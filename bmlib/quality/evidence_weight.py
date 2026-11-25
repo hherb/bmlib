@@ -229,8 +229,11 @@ def evidence_weight_from_dict(data: dict[str, Any]) -> EvidenceWeight:
         ValueError: ``status`` is unknown, ``ladder_version`` is not
             :data:`LADDER_VERSION`, the settings are refused, a field is absent
             or of the wrong type or value, or the parts disagree (a different number of
-            outcomes, RoB 2 results or assessed outcomes; a ``paper_weight``
-            that is not the largest ladder weight).
+            outcomes, RoB 2 results or assessed outcomes; a design the ladder
+            does not cover; an assessed outcome other than the one
+            :func:`assess_outcome` rebuilds from the design, run, outcome and
+            settings, #813; a ``paper_weight`` that is not the largest ladder
+            weight).
     """
     data = _object(data, "the evidence weight")
     status = _wire(data, "status", str, "text")
@@ -254,11 +257,19 @@ def evidence_weight_from_dict(data: dict[str, Any]) -> EvidenceWeight:
     weight = data.get("paper_weight")
     if len(assessed) != len(run.outcomes) or len(assessed) != len(outcomes.outcomes):
         raise ValueError("outcomes, run and assessed do not have the same length")
+    start = start_level(design.design)
+    if start is None or design.rct_layout is None or not design.rct_layout.is_covered():
+        raise ValueError("the design is not one the ladder covers")
     for index, (one, proposed, rob2) in enumerate(
         zip(assessed, outcomes.outcomes, run.outcomes, strict=True)
     ):
         if one.outcome != proposed or one.rob2 != rob2:
             raise ValueError(f"assessed[{index}] is not outcome {index} of outcomes and run")
+        if one != assess_outcome(start, run.study, proposed, rob2, settings):
+            raise ValueError(
+                f"assessed[{index}]'s ladder or ladder_error is not the one its design, "
+                "RoB 2 result, reported result and settings give"
+            )
     expected = paper_weight([a.ladder for a in assessed if a.ladder is not None])
     if weight != expected:
         raise ValueError(f"paper_weight {weight!r} is not the largest ladder weight {expected!r}")

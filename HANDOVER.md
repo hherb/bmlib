@@ -1,43 +1,45 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-25 (**the RoB 2 steps' gaps, #816, the branch
-`fix/rob2-steps-816`**).
+_Last updated: 2026-11-26 (**a stored evidence weight rebuilt on read, #813,
+and Rust's invalid ladder settings refused up front, #818; branch
+`fix/ladder-settings-818-813`**).
 **0.14.0 is tagged and released on GitHub** (`v0.14.0` on `e7b7c98a`, PR
 #801); `release.yml` run 44306259452 **still waits at the `pypi` gate for the
 maintainer** (last checked 2026-11-22), so PyPI still serves 0.13.0. **Crate
-0.5.0 is not yet on crates.io**: publish it once PyPI has 0.14.0, from a clean
+0.5.0 is not yet on crates.io** (it serves 0.4.0, checked 2026-11-26, which has
+no evidence-weight module): publish it once PyPI has 0.14.0, from a clean
 worktree of `e7b7c98a` (`HANDOVER_RUST.md`, *Publishing to crates.io*: remake
 the token link first, remove it after)._
 
-## This session: the RoB 2 steps' gaps (#816, branch `fix/rob2-steps-816`)
+## This session: #818 and #813 (branch `fix/ladder-settings-818-813`)
 
-Found by StudyAnalyzer PR #161's final review, before its Evidence weight
-tab re-pins on #815. Both languages, as in #815:
+The maintainer's choices: #818 by validating at entry, #813 by re-deriving.
 
-- `assess_outcome(start, study, outcome, rob2, settings)` in
-  `evidence_weight` (Rust re-exported from `quality`): one combined outcome
-  through the ladder, as `assess_unattended` does (it now calls it), so the
-  ladder-error rules stay private and are not copied. Both step-by-step
-  contract tests also check `assessed` and `paper_weight`.
-- A failed D5 second look keeps `second_look_retryable` and
-  `second_look_status` (wire `second_look_status_code`) on its
-  `OtherMeasurement`. Facts stored without them read as not retryable and
-  with no status; either one set without an error is refused. Python's
-  `_status_code` and `HTTP_STATUS_MIN`/`MAX` moved to `_full_text_agent`
-  (rob2_d5_facts cannot import rob2_agent; `rob2_agent` re-exports the two
-  constants). Only `rob2_d5_facts.json` changed.
-- Rust `escalate_outcome` returns `Err(Rob2RunError::InvalidDomains(msg))`
-  instead of panicking on a study that is not D1 or domains out of order.
-- **Deferred to #818** (finalcheck review): Rust `LadderSettings` built by a
-  struct literal can fail `validate()`, and `assess_outcome` then reports it
-  as every outcome's `ladder_error`, after `assess_unattended` has paid for
-  every call. Python refuses such settings at construction. The fix is a
-  breaking API choice for a released crate, so it is not part of this PR.
-- **Next:** StudyAnalyzer re-pins on this PR's merge and writes plan 2 (the
-  tab). **#813 stays open**.
+- **#818 (Rust only)**: `assess_unattended` returns
+  `Err(EvidenceWeightError::InvalidSettings(msg))` before any request for
+  `LadderSettings` that fail `validate()` (only a struct literal can build
+  them), and `assess_outcome` now returns `Result<AssessedOutcome, _>` with the
+  same error rather than an outcome's `ladder_error`. `EvidenceWeightError` is
+  `#[non_exhaustive]`, done while the crate is unpublished. Python's frozen
+  `LadderSettings` cannot be invalid, so it is unchanged.
+- **#813 (both languages)**: reading an `assessed` result rebuilds each
+  outcome with `assess_outcome(start_level(design), run.study, outcome, rob2,
+  settings)` and refuses it unless it is equal, and refuses a design the ladder
+  does not cover. Nothing `assess_unattended` wrote goes stale. Four new
+  refusals in `evidence_weight.json` (cases unchanged), and unit tests for the
+  two-change cases (a `ladder_error` where a ladder can be built, a ladder
+  where none can).
+- Filed **#819**: Rust `quality_extractors`' multicenter test asserts
+  wall time (< 2 s) and failed once under a full parallel run. It is #533's
+  flake class.
+- **Next:** StudyAnalyzer re-pins on #817 (and this PR, for
+  `assess_outcome`'s new `Result`) and writes plan 2 (the tab).
 
 ## Merged since the 0.14.0 release (all Unreleased; detail in the CHANGELOGs)
 
+- **The RoB 2 steps' gaps** (#816, PR #817): `assess_outcome`; a failed D5
+  second look keeps `second_look_retryable`/`second_look_status`; Rust
+  `escalate_outcome` returns `InvalidDomains` instead of panicking.
 - **RoB 2 a step at a time** (PR #815; StudyAnalyzer's Evidence weight tab,
   design §4): `plan_rob2` and `Rob2Step` (`from_dict`/`from_json`),
   `Rob2Agent.assess_domain` with a caller-held `Rob2Digests` (a failed
@@ -45,11 +47,8 @@ tab re-pins on #815. Both languages, as in #815:
   escalation is refused where its need changed; otherwise the caller re-runs
   it), and `design_/outcome_/domain_prompt_chars`; `assess` is a loop over
   the steps, its fixtures unchanged. `tests/fixtures/rob2_steps.json`.
-- **The evidence-weight manuals** (#811, PR #814); filed #813 (a stored
-  ladder is not rebuilt on read).
-- **The PRISMA 2020 agent and `omlx` in the manuals** (PR #812): both quality
-  pages gain a PRISMA section (the Rust one doc-tested); `llm.md` an oMLX
-  section and window row.
+- **Manuals**: the evidence weight (#811, PR #814); the PRISMA 2020 agent
+  and `omlx` (PR #812).
 - **An `omlx` provider** (PR #810): a local oMLX server (MLX on Apple
   silicon) at `127.0.0.1:8000`, keyless and free, both languages; the window
   is `/v1/models`' `max_model_len`. Not in the tool-calling allowlist.
@@ -191,28 +190,21 @@ MedicalFactChecker's step 3 (re-pin the xcframework). Unreleased.
 - **Left open on purpose**: separate processes of one installation writing one
   record (out of scope; an app has one process per installation).
 
-## Earlier: every bioRxiv/medRxiv posting, through `/details` (#341, PR #760)
+## Earlier: bioRxiv/medRxiv `/details` (#341, PR #760)
 
-`biorxiv-details`/`medrxiv-details` read `/details` (30 records a page) and
-are in `sync(sources=None)` (the maintainer's call); records keep `source`
-`"biorxiv"`/`"medrxiv"`, one row per DOI, newest posting by integer
-`version`. **`DETAILS_SETTLE_DAYS` = 7 is a bound; measuring it is #759.**
-BMLibrarian bumps its pin once released; MECA bulk is the expected next
-request.
-Full-text tests script `content`, not `json()`; a JATS cached with the
-PDF-beside option off is not covered (the `shortcut:` in `_check_cache`).
+`biorxiv-details`/`medrxiv-details` are in `sync(sources=None)`; one row per
+DOI, newest posting by `version`. **`DETAILS_SETTLE_DAYS` = 7 is a bound;
+measuring it is #759.** A JATS cached with the PDF-beside option off is not
+covered (the `shortcut:` in `_check_cache`).
 
 ## Release 0.13.0 / Rust crate 0.4.0 (released 2026-11-10)
 
-PR #736, tagged `v0.13.0`; PyPI and crates.io carry it. What it cost
-downstream is the CHANGELOG's `[0.13.0]` *Changed — breaking* and the crate's
-`[0.4.0]`. **Left open past it**: #694, #495, #722, #733, #734, **Mistral's
-default** (`mistral-large-latest` 403 `tier_not_allowed` on the probed key;
-re-probe with a paid-tier key), #730/#731, #716, #718, #725, and the PDF
-path's #605, #623, #628. Whether a misreported PICO part's confidence lifts
-`overall_confidence` is the maintainer's to revisit (`docs/DECISIONS.md`).
-The title corpus's `median_font_size` rows are line medians, so its next
-top-up bumps `ROW_DEFINITIONS_VERSION`.
+PR #736, on PyPI and crates.io; its downstream cost is the CHANGELOG's
+`[0.13.0]` *Changed — breaking*. Left open past it: #694, #495, #722, #733,
+#734, #730/#731, #716, #718, #725, the PDF path's #605, #623, #628, and
+**Mistral's default** (`mistral-large-latest` 403s on the probed key;
+re-probe with a paid-tier key). The title corpus's next top-up bumps
+`ROW_DEFINITIONS_VERSION` (its `median_font_size` rows are line medians).
 
 ## Rules carried forward, and previous sessions
 
@@ -274,10 +266,11 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache; **0.14.0 makes nothing stored stale** and labels bioRxiv and
   medRxiv full-text sources with their version on a re-fetch. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests on `feat/rob2-steps`** (2026-11-25, no PostgreSQL DSN): Python
-  11,179 passed + 201 skipped; ruff 0.15.20, ruff format and mypy clean;
-  Rust `cargo test` 1,981 passed, clippy, `cargo fmt --check` and
-  `cargo doc -D warnings` clean (the manual's new example is a doc-test).
+- **Tests on `fix/ladder-settings-818-813`** (2026-11-26, no PostgreSQL
+  DSN): Python 11,207 passed + 201 skipped; ruff 0.15.20, ruff format and
+  mypy clean; the Rust oracle 46 of 46 clean; Rust `cargo test --workspace
+  --no-fail-fast` 1,993 passed (#819's timing test failed once under load),
+  clippy, `cargo fmt --check` and `cargo doc -D warnings` clean.
   At the release (2026-11-17) the release gates were rehearsed: `uv build`,
   `twine check --strict`, `py.typed` in the wheel, and 126 of 126 modules
   imported, one fresh interpreter each, in a core-only venv. On `main` before
@@ -310,8 +303,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**126 open** (2026-11-25): **#813** (re-derive a stored ladder on read?
-above), **#806** (PR #804's review: the one-row wrong link, above),
+**125 open once this PR merges** (2026-11-26; #813 and #818 close with it,
+#819 is new): **#819** (a Rust wall-time test, above), **#806** (PR #804's review: the one-row wrong link, above),
 Europe PMC's **#792** and **#793** (PR #790's review, above),
 the library's #755, #762 and **#778** (PR #777's review follow-ups, above),
 **#776** (PR #775's MECA follow-ups) and **#759** (measure the `/details`

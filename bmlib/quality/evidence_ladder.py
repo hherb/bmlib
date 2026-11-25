@@ -282,7 +282,8 @@ class EvidenceLadder:
 
     @staticmethod
     def from_wire(raw: object) -> EvidenceLadder:
-        """Rebuild from :meth:`to_wire` output (the steps are not re-derived).
+        """Rebuild from :meth:`to_wire` output (the steps are not re-derived here;
+        ``evidence_weight_from_dict`` rebuilds a stored ladder from its inputs).
 
         Raises:
             ValueError: A field is absent or of the wrong type or value, naming it.

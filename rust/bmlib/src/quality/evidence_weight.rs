@@ -88,11 +88,15 @@ impl Default for AgentOptions {
 
 /// Why the pipeline ended without a result: the step's own error.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum EvidenceWeightError {
     /// The design or outcome proposal could not be made.
     Proposal(ProposalError),
     /// The RoB 2 run was refused or stopped.
     Rob2(Rob2RunError),
+    /// The ladder settings fail [`LadderSettings::validate`] (its message).
+    /// Python cannot build such settings (#818).
+    InvalidSettings(String),
 }
 
 impl fmt::Display for EvidenceWeightError {
@@ -100,6 +104,9 @@ impl fmt::Display for EvidenceWeightError {
         match self {
             EvidenceWeightError::Proposal(e) => e.fmt(f),
             EvidenceWeightError::Rob2(e) => e.fmt(f),
+            EvidenceWeightError::InvalidSettings(e) => {
+                write!(f, "the ladder settings are invalid: {e}")
+            }
         }
     }
 }
@@ -256,8 +263,10 @@ impl EvidenceWeight {
     ///
     /// A message when `status` is unknown, a field is absent or of the wrong
     /// type or value, or the parts disagree (a different number of outcomes,
-    /// RoB 2 results or assessed outcomes; a `paper_weight` that is not the
-    /// largest ladder weight).
+    /// RoB 2 results or assessed outcomes; a design the ladder does not
+    /// cover; an assessed outcome other than the one [`assess_outcome`]
+    /// rebuilds from the design, run, outcome and settings, #813; a
+    /// `paper_weight` that is not the largest ladder weight).
     pub fn from_json(value: &Value) -> Result<Self, String> {
         let data = object(value, "the evidence weight")?;
         let status = text(data, "status")?;
@@ -291,6 +300,10 @@ impl EvidenceWeight {
         if assessed.len() != run.outcomes.len() || assessed.len() != outcomes.outcomes.len() {
             return Err("outcomes, run and assessed do not have the same length".to_string());
         }
+        let covered = design.rct_layout.is_some_and(|layout| layout.is_covered());
+        let start = start_level(design.design)
+            .filter(|_| covered)
+            .ok_or("the design is not one the ladder covers")?;
         for (index, ((one, proposed), rob2)) in assessed
             .iter()
             .zip(&outcomes.outcomes)
@@ -300,6 +313,14 @@ impl EvidenceWeight {
             if one.outcome != *proposed || one.rob2 != *rob2 {
                 return Err(format!(
                     "assessed[{index}] is not outcome {index} of outcomes and run"
+                ));
+            }
+            let rebuilt = assess_outcome(start, &run.study, proposed, rob2, &settings)
+                .map_err(|e| e.to_string())?;
+            if *one != rebuilt {
+                return Err(format!(
+                    "assessed[{index}]'s ladder or ladder_error is not the one its design, \
+                     RoB 2 result, reported result and settings give"
                 ));
             }
         }
@@ -382,14 +403,22 @@ fn ladder_error(
 /// result cannot be laddered has `ladder` `None` and the reason in
 /// `ladder_error`, never a score. The paper's weight is then
 /// [`paper_weight`] of the ladders that were built.
-#[must_use]
+///
+/// # Errors
+///
+/// [`EvidenceWeightError::InvalidSettings`] when `settings` fail
+/// [`LadderSettings::validate`]: a caller's mistake, not a fact about the
+/// outcome, so it is never an outcome's `ladder_error` (#818).
 pub fn assess_outcome(
     start: Level,
     study: &DomainResult,
     outcome: &ProposedOutcome,
     rob2: &OutcomeRob2,
     settings: &LadderSettings,
-) -> AssessedOutcome {
+) -> Result<AssessedOutcome, EvidenceWeightError> {
+    settings
+        .validate()
+        .map_err(EvidenceWeightError::InvalidSettings)?;
     let mut error = ladder_error(study, outcome, rob2);
     let mut ladder = None;
     if let (None, Some(overall)) = (&error, rob2.overall) {
@@ -398,12 +427,12 @@ pub fn assess_outcome(
             Err(message) => error = Some(message),
         }
     }
-    AssessedOutcome {
+    Ok(AssessedOutcome {
         outcome: outcome.clone(),
         rob2: rob2.clone(),
         ladder,
         ladder_error: error,
-    }
+    })
 }
 
 /// Whether the model saw a digest in the design, outcome or any RoB 2 step.
@@ -423,7 +452,9 @@ fn any_condensed(design: &DesignProposal, outcomes: &OutcomeProposal, run: &Rob2
 /// # Errors
 ///
 /// [`EvidenceWeightError`] when a step could not be made at all (empty text,
-/// bad `min_similarity`, stop, an unreadable proposal), wrapping its own error.
+/// bad `min_similarity`, stop, an unreadable proposal), wrapping its own error;
+/// [`EvidenceWeightError::InvalidSettings`] for `settings` that fail
+/// [`LadderSettings::validate`], before any request (#818).
 // The borrowed chat, condenser and stop cannot share a struct with the owned options.
 #[allow(clippy::too_many_arguments)]
 pub fn assess_unattended(
@@ -436,6 +467,9 @@ pub fn assess_unattended(
     text: &str,
     min_similarity: f64,
 ) -> Result<EvidenceWeight, EvidenceWeightError> {
+    settings
+        .validate()
+        .map_err(EvidenceWeightError::InvalidSettings)?;
     let design = {
         let mut agent = DesignAgent::new(&mut *chat)
             .with_temperature(options.temperature)
@@ -488,12 +522,12 @@ pub fn assess_unattended(
         agent.assess(title, text, &outcomes.outcomes, min_similarity)?
     };
 
-    let assessed: Vec<AssessedOutcome> = outcomes
+    let assessed = outcomes
         .outcomes
         .iter()
         .zip(&run.outcomes)
         .map(|(proposed, rob2)| assess_outcome(start, &run.study, proposed, rob2, settings))
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
     let paper_weight = weight_of(&assessed);
     let condensed = any_condensed(&design, &outcomes, &run);
     Ok(EvidenceWeight::Assessed {
@@ -661,6 +695,35 @@ mod tests {
             EvidenceWeightError::Proposal(ProposalError::EmptyInput)
         );
         assert_eq!(error.to_string(), "the paper's text is empty");
+    }
+
+    /// #818: settings `validate` refuses fail the run before any request.
+    #[test]
+    fn invalid_settings_are_refused_before_any_request() {
+        let settings = LadderSettings {
+            weight_high: 0.2,
+            weight_low: 0.9,
+            ..LadderSettings::default()
+        };
+        let reason = settings.validate().expect_err("invalid");
+        let mut chat = Scripted::new(one_outcome_replies());
+        let error = assess_unattended(
+            &mut chat,
+            None,
+            None,
+            &settings,
+            &AgentOptions::default(),
+            "A trial",
+            &text(),
+            SIM,
+        )
+        .expect_err("refused");
+        assert_eq!(chat.sent, 0);
+        assert_eq!(error, EvidenceWeightError::InvalidSettings(reason.clone()));
+        assert_eq!(
+            error.to_string(),
+            format!("the ladder settings are invalid: {reason}")
+        );
     }
 
     #[test]

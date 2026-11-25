@@ -333,6 +333,24 @@ class TestTheWireForm:
                 ),
                 "ladder reason",
             ),
+            # #813: each stored ladder or ladder_error is rebuilt from its inputs.
+            (lambda w: w["design"].update(rct_layout="crossover"), "not one the ladder covers"),
+            (
+                lambda w: w["assessed"][0].update(ladder=None, ladder_error="x"),
+                r"assessed\[0\]'s ladder or ladder_error is not the one",
+            ),
+            (
+                lambda w: w["assessed"][1].update(
+                    ladder=w["assessed"][0]["ladder"], ladder_error=None
+                ),
+                r"assessed\[1\]'s ladder or ladder_error is not the one",
+            ),
+            (
+                lambda w: w["assessed"][0]["ladder"]["steps"][0].update(
+                    reason={"risk_of_bias": "high"}, levels=2
+                ),
+                r"assessed\[0\]'s ladder or ladder_error is not the one",
+            ),
         ],
     )
     def test_what_does_not_add_up_is_refused(self, change: Any, message: str) -> None:

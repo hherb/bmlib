@@ -205,6 +205,17 @@ REFUSALS: list[tuple[str, dict[str, Any]]] = [
     ("an assessed outcome missing", {"path": ["assessed"], "remove": True}),
     ("assessed out of order", {"path": ["assessed"], "reverse": True}),
     ("ladder and ladder error both set", {"path": ["assessed", 0, "ladder_error"], "set": "x"}),
+    # #813: a stored ladder or ladder_error is rebuilt from its inputs.
+    ("a design the ladder does not cover", {"path": ["design", "rct_layout"], "set": "crossover"}),
+    (
+        "a ladder its RoB 2 judgement does not build",
+        {"path": ["assessed", 0, "ladder", "steps", 0, "reason"], "set": {"risk_of_bias": "high"}},
+    ),
+    ("a ladder its settings do not build", {"path": ["settings", "weight_high"], "set": 0.9}),
+    (
+        "a ladder error its inputs do not give",
+        {"path": ["assessed", 1, "ladder_error"], "set": "x"},
+    ),
 ]
 
 

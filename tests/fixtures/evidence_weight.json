@@ -3076,6 +3076,57 @@
     "set": "x"
    },
    "error": "exactly one of ladder and ladder_error is set"
+  },
+  {
+   "name": "a design the ladder does not cover",
+   "change": {
+    "path": [
+     "design",
+     "rct_layout"
+    ],
+    "set": "crossover"
+   },
+   "error": "the design is not one the ladder covers"
+  },
+  {
+   "name": "a ladder its RoB 2 judgement does not build",
+   "change": {
+    "path": [
+     "assessed",
+     0,
+     "ladder",
+     "steps",
+     0,
+     "reason"
+    ],
+    "set": {
+     "risk_of_bias": "high"
+    }
+   },
+   "error": "assessed[0]'s ladder or ladder_error is not the one its design, RoB 2 result, reported result and settings give"
+  },
+  {
+   "name": "a ladder its settings do not build",
+   "change": {
+    "path": [
+     "settings",
+     "weight_high"
+    ],
+    "set": 0.9
+   },
+   "error": "assessed[0]'s ladder or ladder_error is not the one its design, RoB 2 result, reported result and settings give"
+  },
+  {
+   "name": "a ladder error its inputs do not give",
+   "change": {
+    "path": [
+     "assessed",
+     1,
+     "ladder_error"
+    ],
+    "set": "x"
+   },
+   "error": "assessed[1]'s ladder or ladder_error is not the one its design, RoB 2 result, reported result and settings give"
   }
  ]
 }
