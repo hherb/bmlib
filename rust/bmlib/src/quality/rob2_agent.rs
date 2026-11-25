@@ -29,7 +29,8 @@
 //! request fails is [`DomainResult::Failed`] naming why, the other domains go
 //! on, and every outcome it touches has `overall` `None` ("not assessed").
 //! Only a stop or a refused input ends the run ([`Rob2RunError`]). A paper over
-//! the window is condensed per domain, for that domain's query, once per run.
+//! the window is condensed per domain, for that domain's query, once per
+//! [`Rob2Digests`] (one per [`Rob2Agent::assess`]).
 //!
 //! A port of `bmlib/quality/rob2_agent.py`; the contracts are
 //! `tests/fixtures/rob2_replies.json` and `tests/fixtures/rob2_run.json`.
@@ -50,7 +51,8 @@ use crate::quality::cochrane_assessor::{
 };
 use crate::quality::full_text_agent::DEFAULT_MAX_TOKENS;
 use crate::quality::full_text_agent::{
-    ask_until_readable, check_similarity, check_stop, condense_once, Failure, Sampling, LABEL_CHARS,
+    ask_until_readable, check_similarity, check_stop, condense_once, step_prompt_chars, Failure,
+    Sampling, LABEL_CHARS,
 };
 pub use crate::quality::full_text_agent::{LlmQueryCondenser, QueryCondenser};
 use crate::quality::outcome_agent::ProposedOutcome;
@@ -1042,6 +1044,50 @@ pub fn domain_prompt(
     }
 }
 
+/// The characters of the longest prompt `domain`'s step sends, without the
+/// paper and its title: the step's system prompt plus the longer of its
+/// question (as sent, with an empty title and paper) and the two condensation
+/// prompts for the domain's query, each as a retry after an unparseable reply
+/// sends it. D5 sends two kinds of question, each with its own system prompt,
+/// the facts and a second look at an other measurement; this takes the larger.
+/// A second look also carries its measurement's label and named passages,
+/// which this does not count (it measures the look with an empty
+/// measurement). A caller subtracts it from the window when sizing the paper's
+/// budget. Python's `domain_prompt_chars`.
+///
+/// # Errors
+///
+/// As [`domain_prompt`]: an outcome given for D1, or none for D2-D5.
+pub fn domain_prompt_chars(
+    domain: Domain,
+    outcome: Option<&ProposedOutcome>,
+) -> Result<usize, String> {
+    let question = domain_prompt(domain, "", "", outcome)?;
+    let asks = match (domain, outcome) {
+        (Domain::D5, Some(outcome)) => {
+            let look = OtherMeasurement {
+                label: String::new(),
+                named: Vec::new(),
+                result: Vec::new(),
+                second_look: None,
+                second_look_error: None,
+                quotes_not_found: Vec::new(),
+                contradicted: Vec::new(),
+                quotes_dropped: 0,
+            };
+            vec![
+                (D5_FACTS_SYSTEM_PROMPT, facts_prompt("", "", outcome)),
+                (
+                    D5_SECOND_LOOK_SYSTEM_PROMPT,
+                    second_look_prompt("", "", outcome, &look),
+                ),
+            ]
+        }
+        _ => vec![(ROB2_SYSTEM_PROMPT, question)],
+    };
+    Ok(step_prompt_chars(&asks, condense_query(domain)))
+}
+
 /// The user turn of the escalation question: the outcome and all five domains,
 /// each its title and judgement, then one line per answer with its reasoning.
 /// Python's `escalation_message`.
@@ -1085,6 +1131,8 @@ pub enum Rob2RunError {
     Stopped,
     /// `min_similarity` was not a number in (0, 1]; no request was made.
     InvalidSimilarity,
+    /// D1 was given an outcome, or D2-D5 none; no request was made.
+    WrongOutcome,
 }
 
 impl fmt::Display for Rob2RunError {
@@ -1094,11 +1142,122 @@ impl fmt::Display for Rob2RunError {
             Rob2RunError::NoOutcomes => "no primary outcome to assess",
             Rob2RunError::Stopped => STOPPED_MESSAGE,
             Rob2RunError::InvalidSimilarity => "min_similarity must be a number in (0, 1]",
+            Rob2RunError::WrongOutcome => "D1 is assessed for the trial, D2-D5 for an outcome",
         })
     }
 }
 
 impl std::error::Error for Rob2RunError {}
+
+/// One step of a RoB 2 run, as a caller can store it.
+///
+/// A `Domain` step with D1 and an outcome, or D2-D5 without one, is no
+/// plan's: [`Rob2Step::from_json`] refuses it, and [`Rob2Agent::assess_domain`]
+/// refuses to run it ([`Rob2RunError::WrongOutcome`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rob2Step {
+    /// One domain's judgement. `outcome` is the index into the outcomes the
+    /// caller passes, or `None` for D1, which is judged once for the paper.
+    Domain {
+        /// The domain to judge.
+        domain: Domain,
+        /// The outcome's index, `None` for D1.
+        outcome: Option<usize>,
+    },
+    /// The escalation decision for the outcome at this index. Run it again
+    /// whenever that outcome's D1 or any of its D2-D5 is run again: it sends
+    /// no request when the question is not needed, and an escalation kept from
+    /// the earlier domains may no longer fit the new ones. [`combine_outcome`]
+    /// refuses one only where the need for the question has changed; where
+    /// both sets call for it, it cannot tell.
+    Escalation {
+        /// The outcome's index.
+        outcome: usize,
+    },
+}
+
+impl Rob2Step {
+    /// The wire form: `{"kind", "domain", "outcome"}`, absent parts `null`.
+    pub fn to_json(&self) -> Value {
+        match self {
+            Rob2Step::Domain { domain, outcome } => {
+                json!({"kind": "domain", "domain": wire_name(domain), "outcome": outcome})
+            }
+            Rob2Step::Escalation { outcome } => {
+                json!({"kind": "escalation", "domain": null, "outcome": outcome})
+            }
+        }
+    }
+
+    /// Rebuild from [`Rob2Step::to_json`] output; every key is required.
+    /// Python's `Rob2Step.from_dict`, held to it by
+    /// `tests/fixtures/rob2_steps.json`.
+    ///
+    /// # Errors
+    ///
+    /// A message naming why when a key is absent or the step is one no plan
+    /// holds: an unknown kind, an outcome that is not an index (a whole
+    /// number up to `u32::MAX`), D1 with an outcome or D2-D5 without one, or
+    /// an escalation with a domain or without an outcome.
+    pub fn from_json(value: &Value) -> Result<Self, String> {
+        let data = object(value, "the step")?;
+        for key in ["kind", "domain", "outcome"] {
+            if !data.contains_key(key) {
+                return Err(format!("{key} is absent"));
+            }
+        }
+        let domain: Option<Domain> = match &data["domain"] {
+            Value::Null => None,
+            given => Some(wire_enum(Some(given), "domain", DOMAINS)?),
+        };
+        let kind = data["kind"].as_str();
+        if !matches!(kind, Some("domain" | "escalation")) {
+            return Err("kind is not domain or escalation".to_string());
+        }
+        let outcome = match &data["outcome"] {
+            Value::Null => None,
+            given => Some(
+                given
+                    .as_u64()
+                    .filter(|&i| i <= u64::from(u32::MAX))
+                    .and_then(|i| usize::try_from(i).ok())
+                    .ok_or("outcome is not an index")?,
+            ),
+        };
+        match (kind, domain, outcome) {
+            (Some("escalation"), None, Some(outcome)) => Ok(Rob2Step::Escalation { outcome }),
+            (Some("escalation"), _, _) => {
+                Err("an escalation step names an outcome and no domain".to_string())
+            }
+            (_, None, _) => Err("a domain step names no domain".to_string()),
+            (_, Some(domain), outcome) if (domain == Domain::D1) == outcome.is_none() => {
+                Ok(Rob2Step::Domain { domain, outcome })
+            }
+            _ => Err("D1 is judged for the trial, D2-D5 for an outcome".to_string()),
+        }
+    }
+}
+
+/// The steps [`Rob2Agent::assess`] takes, in its order: D1 once, then for each
+/// outcome its domains D2 to D5 and its escalation. No outcome plans nothing
+/// (not even D1), as `assess` refuses that input before any request.
+pub fn plan_rob2(outcome_count: usize) -> Vec<Rob2Step> {
+    if outcome_count == 0 {
+        return Vec::new();
+    }
+    let mut plan = vec![Rob2Step::Domain {
+        domain: Domain::D1,
+        outcome: None,
+    }];
+    for outcome in 0..outcome_count {
+        plan.extend(Domain::ALL[1..].iter().map(|&domain| Rob2Step::Domain {
+            domain,
+            outcome: Some(outcome),
+        }));
+        plan.push(Rob2Step::Escalation { outcome });
+    }
+    plan
+}
 
 /// A call's failure: a stop ends the run, anything else is the reason its
 /// domain (or escalation) failed.
@@ -1114,8 +1273,49 @@ fn split(failure: Failure) -> Result<(String, bool, Option<u16>), Rob2RunError> 
     }
 }
 
-/// The digests of one run, by domain: condensed once, reused for every outcome.
-type Papers = BTreeMap<Domain, Result<String, Failure>>;
+/// The condensations of one paper, kept by the caller across
+/// [`Rob2Agent::assess_domain`] calls so each domain's digest is made once and
+/// reused for every outcome.
+///
+/// A failed condensation is not kept, so the next call for its domain
+/// condenses again (within one [`Rob2Agent::assess`] it is kept, and fails
+/// each later outcome without another attempt). The digests are for one paper
+/// and one condensation budget: given another text or budget, they start
+/// again. They are not stored, so a resume from storage condenses again.
+#[derive(Default)]
+pub struct Rob2Digests {
+    /// The stripped text and budget the digests were made for.
+    made_for: Option<(String, usize)>,
+    papers: BTreeMap<Domain, String>,
+    /// `Some` only inside [`Rob2Agent::assess`], which keeps failures too.
+    failed: Option<BTreeMap<Domain, Failure>>,
+}
+
+impl Rob2Digests {
+    /// Digests that keep a failure too, for one [`Rob2Agent::assess`].
+    fn for_run() -> Self {
+        Rob2Digests {
+            failed: Some(BTreeMap::new()),
+            ..Rob2Digests::default()
+        }
+    }
+
+    /// Forget what was made for another text or budget than these.
+    fn start(&mut self, stripped: &str, budget: usize) {
+        if self
+            .made_for
+            .as_ref()
+            .is_some_and(|(text, made)| text == stripped && *made == budget)
+        {
+            return;
+        }
+        self.made_for = Some((stripped.to_string(), budget));
+        self.papers.clear();
+        if let Some(failed) = self.failed.as_mut() {
+            failed.clear();
+        }
+    }
+}
 
 /// Assesses a paper with RoB 2, one call per domain.
 ///
@@ -1226,43 +1426,100 @@ impl<'a> Rob2Agent<'a> {
             return Err(Rob2RunError::NoOutcomes);
         }
         check_stop(self.stop).map_err(|_| Rob2RunError::Stopped)?;
-        let paper = Paper {
-            title,
-            stripped,
-            original: text,
-            min_similarity,
-        };
-        let mut papers = Papers::new();
-        let study = self.domain(Domain::D1, &paper, None, &mut papers)?;
+        let mut digests = Rob2Digests::for_run();
+        let mut study = None;
+        let mut domains: Vec<DomainResult> = Vec::new();
         let mut results = Vec::with_capacity(outcomes.len());
-        for outcome in outcomes {
-            let mut domains = Vec::with_capacity(Domain::ALL.len() - 1);
-            for &domain in &Domain::ALL[1..] {
-                domains.push(self.domain(domain, &paper, Some(outcome), &mut papers)?);
+        for step in plan_rob2(outcomes.len()) {
+            match step {
+                Rob2Step::Domain { domain, outcome } => {
+                    let result = self.assess_domain(
+                        domain,
+                        title,
+                        text,
+                        outcome.map(|i| &outcomes[i]),
+                        min_similarity,
+                        &mut digests,
+                    )?;
+                    match outcome {
+                        None => study = Some(result),
+                        Some(_) => domains.push(result),
+                    }
+                }
+                Rob2Step::Escalation { outcome } => {
+                    let proposed = &outcomes[outcome];
+                    let study = study.as_ref().expect("the plan judges D1 first");
+                    let escalation = self.escalate_outcome(title, proposed, study, &domains)?;
+                    let domains = std::mem::take(&mut domains);
+                    let combined = combine_outcome(proposed, study, domains, escalation)
+                        .expect("assess's own steps fit");
+                    results.push(combined);
+                }
             }
-            results.push(self.outcome(title, outcome, &study, domains)?);
         }
         Ok(Rob2Run {
             algorithm_version: ROB2_ALGORITHM_VERSION.to_string(),
             prompt_version: ROB2_PROMPT_VERSION,
-            study,
+            study: study.expect("the plan judges D1 first"),
             outcomes: results,
         })
     }
 
+    /// Assess one domain: D1 for the trial (`outcome` `None`), D2-D5 for one
+    /// outcome. Citation offsets are code points into `text` exactly as passed.
+    ///
+    /// `digests` carries this paper's condensations from call to call.
+    ///
+    /// # Errors
+    ///
+    /// [`Rob2RunError`] when the input is refused before any request
+    /// (including [`Rob2RunError::WrongOutcome`]), or the stop is set. A
+    /// domain that could not be assessed is a [`DomainResult::Failed`].
+    pub fn assess_domain(
+        &mut self,
+        domain: Domain,
+        title: &str,
+        text: &str,
+        outcome: Option<&ProposedOutcome>,
+        min_similarity: f64,
+        digests: &mut Rob2Digests,
+    ) -> Result<DomainResult, Rob2RunError> {
+        check_similarity(min_similarity).map_err(|_| Rob2RunError::InvalidSimilarity)?;
+        let stripped = python_strip(text);
+        if stripped.is_empty() {
+            return Err(Rob2RunError::EmptyInput);
+        }
+        if (domain == Domain::D1) != outcome.is_none() {
+            return Err(Rob2RunError::WrongOutcome);
+        }
+        check_stop(self.stop).map_err(|_| Rob2RunError::Stopped)?;
+        let paper = Paper {
+            title: python_strip(title),
+            stripped,
+            original: text,
+            min_similarity,
+        };
+        self.domain(domain, &paper, outcome, digests)
+    }
+
     /// The text `domain`'s call sends and whether it is a digest; condensed
-    /// once per run.
+    /// once per [`Rob2Digests`].
     fn paper_for(
         &mut self,
         domain: Domain,
         paper: &Paper<'_>,
-        papers: &mut Papers,
+        digests: &mut Rob2Digests,
     ) -> Result<(String, bool), Failure> {
-        if paper.stripped.chars().count() <= self.condense_config.max_context_chars {
+        let budget = self.condense_config.max_context_chars;
+        if paper.stripped.chars().count() <= budget {
             return Ok((paper.stripped.to_string(), false));
         }
-        if let Some(digest) = papers.get(&domain) {
-            return digest.clone().map(|digest| (digest, true));
+        digests.start(paper.stripped, budget);
+        if let Some(failure) = digests.failed.as_ref().and_then(|f| f.get(&domain)) {
+            return Err(failure.clone());
+        }
+        if let Some(digest) = digests.papers.get(&domain) {
+            return Ok((digest.clone(), true));
         }
         let stage = format!("the RoB 2 {} assessment", wire_name(domain));
         let digest = condense_once(
@@ -1277,8 +1534,16 @@ impl<'a> Rob2Agent<'a> {
             &stage,
             self.stop,
         );
-        if digest != Err(Failure::Stopped) {
-            papers.insert(domain, digest.clone());
+        match &digest {
+            Ok(made) => {
+                digests.papers.insert(domain, made.clone());
+            }
+            Err(Failure::Stopped) => {}
+            Err(failure) => {
+                if let Some(failed) = digests.failed.as_mut() {
+                    failed.insert(domain, failure.clone());
+                }
+            }
         }
         digest.map(|digest| (digest, true))
     }
@@ -1290,10 +1555,10 @@ impl<'a> Rob2Agent<'a> {
         domain: Domain,
         paper: &Paper<'_>,
         outcome: Option<&ProposedOutcome>,
-        papers: &mut Papers,
+        digests: &mut Rob2Digests,
     ) -> Result<DomainResult, Rob2RunError> {
         if let (Domain::D5, Some(outcome)) = (domain, outcome) {
-            return self.d5(paper, outcome, papers);
+            return self.d5(paper, outcome, digests);
         }
         let failed = |(reason, retryable, status)| DomainResult::Failed {
             domain,
@@ -1301,7 +1566,7 @@ impl<'a> Rob2Agent<'a> {
             retryable,
             status,
         };
-        let (sent, condensed) = match self.paper_for(domain, paper, papers) {
+        let (sent, condensed) = match self.paper_for(domain, paper, digests) {
             Ok(sent) => sent,
             Err(failure) => return split(failure).map(failed),
         };
@@ -1340,7 +1605,7 @@ impl<'a> Rob2Agent<'a> {
         &mut self,
         paper: &Paper<'_>,
         outcome: &ProposedOutcome,
-        papers: &mut Papers,
+        digests: &mut Rob2Digests,
     ) -> Result<DomainResult, Rob2RunError> {
         let failed = |(reason, retryable, status)| DomainResult::Failed {
             domain: Domain::D5,
@@ -1348,7 +1613,7 @@ impl<'a> Rob2Agent<'a> {
             retryable,
             status,
         };
-        let (sent, condensed) = match self.paper_for(Domain::D5, paper, papers) {
+        let (sent, condensed) = match self.paper_for(Domain::D5, paper, digests) {
             Ok(sent) => sent,
             Err(failure) => return split(failure).map(failed),
         };
@@ -1397,60 +1662,159 @@ impl<'a> Rob2Agent<'a> {
         Ok(DomainResult::Assessed(assessment))
     }
 
-    /// Combine one outcome's domains, asking the escalation question when it
-    /// is needed.
-    fn outcome(
+    /// Ask the escalation question for one outcome, when the rule needs it
+    /// (design §4.7): `domains` are D2-D5 of `outcome`, `study` is D1.
+    ///
+    /// A failed or unreadable answer is [`Rob2Escalation::Failed`], never a
+    /// default answer. Run this step again whenever the outcome's D1 or any of
+    /// its D2-D5 is run again: it sends no request when the question is not
+    /// needed, and an escalation kept from the earlier domains may no longer
+    /// fit the new ones. [`combine_outcome`] refuses one only where the need
+    /// for the question has changed; where both sets call for it, it cannot
+    /// tell.
+    ///
+    /// # Errors
+    ///
+    /// [`Rob2RunError::Stopped`] when the stop is set while the question is
+    /// asked.
+    ///
+    /// # Panics
+    ///
+    /// When `study` is not D1 or `domains` is not D2-D5 in order, before any
+    /// request (Python raises `ValueError`).
+    pub fn escalate_outcome(
         &mut self,
         title: &str,
         outcome: &ProposedOutcome,
         study: &DomainResult,
-        domains: Vec<DomainResult>,
-    ) -> Result<OutcomeRob2, Rob2RunError> {
-        let mut escalation = None;
-        let mut escalation_error = None;
-        let (mut escalation_retryable, mut escalation_status) = (false, None);
-        let needed = judgements(study, &domains).is_some_and(|j| needs_escalation_decision(&j));
-        if let (true, DomainResult::Assessed(first)) = (needed, study) {
-            let assessed: Vec<DomainAssessment> = domains
-                .iter()
-                .filter_map(|d| match d {
-                    DomainResult::Assessed(a) => Some(a.clone()),
-                    DomainResult::Failed { .. } => None,
+        domains: &[DomainResult],
+    ) -> Result<Rob2Escalation, Rob2RunError> {
+        if let Err(message) = check_outcome_domains(study, domains) {
+            panic!("{message}");
+        }
+        let needed = judgements(study, domains).is_some_and(|j| needs_escalation_decision(&j));
+        let (true, DomainResult::Assessed(first)) = (needed, study) else {
+            return Ok(Rob2Escalation::NotNeeded);
+        };
+        let assessed: Vec<DomainAssessment> = domains
+            .iter()
+            .filter_map(|d| match d {
+                DomainResult::Assessed(a) => Some(a.clone()),
+                DomainResult::Failed { .. } => None,
+            })
+            .collect();
+        let label = format!(
+            "RoB 2 escalation of {}",
+            repr_str(
+                &python_strip(title)
+                    .chars()
+                    .take(LABEL_CHARS)
+                    .collect::<String>()
+            )
+        );
+        let sampling = self.sampling();
+        match ask_until_readable(
+            &mut *self.chat,
+            ROB2_SYSTEM_PROMPT,
+            &escalation_message(outcome, first, &assessed),
+            sampling,
+            self.stop,
+            &label,
+            read_escalation_reply,
+        ) {
+            Ok(answer) => Ok(Rob2Escalation::Asked(answer)),
+            Err(failure) => {
+                let (reason, retryable, status) = split(failure)?;
+                Ok(Rob2Escalation::Failed {
+                    reason,
+                    retryable,
+                    status,
                 })
-                .collect();
-            let label = format!(
-                "RoB 2 escalation of {}",
-                repr_str(&title.chars().take(LABEL_CHARS).collect::<String>())
-            );
-            let sampling = self.sampling();
-            match ask_until_readable(
-                &mut *self.chat,
-                ROB2_SYSTEM_PROMPT,
-                &escalation_message(outcome, first, &assessed),
-                sampling,
-                self.stop,
-                &label,
-                read_escalation_reply,
-            ) {
-                Ok(answer) => escalation = Some(answer),
-                Err(failure) => {
-                    let (message, retryable, status) = split(failure)?;
-                    (escalation_error, escalation_retryable, escalation_status) =
-                        (Some(message), retryable, status);
-                }
             }
         }
-        let overall = rob2_overall(study, &domains, escalation.as_ref());
-        Ok(OutcomeRob2 {
-            outcome: outcome.name.clone(),
-            domains,
-            escalation,
-            escalation_error,
-            escalation_retryable,
-            escalation_status,
-            overall,
-        })
     }
+}
+
+/// The outcome of [`Rob2Agent::escalate_outcome`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum Rob2Escalation {
+    /// The domains do not call for the question (one failed, or the rule
+    /// decides alone); nothing was asked.
+    NotNeeded,
+    /// The model's readable answer.
+    Asked(Escalation),
+    /// The question was asked and not answered; the outcome is left not
+    /// assessed.
+    Failed {
+        /// Why: the unreadable field or the failed request.
+        reason: String,
+        /// Whether asking again may succeed.
+        retryable: bool,
+        /// The HTTP status the failed request was answered with, if any.
+        status: Option<u16>,
+    },
+}
+
+/// Refuse a `study` that is not D1, or `domains` that are not D2, D3, D4, D5
+/// in order.
+fn check_outcome_domains(study: &DomainResult, domains: &[DomainResult]) -> Result<(), String> {
+    if study.domain() != Domain::D1 {
+        return Err("the study's domain is not D1".to_string());
+    }
+    if !domains
+        .iter()
+        .map(DomainResult::domain)
+        .eq(Domain::ALL[1..].iter().copied())
+    {
+        return Err("domains are not D2, D3, D4, D5 in order".to_string());
+    }
+    Ok(())
+}
+
+/// Combine one outcome's domains and its escalation into its [`OutcomeRob2`].
+///
+/// `domains` must be D2, D3, D4, D5 in that order.
+///
+/// # Errors
+///
+/// A message, as Python's `ValueError`, when `study` is not D1 or `domains`
+/// is not D2-D5 in order, or when `escalation` does not fit them: an answer
+/// or a failure given where the domains do not call for the question, or
+/// [`Rob2Escalation::NotNeeded`] where they do (a stale escalation; see
+/// [`Rob2Agent::escalate_outcome`]).
+pub fn combine_outcome(
+    outcome: &ProposedOutcome,
+    study: &DomainResult,
+    domains: Vec<DomainResult>,
+    escalation: Rob2Escalation,
+) -> Result<OutcomeRob2, String> {
+    check_outcome_domains(study, &domains)?;
+    let (escalation, escalation_error, escalation_retryable, escalation_status) = match escalation {
+        Rob2Escalation::NotNeeded => (None, None, false, None),
+        Rob2Escalation::Asked(answer) => (Some(answer), None, false, None),
+        Rob2Escalation::Failed {
+            reason,
+            retryable,
+            status,
+        } => (None, Some(reason), retryable, status),
+    };
+    let overall = rob2_overall(study, &domains, escalation.as_ref());
+    let needed = judgements(study, &domains).is_some_and(|j| needs_escalation_decision(&j));
+    let given = escalation.is_some() || escalation_error.is_some();
+    let combined = OutcomeRob2 {
+        outcome: outcome.name.clone(),
+        domains,
+        escalation,
+        escalation_error,
+        escalation_retryable,
+        escalation_status,
+        overall,
+    };
+    check_overall(study, &combined)?;
+    if needed && !given {
+        return Err("the domains need the escalation, and none was given".to_string());
+    }
+    Ok(combined)
 }
 
 /// The paper one run reads: what is sent and what quotes are checked against.
@@ -1464,10 +1828,14 @@ struct Paper<'p> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::agents::JSON_CORRECTION_NOTE;
     use crate::agents::{ChatJsonError, ChatJsonOutcome};
     use crate::context_processor::{ProcessingResult, ProcessingStatus};
     use crate::llm::LLMMessage;
     use crate::quality::evidence_ladder::{EffectScale, ReportedResult};
+    use crate::quality::pico_agent::{
+        PICO_CONDENSE_CONSOLIDATION_PROMPT, PICO_CONDENSE_EXTRACTION_PROMPT,
+    };
     use crate::quality::rob2_questions::ROB2_CONDENSE_QUERIES;
     use std::sync::atomic::Ordering;
 
@@ -1542,6 +1910,29 @@ pub(crate) mod tests {
             answers["1.1"]["quotes"] = json!([RANDOM]);
         }
         json!({ "answers": answers })
+    }
+
+    #[test]
+    fn the_plan_is_d1_then_each_outcomes_domains_and_escalation() {
+        let plan = plan_rob2(2);
+        let first: Vec<Value> = plan.iter().take(6).map(Rob2Step::to_json).collect();
+        assert_eq!(
+            first,
+            vec![
+                json!({"kind": "domain", "domain": "D1", "outcome": null}),
+                json!({"kind": "domain", "domain": "D2", "outcome": 0}),
+                json!({"kind": "domain", "domain": "D3", "outcome": 0}),
+                json!({"kind": "domain", "domain": "D4", "outcome": 0}),
+                json!({"kind": "domain", "domain": "D5", "outcome": 0}),
+                json!({"kind": "escalation", "domain": null, "outcome": 0}),
+            ]
+        );
+        assert_eq!(plan.len(), 1 + 2 * 5);
+    }
+
+    #[test]
+    fn no_outcome_plans_nothing() {
+        assert!(plan_rob2(0).is_empty());
     }
 
     #[test]
@@ -2168,6 +2559,611 @@ pub(crate) mod tests {
         );
     }
 
+    /// A long text, over the 200-character window the step tests set.
+    fn long_text() -> String {
+        format!("{TEXT} {}", "Filler sentence about nothing. ".repeat(20))
+    }
+
+    /// A condenser whose every condensation fails, counting its attempts.
+    struct FailingCondenser(usize);
+
+    impl QueryCondenser for FailingCondenser {
+        fn condense(
+            &mut self,
+            _query: &str,
+            _text: &str,
+            _label: &str,
+            _config: &ProcessingConfig,
+        ) -> ProcessingResult {
+            self.0 += 1;
+            ProcessingResult::failed("down")
+        }
+    }
+
+    #[test]
+    fn assess_domain_asks_one_domain() {
+        let mut chat = Scripted::new(vec![reply(Domain::D3, &[])]);
+        let sbp = outcome("SBP");
+        let result = Rob2Agent::new(&mut chat)
+            .assess_domain(
+                Domain::D3,
+                " A trial ",
+                TEXT,
+                Some(&sbp),
+                SIM,
+                &mut Rob2Digests::default(),
+            )
+            .expect("step");
+        assert_eq!(
+            chat.sent,
+            [domain_prompt(Domain::D3, "A trial", TEXT, Some(&sbp)).unwrap()]
+        );
+        let mut again = Scripted::new(low_run(1));
+        let run = Rob2Agent::new(&mut again)
+            .assess("A trial", TEXT, &[sbp], SIM)
+            .expect("run");
+        assert_eq!(result, run.outcomes[0].domains[1]);
+    }
+
+    #[test]
+    fn a_digest_is_reused_for_the_same_domain() {
+        let text = long_text();
+        let (mut condenser, mut digests) = (Condenser(Vec::new()), Rob2Digests::default());
+        let mut chat = Scripted::new(vec![reply(Domain::D2, &[]), reply(Domain::D2, &[])]);
+        for name in ["SBP", "DBP"] {
+            Rob2Agent::new(&mut chat)
+                .with_condenser(&mut condenser)
+                .with_condense_config(ProcessingConfig::default().with_max_context_chars(200))
+                .assess_domain(
+                    Domain::D2,
+                    "A trial",
+                    &text,
+                    Some(&outcome(name)),
+                    SIM,
+                    &mut digests,
+                )
+                .expect("step");
+        }
+        assert_eq!(condenser.0.len(), 1);
+    }
+
+    #[test]
+    fn a_fresh_digests_condenses_again() {
+        let text = long_text();
+        let mut condenser = Condenser(Vec::new());
+        let mut chat = Scripted::new(vec![reply(Domain::D2, &[]), reply(Domain::D2, &[])]);
+        for name in ["SBP", "DBP"] {
+            Rob2Agent::new(&mut chat)
+                .with_condenser(&mut condenser)
+                .with_condense_config(ProcessingConfig::default().with_max_context_chars(200))
+                .assess_domain(
+                    Domain::D2,
+                    "A trial",
+                    &text,
+                    Some(&outcome(name)),
+                    SIM,
+                    &mut Rob2Digests::default(),
+                )
+                .expect("step");
+        }
+        assert_eq!(condenser.0.len(), 2);
+    }
+
+    /// Fails its first `.1` condensations (setting the stop `.2`, if given),
+    /// then returns a digest; `.0` counts every call.
+    struct Flaky<'s>(usize, usize, Option<&'s AtomicBool>);
+
+    impl QueryCondenser for Flaky<'_> {
+        fn condense(
+            &mut self,
+            _query: &str,
+            _text: &str,
+            _label: &str,
+            _config: &ProcessingConfig,
+        ) -> ProcessingResult {
+            self.0 += 1;
+            if self.0 > self.1 {
+                let mut result = ProcessingResult::failed("unused");
+                result.status = ProcessingStatus::Completed;
+                result.final_result.content = "A digest.".to_string();
+                return result;
+            }
+            if let Some(stop) = self.2 {
+                stop.store(true, Ordering::SeqCst);
+            }
+            ProcessingResult::failed("down")
+        }
+    }
+
+    /// D2 of `name` over `text` within `window`, through `condenser` and `digests`.
+    fn d2_step(
+        chat: &mut Scripted<'_>,
+        condenser: &mut dyn QueryCondenser,
+        text: &str,
+        window: usize,
+        stop: Option<&AtomicBool>,
+        digests: &mut Rob2Digests,
+    ) -> Result<DomainResult, Rob2RunError> {
+        let mut agent = Rob2Agent::new(chat)
+            .with_condenser(condenser)
+            .with_condense_config(ProcessingConfig::default().with_max_context_chars(window));
+        if let Some(stop) = stop {
+            agent = agent.with_stop(stop);
+        }
+        agent.assess_domain(
+            Domain::D2,
+            "A trial",
+            text,
+            Some(&outcome("SBP")),
+            SIM,
+            digests,
+        )
+    }
+
+    #[test]
+    fn a_failed_digest_is_not_kept_by_the_caller_s_digests() {
+        let text = long_text();
+        let (mut condenser, mut digests) = (FailingCondenser(0), Rob2Digests::default());
+        let mut chat = Scripted::new(Vec::new());
+        for _ in 0..2 {
+            let result = d2_step(&mut chat, &mut condenser, &text, 200, None, &mut digests);
+            assert!(matches!(
+                result,
+                Ok(DomainResult::Failed {
+                    domain: Domain::D2,
+                    ..
+                })
+            ));
+        }
+        assert_eq!(condenser.0, 2);
+        assert!(chat.sent.is_empty());
+    }
+
+    #[test]
+    fn a_failed_condensation_succeeds_on_retry() {
+        let text = long_text();
+        let (mut condenser, mut digests) = (Flaky(0, 1, None), Rob2Digests::default());
+        let mut chat = Scripted::new(vec![reply(Domain::D2, &[])]);
+        let first = d2_step(&mut chat, &mut condenser, &text, 200, None, &mut digests);
+        assert!(matches!(first, Ok(DomainResult::Failed { .. })));
+        let second = d2_step(&mut chat, &mut condenser, &text, 200, None, &mut digests);
+        assert!(assessed(&second.expect("step")).condensed);
+        assert_eq!(condenser.0, 2);
+    }
+
+    #[test]
+    fn assess_keeps_a_failed_digest_for_the_run() {
+        let mut condenser = FailingCondenser(0);
+        let mut chat = Scripted::new(Vec::new());
+        let run = Rob2Agent::new(&mut chat)
+            .with_condenser(&mut condenser)
+            .with_condense_config(ProcessingConfig::default().with_max_context_chars(200))
+            .assess(
+                "A trial",
+                &long_text(),
+                &[outcome("SBP"), outcome("DBP")],
+                SIM,
+            )
+            .expect("run");
+        assert_eq!(condenser.0, 5, "once per domain, not per outcome");
+        assert!(run
+            .outcomes
+            .iter()
+            .flat_map(|o| &o.domains)
+            .all(|d| matches!(d, DomainResult::Failed { .. })));
+        assert!(chat.sent.is_empty());
+    }
+
+    #[test]
+    fn a_stop_during_condensation_is_not_kept() {
+        let text = long_text();
+        let stop = AtomicBool::new(false);
+        let (mut condenser, mut digests) = (Flaky(0, 1, Some(&stop)), Rob2Digests::default());
+        let mut chat = Scripted::new(vec![reply(Domain::D2, &[])]);
+        let first = d2_step(
+            &mut chat,
+            &mut condenser,
+            &text,
+            200,
+            Some(&stop),
+            &mut digests,
+        );
+        assert_eq!(first, Err(Rob2RunError::Stopped));
+        stop.store(false, Ordering::SeqCst);
+        let second = d2_step(
+            &mut chat,
+            &mut condenser,
+            &text,
+            200,
+            Some(&stop),
+            &mut digests,
+        );
+        assert!(assessed(&second.expect("step")).condensed);
+        assert_eq!(condenser.0, 2);
+    }
+
+    #[test]
+    fn digests_start_again_for_another_paper_or_budget() {
+        let text = long_text();
+        let other = format!("{text} More.");
+        for (changed, window) in [(other.as_str(), 200), (text.as_str(), 300)] {
+            let (mut condenser, mut digests) = (Condenser(Vec::new()), Rob2Digests::default());
+            let mut chat = Scripted::new(vec![reply(Domain::D2, &[]); 3]);
+            for (given, budget) in [(text.as_str(), 200), (changed, window), (changed, window)] {
+                d2_step(&mut chat, &mut condenser, given, budget, None, &mut digests)
+                    .expect("step");
+            }
+            assert_eq!(condenser.0.len(), 2);
+        }
+    }
+
+    #[test]
+    fn assess_domain_refuses_its_input_before_any_request() {
+        let mut chat = Scripted::new(low_run(1));
+        let sbp = outcome("SBP");
+        for (text, similarity, refusal) in [
+            ("  ", SIM, Rob2RunError::EmptyInput),
+            (TEXT, 0.0, Rob2RunError::InvalidSimilarity),
+        ] {
+            let result = Rob2Agent::new(&mut chat).assess_domain(
+                Domain::D2,
+                "A trial",
+                text,
+                Some(&sbp),
+                similarity,
+                &mut Rob2Digests::default(),
+            );
+            assert_eq!(result, Err(refusal));
+        }
+        assert!(chat.sent.is_empty());
+    }
+
+    #[test]
+    fn a_stop_during_a_second_look_stops_the_step() {
+        let stop = AtomicBool::new(false);
+        let mut chat = Scripted::new(vec![d5_with_measurements()]);
+        chat.stop = Some((&stop, 1));
+        let result = Rob2Agent::new(&mut chat).with_stop(&stop).assess_domain(
+            Domain::D5,
+            "A trial",
+            TEXT,
+            Some(&outcome("SBP")),
+            SIM,
+            &mut Rob2Digests::default(),
+        );
+        assert_eq!(result, Err(Rob2RunError::Stopped));
+        assert_eq!(chat.sent.len(), 1);
+    }
+
+    #[test]
+    fn a_stop_set_before_the_call_is_stopped() {
+        let stop = AtomicBool::new(true);
+        let mut chat = Scripted::new(Vec::new());
+        let result = Rob2Agent::new(&mut chat)
+            .with_stop(&stop)
+            .with_condense_config(ProcessingConfig::default().with_max_context_chars(20))
+            .assess_domain(
+                Domain::D2,
+                "A trial",
+                TEXT,
+                Some(&outcome("SBP")),
+                SIM,
+                &mut Rob2Digests::default(),
+            );
+        assert_eq!(result, Err(Rob2RunError::Stopped));
+        assert!(chat.sent.is_empty());
+    }
+
+    #[test]
+    fn the_wrong_outcome_is_refused() {
+        let mut chat = Scripted::new(low_run(1));
+        let sbp = outcome("SBP");
+        for (domain, given) in [(Domain::D1, Some(&sbp)), (Domain::D4, None)] {
+            let result = Rob2Agent::new(&mut chat).assess_domain(
+                domain,
+                "A trial",
+                TEXT,
+                given,
+                SIM,
+                &mut Rob2Digests::default(),
+            );
+            assert_eq!(result, Err(Rob2RunError::WrongOutcome));
+        }
+        assert!(chat.sent.is_empty());
+        assert_eq!(
+            Rob2RunError::WrongOutcome.to_string(),
+            "D1 is assessed for the trial, D2-D5 for an outcome"
+        );
+    }
+
+    /// D1 and D2-D5 of one outcome, asked one at a time as a caller would.
+    fn steps_of(
+        agent: &mut Rob2Agent<'_>,
+        proposed: &ProposedOutcome,
+    ) -> (DomainResult, Vec<DomainResult>) {
+        let mut held = Rob2Digests::default();
+        let study = agent
+            .assess_domain(Domain::D1, "A trial", TEXT, None, SIM, &mut held)
+            .expect("D1");
+        let domains = Domain::ALL[1..]
+            .iter()
+            .map(|&d| {
+                agent
+                    .assess_domain(d, "A trial", TEXT, Some(proposed), SIM, &mut held)
+                    .expect("domain")
+            })
+            .collect();
+        (study, domains)
+    }
+
+    #[test]
+    fn escalation_is_asked_when_the_rule_needs_it() {
+        let mut replies = concerns_run();
+        replies.push(json!({"escalate": true, "reasoning": "R."}));
+        let mut chat = Scripted::new(replies);
+        let sbp = outcome("SBP");
+        let mut agent = Rob2Agent::new(&mut chat);
+        let (study, domains) = steps_of(&mut agent, &sbp);
+        let asked = agent
+            .escalate_outcome("A trial", &sbp, &study, &domains)
+            .expect("step");
+        let escalation = Escalation {
+            escalate: true,
+            reasoning: "R.".into(),
+        };
+        assert_eq!(asked, Rob2Escalation::Asked(escalation.clone()));
+        let expected = escalation_message(
+            &sbp,
+            assessed(&study),
+            &domains
+                .iter()
+                .map(|d| assessed(d).clone())
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(chat.sent.len(), 6);
+        assert_eq!(chat.sent[5], expected);
+        let combined = combine_outcome(&sbp, &study, domains, asked).expect("fits");
+        assert_eq!(combined.escalation, Some(escalation));
+        assert_eq!(combined.overall, Some(Judgement::High));
+    }
+
+    #[test]
+    fn escalation_is_not_needed_when_a_domain_failed() {
+        let mut chat = Scripted::new(concerns_run());
+        let sbp = outcome("SBP");
+        let mut agent = Rob2Agent::new(&mut chat);
+        let (_, domains) = steps_of(&mut agent, &sbp);
+        let failed = DomainResult::Failed {
+            domain: Domain::D1,
+            reason: "down".into(),
+            retryable: false,
+            status: None,
+        };
+        let asked = agent
+            .escalate_outcome("A trial", &sbp, &failed, &domains)
+            .expect("step");
+        assert_eq!(asked, Rob2Escalation::NotNeeded);
+        assert_eq!(chat.sent.len(), 5);
+        let combined = combine_outcome(&sbp, &failed, domains, asked).expect("fits");
+        assert_eq!(combined.overall, None);
+    }
+
+    #[test]
+    fn a_failed_escalation_is_kept_with_its_reason() {
+        let mut replies = concerns_run();
+        replies.push(json!({}));
+        let mut chat = Scripted::new(replies);
+        chat.replies[5] = Err(ChatJsonError::Transport {
+            message: "down".into(),
+            attempts: 1,
+            retryable: true,
+            status: Some(503),
+        });
+        let sbp = outcome("SBP");
+        let mut agent = Rob2Agent::new(&mut chat);
+        let (study, domains) = steps_of(&mut agent, &sbp);
+        let asked = agent
+            .escalate_outcome("A trial", &sbp, &study, &domains)
+            .expect("step");
+        let Rob2Escalation::Failed {
+            reason,
+            retryable,
+            status,
+        } = asked.clone()
+        else {
+            panic!("expected a failure, got {asked:?}");
+        };
+        assert!(reason.contains("down"));
+        assert_eq!((retryable, status), (true, Some(503)));
+        let combined = combine_outcome(&sbp, &study, domains, asked).expect("fits");
+        assert_eq!(combined.escalation, None);
+        assert_eq!(combined.overall, None);
+        assert_eq!(combined.escalation_error, Some(reason));
+        assert_eq!(
+            (combined.escalation_retryable, combined.escalation_status),
+            (true, Some(503))
+        );
+    }
+
+    #[test]
+    fn a_stop_during_the_escalation_stays_a_stop() {
+        let stop = AtomicBool::new(false);
+        let mut replies = concerns_run();
+        replies.push(json!({"escalate": true}));
+        let mut chat = Scripted::new(replies);
+        let sbp = outcome("SBP");
+        let (study, domains) = steps_of(&mut Rob2Agent::new(&mut chat), &sbp);
+        stop.store(true, Ordering::SeqCst);
+        let result = Rob2Agent::new(&mut chat)
+            .with_stop(&stop)
+            .escalate_outcome("A trial", &sbp, &study, &domains);
+        assert_eq!(result, Err(Rob2RunError::Stopped));
+    }
+
+    #[test]
+    fn the_steps_give_assess_s_run() {
+        let outcomes = [outcome("SBP"), outcome("DBP")];
+        let mut replies = concerns_run();
+        replies.push(json!({"escalate": false, "reasoning": "R."}));
+        replies.extend(low_run(2).into_iter().skip(5));
+        let mut chat = Scripted::new(replies.clone());
+        let whole = Rob2Agent::new(&mut chat)
+            .assess("A trial", TEXT, &outcomes, SIM)
+            .expect("run");
+
+        let mut chat = Scripted::new(replies);
+        let mut agent = Rob2Agent::new(&mut chat);
+        let mut held = Rob2Digests::default();
+        let mut study = None;
+        let mut domains: Vec<Vec<DomainResult>> = vec![Vec::new(); outcomes.len()];
+        let mut results = Vec::new();
+        for step in plan_rob2(outcomes.len()) {
+            match step {
+                Rob2Step::Domain { domain, outcome } => {
+                    let result = agent
+                        .assess_domain(
+                            domain,
+                            "A trial",
+                            TEXT,
+                            outcome.map(|i| &outcomes[i]),
+                            SIM,
+                            &mut held,
+                        )
+                        .expect("domain");
+                    match outcome {
+                        None => study = Some(result),
+                        Some(i) => domains[i].push(result),
+                    }
+                }
+                Rob2Step::Escalation { outcome } => {
+                    let study = study.as_ref().expect("D1 comes first");
+                    let escalation = agent
+                        .escalate_outcome("A trial", &outcomes[outcome], study, &domains[outcome])
+                        .expect("escalation");
+                    results.push(
+                        combine_outcome(
+                            &outcomes[outcome],
+                            study,
+                            std::mem::take(&mut domains[outcome]),
+                            escalation,
+                        )
+                        .expect("fits"),
+                    );
+                }
+            }
+        }
+        let run = Rob2Run {
+            algorithm_version: whole.algorithm_version.clone(),
+            prompt_version: whole.prompt_version,
+            study: study.expect("D1"),
+            outcomes: results,
+        };
+        assert_eq!(run.to_json(), whole.to_json());
+    }
+
+    #[test]
+    fn combine_outcome_refuses_domains_out_of_order() {
+        let mut chat = Scripted::new(low_run(1));
+        let sbp = outcome("SBP");
+        let (study, domains) = steps_of(&mut Rob2Agent::new(&mut chat), &sbp);
+        let mut reversed = domains.clone();
+        reversed.reverse();
+        for bad in [reversed, domains[..3].to_vec()] {
+            assert_eq!(
+                combine_outcome(&sbp, &study, bad, Rob2Escalation::NotNeeded),
+                Err("domains are not D2, D3, D4, D5 in order".to_string())
+            );
+        }
+    }
+
+    #[test]
+    fn a_study_that_is_not_d1_is_refused() {
+        let mut replies = concerns_run();
+        replies.push(json!({"escalate": true}));
+        let mut chat = Scripted::new(replies);
+        let sbp = outcome("SBP");
+        let (_, domains) = steps_of(&mut Rob2Agent::new(&mut chat), &sbp);
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            Rob2Agent::new(&mut chat).escalate_outcome("A trial", &sbp, &domains[0], &domains)
+        }));
+        let message = caught.expect_err("a panic");
+        assert_eq!(
+            message.downcast_ref::<String>().map(String::as_str),
+            Some("the study's domain is not D1")
+        );
+        assert_eq!(
+            combine_outcome(
+                &sbp,
+                &domains[0],
+                domains.clone(),
+                Rob2Escalation::NotNeeded
+            ),
+            Err("the study's domain is not D1".to_string())
+        );
+        assert_eq!(chat.sent.len(), 5);
+    }
+
+    /// Why `combine_outcome` refuses `escalation` for these domains.
+    fn refused(
+        study: &DomainResult,
+        domains: &[DomainResult],
+        escalation: Rob2Escalation,
+    ) -> String {
+        combine_outcome(&outcome("SBP"), study, domains.to_vec(), escalation).expect_err("refused")
+    }
+
+    #[test]
+    fn combine_outcome_refuses_an_escalation_the_domains_do_not_call_for() {
+        let sbp = outcome("SBP");
+        let mut chat = Scripted::new(concerns_run());
+        let (study, domains) = steps_of(&mut Rob2Agent::new(&mut chat), &sbp);
+        let mut low = Scripted::new(low_run(1));
+        let (low_study, low_domains) = steps_of(&mut Rob2Agent::new(&mut low), &sbp);
+        let answer = || {
+            Rob2Escalation::Asked(Escalation {
+                escalate: true,
+                reasoning: "R.".into(),
+            })
+        };
+        let failure = || Rob2Escalation::Failed {
+            reason: "down".into(),
+            retryable: true,
+            status: Some(503),
+        };
+
+        assert_eq!(
+            refused(&low_study, &low_domains, answer()),
+            "escalation given where none is asked"
+        );
+        assert_eq!(
+            refused(&low_study, &low_domains, failure()),
+            "escalation_error given where no escalation is asked"
+        );
+        assert_eq!(
+            refused(&study, &domains, Rob2Escalation::NotNeeded),
+            "the domains need the escalation, and none was given"
+        );
+        let kept = combine_outcome(&sbp, &study, domains, failure()).expect("fits");
+        assert_eq!(kept.escalation_error.as_deref(), Some("down"));
+    }
+
+    #[test]
+    fn escalate_outcome_refuses_domains_out_of_order_before_any_request() {
+        let sbp = outcome("SBP");
+        let mut chat = Scripted::new(concerns_run());
+        let (study, domains) = steps_of(&mut Rob2Agent::new(&mut chat), &sbp);
+        let sent = chat.sent.len();
+        let mut reversed = domains.clone();
+        reversed.reverse();
+        for bad in [reversed, domains[..3].to_vec()] {
+            let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                Rob2Agent::new(&mut chat).escalate_outcome("A trial", &sbp, &study, &bad)
+            }));
+            assert!(caught.is_err());
+        }
+        assert_eq!(chat.sent.len(), sent);
+    }
+
     #[test]
     fn a_paper_over_the_window_without_a_condenser_fails_every_domain_visibly() {
         let mut chat = Scripted::new(low_run(1));
@@ -2308,5 +3304,71 @@ pub(crate) mod tests {
         bare.result = None;
         let prompt = domain_prompt(Domain::D2, "t", "p", Some(&bare)).expect("prompt");
         assert!(prompt.contains("Timepoint: not stated\nReported result: none extracted"));
+    }
+
+    #[test]
+    fn domain_prompt_chars_counts_the_sent_prompt() {
+        let outcome = outcome("Systolic blood pressure");
+        let correction = "\n\n".len() + JSON_CORRECTION_NOTE.chars().count();
+        let sent = ROB2_SYSTEM_PROMPT.chars().count()
+            + domain_prompt(Domain::D3, "", "", Some(&outcome))
+                .expect("a prompt")
+                .chars()
+                .count()
+            + correction;
+        assert_eq!(domain_prompt_chars(Domain::D3, Some(&outcome)), Ok(sent));
+        let query = condense_query(Domain::D3);
+        let condensing = [
+            PICO_CONDENSE_EXTRACTION_PROMPT,
+            PICO_CONDENSE_CONSOLIDATION_PROMPT,
+        ]
+        .iter()
+        .map(|t| {
+            t.replace("{query}", query)
+                .replace("{content}", "")
+                .chars()
+                .count()
+        })
+        .max()
+        .expect("two prompts");
+        assert!(sent >= ROB2_SYSTEM_PROMPT.chars().count() + condensing + correction);
+        let d1 = ROB2_SYSTEM_PROMPT.chars().count()
+            + domain_prompt(Domain::D1, "", "", None)
+                .expect("a prompt")
+                .chars()
+                .count()
+            + correction;
+        assert_eq!(domain_prompt_chars(Domain::D1, None), Ok(d1));
+    }
+
+    #[test]
+    fn domain_prompt_chars_refuses_an_outcome_that_does_not_match() {
+        let outcome = outcome("Systolic blood pressure");
+        assert!(domain_prompt_chars(Domain::D1, Some(&outcome)).is_err());
+        assert!(domain_prompt_chars(Domain::D2, None).is_err());
+    }
+
+    #[test]
+    fn d5_counts_the_larger_of_facts_and_second_look() {
+        let outcome = outcome("Systolic blood pressure");
+        let look = OtherMeasurement {
+            label: String::new(),
+            named: Vec::new(),
+            result: Vec::new(),
+            second_look: None,
+            second_look_error: None,
+            quotes_not_found: Vec::new(),
+            contradicted: Vec::new(),
+            quotes_dropped: 0,
+        };
+        let facts =
+            D5_FACTS_SYSTEM_PROMPT.chars().count() + facts_prompt("", "", &outcome).chars().count();
+        let second = D5_SECOND_LOOK_SYSTEM_PROMPT.chars().count()
+            + second_look_prompt("", "", &outcome, &look).chars().count();
+        let correction = "\n\n".len() + JSON_CORRECTION_NOTE.chars().count();
+        assert_eq!(
+            domain_prompt_chars(Domain::D5, Some(&outcome)),
+            Ok(facts.max(second) + correction)
+        );
     }
 }

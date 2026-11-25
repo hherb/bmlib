@@ -50,6 +50,7 @@ from bmlib.quality._full_text_agent import (
     UnreadableReplyError,
     _FullTextAgent,
     check_min_similarity,
+    step_prompt_chars,
 )
 from bmlib.quality.data_models import STUDY_DESIGN_MAPPING, RctLayout, StudyDesign
 from bmlib.quality.evidence_ladder import U32_MAX
@@ -67,6 +68,7 @@ __all__ = [
     "ProposalError",
     "ProposalErrorKind",
     "QueryCondenser",
+    "design_prompt_chars",
     "read_design_reply",
 ]
 
@@ -286,6 +288,18 @@ class DesignProposal:
             condensed=_wire(data, "condensed", bool, "a boolean"),
             prompt_version=_prompt_version(data),
         )
+
+
+def design_prompt_chars() -> int:
+    """The characters of the longest prompt the design step sends, without the paper.
+
+    The system prompt plus the longer of the question (as sent, with an empty
+    title and paper) and the two condensation prompts, each as a retry after an
+    unparseable reply sends it.  A caller subtracts it from the window when
+    sizing the paper's budget.
+    """
+    question = f"{DESIGN_TASK_PROMPT}\n\nPaper Title: \n\nPaper Text:\n"
+    return step_prompt_chars([(DESIGN_SYSTEM_PROMPT, question)], DESIGN_CONDENSE_QUERY)
 
 
 def read_design_reply(data: dict[str, Any], text: str, min_similarity: float) -> DesignProposal:

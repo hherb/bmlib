@@ -26,6 +26,12 @@ use bmlib::llm::LLMMessage;
 use bmlib::quality::agent_chat::JsonChat;
 use bmlib::quality::evidence_ladder::LadderSettings;
 use bmlib::quality::evidence_weight::{assess_unattended, AgentOptions, EvidenceWeight};
+use bmlib::quality::rob2_algorithm::ROB2_ALGORITHM_VERSION;
+use bmlib::quality::rob2_questions::ROB2_PROMPT_VERSION;
+use bmlib::quality::{
+    combine_outcome, plan_rob2, DesignAgent, DomainResult, OutcomeAgent, Rob2Agent, Rob2Digests,
+    Rob2Run, Rob2Step,
+};
 use serde_json::Value;
 
 const FIXTURE: &str = include_str!("../../../tests/fixtures/evidence_weight.json");
@@ -137,4 +143,84 @@ fn every_refusal_names_what_does_not_add_up() {
             case["name"]
         );
     }
+}
+
+/// The assessed case driven one step at a time (design, outcomes, then
+/// `plan_rob2`'s steps with one set of digests) assembles the same `Rob2Run`
+/// the fixture records for `assess_unattended`.
+#[test]
+fn the_assessed_case_step_by_step() {
+    let fixture = fixture();
+    let case = &fixture["cases"][3];
+    let (title, text) = (
+        fixture["title"].as_str().expect("title"),
+        fixture["text"].as_str().expect("text"),
+    );
+    let similarity = fixture["min_similarity"].as_f64().expect("similarity");
+    let replies = case["replies"].as_array().expect("replies").clone();
+    let count = replies.len();
+    let mut chat = Scripted { replies, sent: 0 };
+    let options = AgentOptions::default();
+
+    DesignAgent::new(&mut chat)
+        .with_temperature(options.temperature)
+        .with_max_tokens(options.max_tokens)
+        .with_max_retries(options.max_retries)
+        .propose(title, text, similarity)
+        .expect("a design");
+    let proposal = OutcomeAgent::new(&mut chat)
+        .with_temperature(options.temperature)
+        .with_max_tokens(options.max_tokens)
+        .with_max_retries(options.max_retries)
+        .propose(title, text, similarity)
+        .expect("outcomes");
+
+    let mut agent = Rob2Agent::new(&mut chat)
+        .with_temperature(options.temperature)
+        .with_max_tokens(options.max_tokens)
+        .with_max_retries(options.max_retries);
+    let mut digests = Rob2Digests::default();
+    let mut study: Option<DomainResult> = None;
+    let mut domains = Vec::new();
+    let mut results = Vec::new();
+    for step in plan_rob2(proposal.outcomes.len()) {
+        match step {
+            Rob2Step::Domain { domain, outcome } => {
+                let result = agent
+                    .assess_domain(
+                        domain,
+                        title,
+                        text,
+                        outcome.map(|i| &proposal.outcomes[i]),
+                        similarity,
+                        &mut digests,
+                    )
+                    .expect("a domain");
+                if outcome.is_none() {
+                    study = Some(result);
+                } else {
+                    domains.push(result);
+                }
+            }
+            Rob2Step::Escalation { outcome } => {
+                let proposed = &proposal.outcomes[outcome];
+                let study = study.as_ref().expect("D1 first");
+                let escalation = agent
+                    .escalate_outcome(title, proposed, study, &domains)
+                    .expect("an escalation");
+                let combined =
+                    combine_outcome(proposed, study, std::mem::take(&mut domains), escalation)
+                        .expect("the steps fit");
+                results.push(combined);
+            }
+        }
+    }
+    let run = Rob2Run {
+        algorithm_version: ROB2_ALGORITHM_VERSION.to_string(),
+        prompt_version: ROB2_PROMPT_VERSION,
+        study: study.expect("D1"),
+        outcomes: results,
+    };
+    assert_eq!(run.to_json(), case["expected"]["run"]);
+    assert_eq!(chat.sent, count);
 }

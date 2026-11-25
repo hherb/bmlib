@@ -25,24 +25,38 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bmlib.agents.base import JSON_CORRECTION_NOTE
 from bmlib.citations import PassageContradiction
-from bmlib.context_processor import ProcessingConfig, ProcessingStatus
+from bmlib.context_processor import ProcessingConfig, ProcessingStatus, ProcessingStoppedError
 from bmlib.llm.data_types import LLMResponse
 from bmlib.quality._condense import CondensationRefusedError
+from bmlib.quality._full_text_agent import step_prompt_chars
 from bmlib.quality.evidence_ladder import EffectScale, ReportedResult
 from bmlib.quality.outcome_agent import ProposedOutcome
+from bmlib.quality.pico_agent import (
+    PICO_CONDENSE_CONSOLIDATION_PROMPT,
+    PICO_CONDENSE_EXTRACTION_PROMPT,
+)
 from bmlib.quality.pico_models import PicoContradictedQuote
 from bmlib.quality.rob2_agent import (
     ROB2_SYSTEM_PROMPT,
     DomainAssessment,
     DomainFailed,
+    DomainResult,
     Escalation,
+    EscalationFailed,
     OutcomeRob2,
     Rob2Agent,
+    Rob2Digests,
     Rob2Run,
     Rob2RunError,
     Rob2RunErrorKind,
+    Rob2Step,
+    combine_outcome,
     domain_prompt,
+    domain_prompt_chars,
+    escalation_message,
+    plan_rob2,
     read_domain_reply,
     read_escalation_reply,
 )
@@ -54,12 +68,19 @@ from bmlib.quality.rob2_algorithm import (
     questions,
 )
 from bmlib.quality.rob2_d5_checks import D5_FACTS
-from bmlib.quality.rob2_d5_facts import D5_FACTS_SYSTEM_PROMPT, facts_prompt
+from bmlib.quality.rob2_d5_facts import (
+    D5_FACTS_SYSTEM_PROMPT,
+    D5_SECOND_LOOK_SYSTEM_PROMPT,
+    OtherMeasurement,
+    facts_prompt,
+    second_look_prompt,
+)
 from bmlib.quality.rob2_questions import (
     D5_OUTCOME_SWITCHING,
     ESCALATION_PROMPT,
     ROB2_CONDENSE_QUERIES,
     ROB2_PROMPT_VERSION,
+    condense_query,
     domain_title,
     question_text,
 )
@@ -612,6 +633,209 @@ class TestTheAgent:
         assert raised.value.kind is kind
         agent.llm.chat.assert_not_called()
 
+    def test_assess_domain_asks_one_domain(self) -> None:
+        agent = make_agent(reply(Domain.D3))
+        result = agent.assess_domain(
+            Domain.D3, " A trial ", TEXT, OUTCOME, min_similarity=SIM, digests=Rob2Digests()
+        )
+        assert sent(agent) == [domain_prompt(Domain.D3, "A trial", TEXT, OUTCOME)]
+        whole = make_agent(*low_run()).assess("A trial", TEXT, [OUTCOME], min_similarity=SIM)
+        assert result == whole.outcomes[0].domains[1]
+
+    def _two_outcomes_d2(
+        self, condenser: ScriptedCondenser, digests: list[Rob2Digests]
+    ) -> Rob2Agent:
+        text = TEXT + " " + "Filler sentence about nothing. " * 20
+        agent = make_agent(
+            reply(Domain.D2),
+            reply(Domain.D2),
+            condenser=condenser,
+            condense_config=ProcessingConfig(max_context_chars=200),
+        )
+        for outcome, held in zip([OUTCOME, SECOND], digests, strict=True):
+            agent.assess_domain(
+                Domain.D2, "A trial", text, outcome, min_similarity=SIM, digests=held
+            )
+        return agent
+
+    def test_a_digest_is_reused_for_the_same_domain(self) -> None:
+        condenser = ScriptedCondenser("A digest.")
+        held = Rob2Digests()
+        self._two_outcomes_d2(condenser, [held, held])
+        assert len(condenser.queries) == 1
+
+    def test_a_fresh_digests_condenses_again(self) -> None:
+        condenser = ScriptedCondenser("A digest.")
+        self._two_outcomes_d2(condenser, [Rob2Digests(), Rob2Digests()])
+        assert len(condenser.queries) == 2
+
+    _LONG = TEXT + " " + "Filler sentence about nothing. " * 20
+
+    class _Failing(ScriptedCondenser):
+        """Raises each of ``failures`` in turn, then returns the digest."""
+
+        def __init__(self, digest: str, *failures: BaseException) -> None:
+            super().__init__(digest)
+            self.failures = list(failures)
+
+        def condense(self, query: str, *args: Any, **kwargs: Any) -> Any:
+            self.queries.append(query)
+            if self.failures:
+                raise self.failures.pop(0)
+            return self.digest, [], ProcessingStatus.COMPLETED
+
+    @staticmethod
+    def _down() -> CondensationRefusedError:
+        cause = ConnectionError("down")
+        cause.status_code = 503  # type: ignore[attr-defined]
+        refused = CondensationRefusedError("the model is down")
+        refused.__cause__ = cause
+        return refused
+
+    def test_a_failed_digest_is_not_kept_by_the_caller_s_digests(self) -> None:
+        condenser = self._Failing("unused", *[CondensationRefusedError("does not fit")] * 2)
+        agent = make_agent(
+            condenser=condenser, condense_config=ProcessingConfig(max_context_chars=200)
+        )
+        held = Rob2Digests()
+        for outcome in (OUTCOME, SECOND):
+            result = agent.assess_domain(
+                Domain.D2, "A trial", self._LONG, outcome, min_similarity=SIM, digests=held
+            )
+            assert isinstance(result, DomainFailed) and result.domain is Domain.D2
+        assert len(condenser.queries) == 2
+        agent.llm.chat.assert_not_called()
+
+    def test_a_retryable_condensation_failure_succeeds_on_retry(self) -> None:
+        condenser = self._Failing("A digest.", self._down())
+        agent = make_agent(
+            reply(Domain.D2),
+            condenser=condenser,
+            condense_config=ProcessingConfig(max_context_chars=200),
+        )
+        held = Rob2Digests()
+        first, second = (
+            agent.assess_domain(
+                Domain.D2, "A trial", self._LONG, OUTCOME, min_similarity=SIM, digests=held
+            )
+            for _ in range(2)
+        )
+        assert isinstance(first, DomainFailed)
+        assert (first.retryable, first.status) == (True, 503)
+        assert assessed(second).condensed
+        assert len(condenser.queries) == 2
+
+    def test_assess_keeps_a_failed_digest_for_the_run(self) -> None:
+        refusals = [CondensationRefusedError("does not fit")] * 5
+        condenser = self._Failing("unused", *refusals)
+        agent = make_agent(
+            condenser=condenser, condense_config=ProcessingConfig(max_context_chars=200)
+        )
+        run = agent.assess("A trial", self._LONG, [OUTCOME, SECOND], min_similarity=SIM)
+        assert len(condenser.queries) == 5  # once per domain, not per outcome
+        assert all(isinstance(d, DomainFailed) for o in run.outcomes for d in o.domains)
+        agent.llm.chat.assert_not_called()
+
+    def test_a_stop_during_condensation_is_not_kept(self) -> None:
+        condenser = self._Failing("A digest.", ProcessingStoppedError("stopped"))
+        agent = make_agent(
+            reply(Domain.D2),
+            condenser=condenser,
+            condense_config=ProcessingConfig(max_context_chars=200),
+        )
+        held = Rob2Digests()
+        with pytest.raises(Rob2RunError) as raised:
+            agent.assess_domain(
+                Domain.D2, "A trial", self._LONG, OUTCOME, min_similarity=SIM, digests=held
+            )
+        assert raised.value.kind is Rob2RunErrorKind.STOPPED
+        result = agent.assess_domain(
+            Domain.D2, "A trial", self._LONG, OUTCOME, min_similarity=SIM, digests=held
+        )
+        assert assessed(result).condensed
+        assert len(condenser.queries) == 2
+
+    @pytest.mark.parametrize("change", ["text", "budget"])
+    def test_digests_start_again_for_another_paper_or_budget(self, change: str) -> None:
+        condenser = ScriptedCondenser("A digest.")
+        other = self._LONG + " More." if change == "text" else self._LONG
+        budget = 300 if change == "budget" else 200
+        held = Rob2Digests()
+        for text, window in ((self._LONG, 200), (other, budget), (other, budget)):
+            agent = make_agent(
+                reply(Domain.D2),
+                condenser=condenser,
+                condense_config=ProcessingConfig(max_context_chars=window),
+            )
+            agent.assess_domain(
+                Domain.D2, "A trial", text, OUTCOME, min_similarity=SIM, digests=held
+            )
+        assert len(condenser.queries) == 2
+
+    @pytest.mark.parametrize(
+        ("text", "similarity", "kind"),
+        [
+            ("  ", SIM, Rob2RunErrorKind.EMPTY_INPUT),
+            (TEXT, 0.0, Rob2RunErrorKind.INVALID_SIMILARITY),
+        ],
+    )
+    def test_assess_domain_refuses_its_input_before_any_request(
+        self, text: str, similarity: float, kind: Rob2RunErrorKind
+    ) -> None:
+        agent = make_agent(*low_run())
+        with pytest.raises(Rob2RunError) as raised:
+            agent.assess_domain(
+                Domain.D2,
+                "A trial",
+                text,
+                OUTCOME,
+                min_similarity=similarity,
+                digests=Rob2Digests(),
+            )
+        assert raised.value.kind is kind
+        agent.llm.chat.assert_not_called()
+
+    def test_a_stop_during_a_second_look_stops_the_step(self) -> None:
+        stop = threading.Event()
+        replies = iter(_response(json.dumps(r)) for r in [_d5_with_measurements(), _NOT_FOUND])
+
+        def answer(**kwargs: Any) -> LLMResponse:
+            stop.set()
+            return next(replies)
+
+        agent = make_agent(stop=stop)
+        agent.llm.chat.side_effect = answer
+        with pytest.raises(Rob2RunError) as raised:
+            agent.assess_domain(
+                Domain.D5, "A trial", TEXT, OUTCOME, min_similarity=SIM, digests=Rob2Digests()
+            )
+        assert raised.value.kind is Rob2RunErrorKind.STOPPED
+        assert agent.llm.chat.call_count == 1
+
+    def test_a_stop_set_before_the_call_is_stopped(self) -> None:
+        stop = threading.Event()
+        stop.set()
+        agent = make_agent(stop=stop, condense_config=ProcessingConfig(max_context_chars=20))
+        with pytest.raises(Rob2RunError) as raised:
+            agent.assess_domain(
+                Domain.D2, "A trial", TEXT, OUTCOME, min_similarity=SIM, digests=Rob2Digests()
+            )
+        assert raised.value.kind is Rob2RunErrorKind.STOPPED
+        agent.llm.chat.assert_not_called()
+
+    @pytest.mark.parametrize(("domain", "outcome"), [(Domain.D1, OUTCOME), (Domain.D4, None)])
+    def test_the_wrong_outcome_is_refused(
+        self, domain: Domain, outcome: ProposedOutcome | None
+    ) -> None:
+        agent = make_agent(*low_run())
+        with pytest.raises(Rob2RunError) as raised:
+            agent.assess_domain(
+                domain, "A trial", TEXT, outcome, min_similarity=SIM, digests=Rob2Digests()
+            )
+        assert raised.value.kind is Rob2RunErrorKind.WRONG_OUTCOME
+        assert str(raised.value) == "D1 is assessed for the trial, D2-D5 for an outcome"
+        agent.llm.chat.assert_not_called()
+
     def test_a_paper_over_the_window_is_condensed_per_domain(self) -> None:
         text = TEXT + " " + "Filler sentence about nothing. " * 20
         condenser = ScriptedCondenser("A digest.")
@@ -870,3 +1094,243 @@ def test_the_d5_prompt_names_the_outcome_and_the_switching_check() -> None:
         domain_prompt(Domain.D1, "A trial", TEXT, OUTCOME)
     with pytest.raises(ValueError, match="D2"):
         domain_prompt(Domain.D2, "A trial", TEXT, None)
+
+
+def test_the_plan_is_d1_then_each_outcomes_domains_and_escalation() -> None:
+    plan = plan_rob2(2)
+    assert [s.to_dict() for s in plan][:6] == [
+        {"kind": "domain", "domain": "D1", "outcome": None},
+        {"kind": "domain", "domain": "D2", "outcome": 0},
+        {"kind": "domain", "domain": "D3", "outcome": 0},
+        {"kind": "domain", "domain": "D4", "outcome": 0},
+        {"kind": "domain", "domain": "D5", "outcome": 0},
+        {"kind": "escalation", "domain": None, "outcome": 0},
+    ]
+    assert len(plan) == 1 + 2 * 5
+
+
+def test_no_outcome_plans_nothing() -> None:
+    assert plan_rob2(0) == []
+
+
+# --- The escalation and the outcome, apart ---
+
+
+def _concerns_replies() -> list[Any]:
+    """The five replies of one outcome whose D1 and D5 have some concerns."""
+    replies = [{"answers": CONCERNS[Domain.D1]}] + [reply(d) for d in list(Domain)[1:4]]
+    return [*replies, D5_CONCERNS]
+
+
+def _domains_of(agent: Rob2Agent) -> tuple[DomainResult, list[DomainResult]]:
+    """D1, then D2-D5 of ``OUTCOME``, asked one at a time as a caller would."""
+    held = Rob2Digests()
+    study = agent.assess_domain(Domain.D1, "A trial", TEXT, None, min_similarity=SIM, digests=held)
+    domains = [
+        agent.assess_domain(d, "A trial", TEXT, OUTCOME, min_similarity=SIM, digests=held)
+        for d in list(Domain)[1:]
+    ]
+    return study, domains
+
+
+def test_escalation_is_asked_when_the_rule_needs_it() -> None:
+    agent = make_agent(*_concerns_replies(), {"escalate": True, "reasoning": "R."})
+    study, domains = _domains_of(agent)
+    assert agent.llm.chat.call_count == 5
+
+    asked = agent.escalate_outcome("A trial", OUTCOME, study, domains)
+
+    assert asked == Escalation(True, "R.")
+    assert sent(agent)[5] == escalation_message(OUTCOME, study, domains)
+    assert agent.llm.chat.call_count == 6
+    combined = combine_outcome(OUTCOME, study, domains, asked)
+    assert combined.escalation == asked and combined.overall is Judgement.HIGH
+
+
+def test_escalation_is_not_needed_when_a_domain_failed() -> None:
+    agent = make_agent(*_concerns_replies())
+    _, domains = _domains_of(agent)
+    failed = DomainFailed(Domain.D1, "down")
+
+    assert agent.escalate_outcome("A trial", OUTCOME, failed, domains) is None
+
+    assert agent.llm.chat.call_count == 5
+    assert combine_outcome(OUTCOME, failed, domains, None).overall is None
+
+
+def test_a_failed_escalation_is_kept_with_its_reason() -> None:
+    failure = ConnectionError("down")
+    failure.status_code = 503  # type: ignore[attr-defined]
+    agent = make_agent(*_concerns_replies())
+    agent.llm.chat.side_effect = [*agent.llm.chat.side_effect, failure]
+    study, domains = _domains_of(agent)
+
+    with patch("bmlib.agents.base.time.sleep"):
+        failed = agent.escalate_outcome("A trial", OUTCOME, study, domains)
+
+    assert isinstance(failed, EscalationFailed)
+    assert (failed.retryable, failed.status) == (True, 503) and "down" in failed.reason
+    combined = combine_outcome(OUTCOME, study, domains, failed)
+    assert combined.escalation is None and combined.overall is None
+    assert combined.escalation_error == failed.reason
+    assert (combined.escalation_retryable, combined.escalation_status) == (True, 503)
+
+
+def test_a_stop_during_the_escalation_stays_a_stop() -> None:
+    stop = threading.Event()
+    agent = make_agent(*_concerns_replies(), {"escalate": True}, stop=stop)
+    study, domains = _domains_of(agent)
+    stop.set()
+    with pytest.raises(Rob2RunError) as raised:
+        agent.escalate_outcome("A trial", OUTCOME, study, domains)
+    assert raised.value.kind is Rob2RunErrorKind.STOPPED
+
+
+def test_the_steps_give_assess_s_run() -> None:
+    outcomes = [OUTCOME, SECOND]
+    replies = [*_concerns_replies(), {"escalate": False, "reasoning": "R."}, *low_run(2)[5:]]
+    whole = make_agent(*replies).assess("A trial", TEXT, outcomes, min_similarity=SIM)
+
+    agent = make_agent(*replies)
+    held = Rob2Digests()
+    study: DomainResult | None = None
+    done: dict[int, list[DomainResult]] = {}
+    results: list[OutcomeRob2] = []
+    for step in plan_rob2(len(outcomes)):
+        if step.kind == "domain":
+            assert step.domain is not None
+            proposed = None if step.outcome is None else outcomes[step.outcome]
+            result = agent.assess_domain(
+                step.domain, "A trial", TEXT, proposed, min_similarity=SIM, digests=held
+            )
+            if step.outcome is None:
+                study = result
+            else:
+                done.setdefault(step.outcome, []).append(result)
+        else:
+            assert step.outcome is not None and study is not None
+            index = step.outcome
+            escalation = agent.escalate_outcome("A trial", outcomes[index], study, done[index])
+            results.append(combine_outcome(outcomes[index], study, done[index], escalation))
+    assert study is not None
+    run = Rob2Run(whole.algorithm_version, whole.prompt_version, study, results)
+
+    assert run.to_dict() == whole.to_dict()
+
+
+def test_combine_outcome_refuses_domains_out_of_order() -> None:
+    agent = make_agent(*low_run())
+    study, domains = _domains_of(agent)
+    with pytest.raises(ValueError, match="D2"):
+        combine_outcome(OUTCOME, study, domains[::-1], None)
+    with pytest.raises(ValueError, match="D2"):
+        combine_outcome(OUTCOME, study, domains[:3], None)
+
+
+def test_combine_outcome_refuses_an_escalation_the_domains_do_not_call_for() -> None:
+    needing = make_agent(*_concerns_replies())
+    study, domains = _domains_of(needing)
+    low = make_agent(*low_run())
+    low_study, low_domains = _domains_of(low)
+    answer = Escalation(True, "R.")
+    failed = EscalationFailed("down", True, 503)
+
+    with pytest.raises(ValueError, match="none is asked"):
+        combine_outcome(OUTCOME, low_study, low_domains, answer)
+    with pytest.raises(ValueError, match="no escalation is asked"):
+        combine_outcome(OUTCOME, low_study, low_domains, failed)
+    with pytest.raises(ValueError, match="need the escalation"):
+        combine_outcome(OUTCOME, study, domains, None)
+    assert combine_outcome(OUTCOME, study, domains, failed).escalation_error == "down"
+
+
+@pytest.mark.parametrize("needed", [True, False])
+def test_escalate_outcome_refuses_an_unknown_provider_before_any_request(needed: bool) -> None:
+    agent = make_agent(*(_concerns_replies() if needed else low_run()))
+    study, domains = _domains_of(agent)
+    agent.llm._get_provider = MagicMock(side_effect=ValueError("Unknown provider 'nosuch'"))
+    with pytest.raises(ValueError, match="nosuch"):
+        agent.escalate_outcome("A trial", OUTCOME, study, domains)
+    assert agent.llm.chat.call_count == 5
+
+
+def test_a_study_that_is_not_d1_is_refused() -> None:
+    agent = make_agent(*_concerns_replies(), {"escalate": True})
+    study, domains = _domains_of(agent)
+    with pytest.raises(ValueError, match="^the study's domain is not D1$"):
+        agent.escalate_outcome("A trial", OUTCOME, domains[0], domains)
+    with pytest.raises(ValueError, match="^the study's domain is not D1$"):
+        combine_outcome(OUTCOME, domains[0], domains, None)
+    assert agent.llm.chat.call_count == 5
+
+
+def test_escalate_outcome_refuses_domains_out_of_order_before_any_request() -> None:
+    agent = make_agent(*_concerns_replies(), {"escalate": True})
+    study, domains = _domains_of(agent)
+    for bad in (domains[::-1], domains[:3]):
+        with pytest.raises(ValueError, match="D2"):
+            agent.escalate_outcome("A trial", OUTCOME, study, bad)
+    assert agent.llm.chat.call_count == 5
+
+
+_CORRECTION = len("\n\n") + len(JSON_CORRECTION_NOTE)
+
+
+def _condensing(query: str) -> int:
+    """The longer condensation prompt for *query*, with empty content."""
+    return max(
+        len(t.replace("{query}", query).replace("{content}", ""))
+        for t in (PICO_CONDENSE_EXTRACTION_PROMPT, PICO_CONDENSE_CONSOLIDATION_PROMPT)
+    )
+
+
+def test_domain_prompt_chars_counts_the_sent_prompt() -> None:
+    sent = len(ROB2_SYSTEM_PROMPT) + len(domain_prompt(Domain.D3, "", "", OUTCOME)) + _CORRECTION
+    assert domain_prompt_chars(Domain.D3, OUTCOME) == sent
+    assert sent >= len(ROB2_SYSTEM_PROMPT) + _condensing(condense_query(Domain.D3)) + _CORRECTION
+    assert domain_prompt_chars(Domain.D1, None) == (
+        len(ROB2_SYSTEM_PROMPT) + len(domain_prompt(Domain.D1, "", "", None)) + _CORRECTION
+    )
+
+
+def test_domain_prompt_chars_refuses_an_outcome_that_does_not_match() -> None:
+    with pytest.raises(ValueError):
+        domain_prompt_chars(Domain.D1, OUTCOME)
+    with pytest.raises(ValueError):
+        domain_prompt_chars(Domain.D2, None)
+
+
+def test_d5_counts_the_larger_of_facts_and_second_look() -> None:
+    facts = len(D5_FACTS_SYSTEM_PROMPT) + len(facts_prompt("", "", OUTCOME))
+    look = OtherMeasurement(label="", named=[], result=[])
+    second = len(D5_SECOND_LOOK_SYSTEM_PROMPT) + len(second_look_prompt("", "", OUTCOME, look))
+    assert domain_prompt_chars(Domain.D5, OUTCOME) == max(facts, second) + _CORRECTION
+
+
+@pytest.mark.parametrize(
+    ("kind", "domain", "outcome", "message"),
+    [
+        ("bogus", None, 0, "kind is not domain or escalation"),
+        ("domain", Domain.D2, -1, "outcome is not an index"),
+        ("domain", Domain.D2, True, "outcome is not an index"),
+        ("domain", Domain.D1, 0, "D1 is judged for the trial, D2-D5 for an outcome"),
+        ("domain", Domain.D2, None, "D1 is judged for the trial, D2-D5 for an outcome"),
+        ("domain", None, 0, "a domain step names no domain"),
+        ("escalation", Domain.D3, 0, "an escalation step names an outcome and no domain"),
+        ("escalation", None, None, "an escalation step names an outcome and no domain"),
+    ],
+)
+def test_a_step_no_plan_holds_is_refused(
+    kind: Any, domain: Domain | None, outcome: Any, message: str
+) -> None:
+    with pytest.raises(ValueError) as raised:
+        Rob2Step(kind, domain, outcome)
+    assert str(raised.value) == message
+
+
+def test_step_prompt_chars_takes_the_longest_ask_and_the_condensation() -> None:
+    query = condense_query(Domain.D2)
+    assert step_prompt_chars([("S", "q")], query) == 1 + _condensing(query) + _CORRECTION
+    long = "q" * (_condensing(query) + 7)
+    asks = [("S", "q"), ("SS", long)]
+    assert step_prompt_chars(asks, query) == 2 + len(long) + _CORRECTION

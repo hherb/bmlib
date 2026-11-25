@@ -32,15 +32,19 @@ from typing import Any
 
 import pytest
 
-from bmlib.quality.outcome_agent import ProposedOutcome
+from bmlib.quality.design_agent import design_prompt_chars
+from bmlib.quality.outcome_agent import ProposedOutcome, outcome_prompt_chars
 from bmlib.quality.rob2_agent import (
     ROB2_DOMAIN_PROMPT,
     ROB2_SYSTEM_PROMPT,
     DomainAssessment,
     Escalation,
     Rob2Run,
+    Rob2Step,
     domain_prompt,
+    domain_prompt_chars,
     escalation_message,
+    plan_rob2,
     read_domain_reply,
     read_escalation_reply,
 )
@@ -148,6 +152,34 @@ def test_the_generator_still_builds_the_fixtures() -> None:
     for name, build in (
         ("rob2_replies.json", make.build_replies),
         ("rob2_run.json", make.build_run),
+        ("rob2_steps.json", make.build_steps),
     ):
         expected = json.dumps(build(), ensure_ascii=False, indent=1) + "\n"
         assert (FIXTURES / name).read_text(encoding="utf-8") == expected, name
+
+
+def test_the_plan_is_the_contracts() -> None:
+    steps: dict[str, Any] = json.loads((FIXTURES / "rob2_steps.json").read_text("utf-8"))
+    for case in steps["plans"]:
+        assert [s.to_dict() for s in plan_rob2(case["outcomes"])] == case["steps"]
+        assert [Rob2Step.from_dict(s) for s in case["steps"]] == plan_rob2(case["outcomes"])
+
+
+def test_the_refused_steps_are_the_contracts() -> None:
+    steps: dict[str, Any] = json.loads((FIXTURES / "rob2_steps.json").read_text("utf-8"))
+    assert steps["refused"]
+    for case in steps["refused"]:
+        with pytest.raises(ValueError) as raised:
+            Rob2Step.from_dict(case["step"])
+        assert str(raised.value) == case["error"], case["step"]
+
+
+def test_the_prompt_sizes_are_the_contracts() -> None:
+    make = _generator()
+    sizes = json.loads((FIXTURES / "rob2_steps.json").read_text("utf-8"))["prompt_chars"]
+    assert design_prompt_chars() == sizes["design"]
+    assert outcome_prompt_chars() == sizes["outcomes"]
+    assert sizes["domains"].keys() == {d.value for d in Domain}
+    for domain in Domain:
+        outcome = None if domain is Domain.D1 else make.OUTCOME
+        assert domain_prompt_chars(domain, outcome) == sizes["domains"][domain.value]

@@ -11,6 +11,19 @@ The Python library is documented separately, in the repository's
 
 ### Added
 
+- **RoB 2 a step at a time** (as in Python; the argument is the root
+  `CHANGELOG.md`'s). `quality::plan_rob2` and `Rob2Step`,
+  `Rob2Step::from_json`, `Rob2Agent::assess_domain` with `Rob2Digests`,
+  `Rob2Agent::escalate_outcome` returning `Rob2Escalation` (`NotNeeded`,
+  `Asked`, `Failed`; it panics on a study that is not D1 or domains not in
+  D2 to D5 order, Python's `ValueError`), `combine_outcome` (returning
+  `Result<OutcomeRob2, String>`: those, and an escalation the domains do not
+  fit, are an `Err`) and
+  `Rob2RunError::WrongOutcome` (**Breaking** for an exhaustive `match` on
+  `Rob2RunError`, which is not `#[non_exhaustive]`). `design_prompt_chars`,
+  `outcome_prompt_chars` and `domain_prompt_chars` (`Result<usize, String>`)
+  measure each step's prompt without the paper. `LlmQueryCondenser` gains
+  `with_progress(callback)`, as Python's takes `progress`.
 - **A PRISMA 2020 reporting agent** (as in Python; the argument is the root
   `CHANGELOG.md`'s). `quality::prisma2020_checklist` (`CHECKLIST`, `item`,
   `KEY_ITEMS`, `ChecklistItem`, `ChecklistSection`), `prisma2020_parts`
@@ -58,6 +71,14 @@ The Python library is documented separately, in the repository's
   upgrade). `store_publication` keeps its signature. **Breaking** for a
   struct literal of `FetchedRecord` (use `FetchedRecord::new`) and an
   exhaustive `match` on `ReplaceError`, which gains `EmptyRecordId`.
+
+### Changed
+
+- `Rob2Agent::assess` now reads the stop before every domain, so a stop set
+  mid-run ends the run as `Stopped` even when its remaining steps would
+  send no request (a cached failed digest); before, such a run came back
+  complete although the stop was set. Nothing else about its results
+  changes.
 
 ## [0.5.0] - 2026-11-17
 

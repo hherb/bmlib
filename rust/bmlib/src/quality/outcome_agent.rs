@@ -35,7 +35,8 @@ pub use crate::quality::design_agent::ProposalError;
 use crate::quality::evidence_ladder::{EffectScale, ReportedResult};
 use crate::quality::full_text_agent::DEFAULT_MAX_TOKENS;
 use crate::quality::full_text_agent::{
-    ask_until_readable, check_similarity, check_stop, condense_once, Sampling, LABEL_CHARS,
+    ask_until_readable, check_similarity, check_stop, condense_once, step_prompt_chars, Sampling,
+    LABEL_CHARS,
 };
 pub use crate::quality::full_text_agent::{LlmQueryCondenser, QueryCondenser};
 use crate::quality::pico_agent::verify_quotes;
@@ -372,6 +373,17 @@ impl OutcomeProposal {
     }
 }
 
+/// The characters of the longest prompt the outcome step sends, without the paper
+/// and its title: the system prompt plus the longer of the question (as sent,
+/// with an empty title and paper) and the two condensation prompts, each as a
+/// retry after an unparseable reply sends it. A caller subtracts it from the
+/// window when sizing the paper's budget. Python's `outcome_prompt_chars`.
+#[must_use]
+pub fn outcome_prompt_chars() -> usize {
+    let question = format!("{OUTCOME_TASK_PROMPT}\n\nPaper Title: \n\nPaper Text:\n");
+    step_prompt_chars(&[(OUTCOME_SYSTEM_PROMPT, question)], OUTCOME_CONDENSE_QUERY)
+}
+
 /// Read the model's reply and verify its quotes against `text`. Python's
 /// `read_outcome_reply`.
 ///
@@ -582,10 +594,14 @@ impl<'a> OutcomeAgent<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agents::JSON_CORRECTION_NOTE;
     use crate::agents::{ChatJsonError, ChatJsonOutcome};
     use crate::context_processor::ProcessingResult;
     use crate::llm::LLMMessage;
     use crate::quality::agent_chat::JsonChat;
+    use crate::quality::pico_agent::{
+        PICO_CONDENSE_CONSOLIDATION_PROMPT, PICO_CONDENSE_EXTRACTION_PROMPT,
+    };
     use serde_json::json;
     use std::sync::atomic::AtomicBool;
 
@@ -1150,5 +1166,27 @@ mod tests {
     fn the_constants() {
         assert_eq!(OUTCOME_PROMPT_VERSION, 1);
         assert!(OUTCOME_SYSTEM_PROMPT.contains("primary") && !OUTCOME_CONDENSE_QUERY.is_empty());
+    }
+
+    #[test]
+    fn outcome_prompt_chars_counts_the_sent_prompt() {
+        let question = format!("{OUTCOME_TASK_PROMPT}\n\nPaper Title: \n\nPaper Text:\n");
+        let correction = "\n\n".len() + JSON_CORRECTION_NOTE.chars().count();
+        let sent = OUTCOME_SYSTEM_PROMPT.chars().count() + question.chars().count() + correction;
+        assert_eq!(outcome_prompt_chars(), sent);
+        let condensing = [
+            PICO_CONDENSE_EXTRACTION_PROMPT,
+            PICO_CONDENSE_CONSOLIDATION_PROMPT,
+        ]
+        .iter()
+        .map(|t| {
+            t.replace("{query}", OUTCOME_CONDENSE_QUERY)
+                .replace("{content}", "")
+                .chars()
+                .count()
+        })
+        .max()
+        .expect("two prompts");
+        assert!(question.chars().count() >= condensing);
     }
 }

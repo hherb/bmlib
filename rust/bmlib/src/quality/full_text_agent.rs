@@ -26,12 +26,15 @@
 //! its own copy of the same rules.
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use serde_json::Value;
 
-use crate::agents::ChatJsonError;
+use crate::agents::{ChatJsonError, JSON_CORRECTION_NOTE};
 use crate::context_processor::llm_processor::{ContextModel, PromptTemplates};
-use crate::context_processor::{ProcessingConfig, ProcessingResult};
+use crate::context_processor::{
+    ProcessingConfig, ProcessingResult, ProgressCallback, ProgressInfo,
+};
 use crate::llm::LLMMessage;
 use crate::quality::agent_chat::JsonChat;
 use crate::quality::cochrane_assessor::{condense_checked, Condenser, LlmCondenser};
@@ -71,12 +74,46 @@ pub trait QueryCondenser {
     ) -> ProcessingResult;
 }
 
+/// The characters of the longest prompt one step sends, without the paper.
+///
+/// Each of `asks` is a system prompt and the question as sent with an empty
+/// title and paper. The step's longest request is its system prompt plus the
+/// longer of its question and the two condensation prompts for `query` (with
+/// empty content), as a retry after an unparseable reply sends it: with
+/// [`JSON_CORRECTION_NOTE`] after a blank line. A condensation request sends no
+/// system prompt, so for it this is an upper bound. Python's
+/// `step_prompt_chars`.
+pub(crate) fn step_prompt_chars(asks: &[(&str, String)], query: &str) -> usize {
+    let condensing = [
+        PICO_CONDENSE_EXTRACTION_PROMPT,
+        PICO_CONDENSE_CONSOLIDATION_PROMPT,
+    ]
+    .iter()
+    .map(|template| {
+        template
+            .replace("{query}", query)
+            .replace("{content}", "")
+            .chars()
+            .count()
+    })
+    .max()
+    .unwrap_or(0);
+    let longest = asks
+        .iter()
+        .map(|(system, question)| system.chars().count() + question.chars().count().max(condensing))
+        .max()
+        .unwrap_or(0);
+    longest + "\n\n".len() + JSON_CORRECTION_NOTE.chars().count()
+}
+
 /// The production [`QueryCondenser`]: [`LlmCondenser`] over the PICO
 /// verbatim-passage prompts, built afresh for each call's query.
 pub struct LlmQueryCondenser<'a> {
     model: &'a dyn ContextModel,
     temperature: f64,
     max_tokens: i64,
+    /// Shared, as each condensation builds a condenser of its own.
+    progress: Option<Arc<ProgressCallback>>,
 }
 
 impl<'a> LlmQueryCondenser<'a> {
@@ -87,7 +124,19 @@ impl<'a> LlmQueryCondenser<'a> {
             model,
             temperature,
             max_tokens,
+            progress: None,
         }
+    }
+
+    /// Hand every [`ProgressInfo`] a condensation reports to `callback`; as
+    /// `PrismaCondenser::with_progress`. Python's `LlmQueryCondenser(progress=)`.
+    #[must_use]
+    pub fn with_progress(
+        mut self,
+        callback: impl Fn(&ProgressInfo) + Send + Sync + 'static,
+    ) -> Self {
+        self.progress = Some(Arc::new(Box::new(callback)));
+        self
     }
 }
 
@@ -103,16 +152,24 @@ impl QueryCondenser for LlmQueryCondenser<'_> {
             extraction_prompt: PICO_CONDENSE_EXTRACTION_PROMPT.to_string(),
             consolidation_prompt: PICO_CONDENSE_CONSOLIDATION_PROMPT.to_string(),
         };
-        match LlmCondenser::with_prompts(
+        let condenser = match LlmCondenser::with_prompts(
             self.model,
             templates,
             query,
             self.temperature,
             self.max_tokens,
         ) {
-            Ok(mut condenser) => condenser.condense(text, label, config),
-            Err(error) => ProcessingResult::failed(error),
-        }
+            Ok(condenser) => condenser,
+            Err(error) => return ProcessingResult::failed(error),
+        };
+        let mut condenser = match &self.progress {
+            Some(progress) => {
+                let progress = Arc::clone(progress);
+                condenser.with_progress(move |info| progress(info))
+            }
+            None => condenser,
+        };
+        condenser.condense(text, label, config)
     }
 }
 
@@ -484,5 +541,64 @@ mod tests {
             Some(&stop),
         );
         assert_eq!(stopped, Err(Failure::Stopped));
+    }
+
+    /// A model that answers every request with one passage.
+    struct Passage;
+
+    impl ContextModel for Passage {
+        fn complete(&self, _p: &str, _t: f64, _m: i64) -> Result<String, String> {
+            Ok("a passage".to_string())
+        }
+
+        fn complete_json(&self, _p: &str, _t: f64, _m: i64) -> Result<Value, String> {
+            Ok(json!({"passages": []}))
+        }
+    }
+
+    #[test]
+    fn the_query_condenser_reports_progress() {
+        let reports = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = std::sync::Arc::clone(&reports);
+        let mut condenser = LlmQueryCondenser::new(&Passage, 0.1, 100).with_progress(move |_| {
+            counter.fetch_add(1, Ordering::SeqCst);
+        });
+        let text = "A sentence about the trial. ".repeat(200);
+        let config = ProcessingConfig::default().with_max_context_chars(500);
+        let _ = condenser.condense("anything", &text, "label", &config);
+        let first = reports.load(Ordering::SeqCst);
+        assert!(first >= 1);
+        // Each condensation builds its own condenser; the callback must reach every one.
+        let _ = condenser.condense("anything", &text, "label", &config);
+        assert_eq!(reports.load(Ordering::SeqCst), 2 * first);
+    }
+
+    #[test]
+    fn step_prompt_chars_takes_the_longest_ask_and_the_condensation() {
+        let query = "the trial's randomisation";
+        let condensing = [
+            PICO_CONDENSE_EXTRACTION_PROMPT,
+            PICO_CONDENSE_CONSOLIDATION_PROMPT,
+        ]
+        .iter()
+        .map(|t| {
+            t.replace("{query}", query)
+                .replace("{content}", "")
+                .chars()
+                .count()
+        })
+        .max()
+        .expect("two prompts");
+        let correction = 2 + JSON_CORRECTION_NOTE.chars().count();
+        assert_eq!(
+            step_prompt_chars(&[("S", "q".to_string())], query),
+            1 + condensing + correction
+        );
+        let long = "q".repeat(condensing + 7);
+        let asks = [("S", "q".to_string()), ("SS", long.clone())];
+        assert_eq!(
+            step_prompt_chars(&asks, query),
+            2 + long.chars().count() + correction
+        );
     }
 }

@@ -37,8 +37,9 @@ leaves ``escalation`` and ``overall`` ``None`` with the reason in
 (:class:`Rob2RunError`).
 
 Nothing is truncated: a paper over the window is condensed **per domain**,
-for that domain's own query, once per run, and each domain it served is
-flagged ``condensed``.
+for that domain's own query, once per :class:`Rob2Digests` (one per
+:meth:`Rob2Agent.assess`), and each domain it served is flagged
+``condensed``.
 
 The replies are shared with Rust's ``quality::rob2_agent`` through
 ``tests/fixtures/rob2_replies.json`` and a whole run through
@@ -51,7 +52,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from bmlib.quality._full_text_agent import (
     LABEL_CHARS,
@@ -59,6 +60,7 @@ from bmlib.quality._full_text_agent import (
     UnreadableReplyError,
     _FullTextAgent,
     check_min_similarity,
+    step_prompt_chars,
 )
 from bmlib.quality.design_agent import _wire
 from bmlib.quality.evidence_ladder import U32_MAX
@@ -86,6 +88,7 @@ from bmlib.quality.rob2_d5_facts import (
     DIFFERING_ANALYSIS,
     MISSING_MEASUREMENT,
     D5Facts,
+    OtherMeasurement,
     d5_answers,
     facts_prompt,
     read_facts_reply,
@@ -110,16 +113,21 @@ __all__ = [
     "DomainFailed",
     "DomainResult",
     "Escalation",
+    "EscalationFailed",
     "MachineAnswer",
     "OutcomeRob2",
     "Rob2Agent",
     "Rob2Run",
     "Rob2RunError",
     "Rob2RunErrorKind",
+    "Rob2Step",
+    "combine_outcome",
     "d5_assessment",
     "domain_prompt",
+    "domain_prompt_chars",
     "domain_result_from_dict",
     "escalation_message",
+    "plan_rob2",
     "read_domain_reply",
     "read_escalation_reply",
     "rob2_overall",
@@ -860,6 +868,36 @@ def d5_assessment(facts: D5Facts) -> DomainAssessment:
 # --- The prompts ---
 
 
+def domain_prompt_chars(domain: Domain, outcome: ProposedOutcome | None) -> int:
+    """The characters of the longest prompt *domain*'s step sends, without the paper.
+
+    The step's system prompt plus the longer of its question (as sent, with an
+    empty title and paper) and the two condensation prompts for the domain's
+    query, each as a retry after an unparseable reply sends it.  D5 sends two
+    kinds of question, each with its own system prompt: the facts, and a second
+    look at an other measurement; this takes the larger.  A second look also
+    carries its measurement's label and named passages, which this does not
+    count (it measures the look with an empty measurement).  A caller
+    subtracts it from the window when sizing the paper's budget.
+
+    Args:
+        domain: The domain asked.
+        outcome: The outcome assessed; ``None`` for D1, required for D2-D5.
+
+    Raises:
+        ValueError: An outcome given for D1, or none for D2-D5.
+    """
+    if domain is Domain.D5 and outcome is not None:
+        look = OtherMeasurement(label="", named=[], result=[])
+        asks = [
+            (D5_FACTS_SYSTEM_PROMPT, facts_prompt("", "", outcome)),
+            (D5_SECOND_LOOK_SYSTEM_PROMPT, second_look_prompt("", "", outcome, look)),
+        ]
+    else:
+        asks = [(ROB2_SYSTEM_PROMPT, domain_prompt(domain, "", "", outcome))]
+    return step_prompt_chars(asks, condense_query(domain))
+
+
 def domain_prompt(domain: Domain, title: str, paper: str, outcome: ProposedOutcome | None) -> str:
     """The user turn asking *domain*'s questions over *paper*.
 
@@ -918,6 +956,8 @@ class Rob2RunErrorKind(Enum):
     STOPPED = "stopped"
     #: ``min_similarity`` was not a number in (0, 1]; no request was made.
     INVALID_SIMILARITY = "invalid_similarity"
+    #: D1 was given an outcome, or D2-D5 none; no request was made.
+    WRONG_OUTCOME = "wrong_outcome"
 
 
 class Rob2RunError(Exception):
@@ -939,6 +979,131 @@ class _CallFailedError(Exception):
         super().__init__(message)
         self.retryable = retryable
         self.status = status
+
+
+@dataclass(frozen=True)
+class Rob2Step:
+    """One step of a RoB 2 run, as a caller can store it.
+
+    ``kind`` is ``"domain"`` (``domain`` is set) or ``"escalation"``
+    (``domain`` is ``None``). ``outcome`` is the index into the outcomes list
+    the caller passes, or ``None`` for domain D1, which is judged once for the
+    whole paper.  Run an ``"escalation"`` step again whenever its outcome's D1
+    or any of its D2-D5 is run again: it sends no request when the question is
+    not needed, and an escalation kept from the earlier domains may no longer
+    fit the new ones.  :func:`combine_outcome` refuses one only where the need
+    for the question has changed; where both sets call for it, it cannot tell.
+
+    Raises:
+        ValueError: A step no plan holds: an unknown kind, an outcome that is
+            not an index, D1 with an outcome or D2-D5 without one, or an
+            escalation with a domain or without an outcome.
+    """
+
+    kind: Literal["domain", "escalation"]
+    domain: Domain | None
+    outcome: int | None
+
+    def __post_init__(self) -> None:
+        if self.kind not in ("domain", "escalation"):
+            raise ValueError("kind is not domain or escalation")
+        outcome = self.outcome
+        if outcome is not None and (type(outcome) is not int or not 0 <= outcome <= U32_MAX):
+            raise ValueError("outcome is not an index")
+        if self.kind == "escalation":
+            if self.domain is not None or outcome is None:
+                raise ValueError("an escalation step names an outcome and no domain")
+        elif not isinstance(self.domain, Domain):
+            raise ValueError("a domain step names no domain")
+        elif (self.domain is Domain.D1) != (outcome is None):
+            raise ValueError("D1 is judged for the trial, D2-D5 for an outcome")
+
+    def to_dict(self) -> dict[str, Any]:
+        """The wire form: ``{"kind", "domain", "outcome"}``, absent parts ``None``."""
+        domain = None if self.domain is None else self.domain.value
+        return {"kind": self.kind, "domain": domain, "outcome": self.outcome}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Rob2Step:
+        """Rebuild from :meth:`to_dict` output; every key is required.
+
+        Raises:
+            ValueError: A key is absent, or the step is one no plan holds,
+                naming why.
+        """
+        data = _object(data, "the step")
+        for key in ("kind", "domain", "outcome"):
+            if key not in data:
+                raise ValueError(f"{key} is absent")
+        domain = data["domain"]
+        return cls(
+            data["kind"],
+            None if domain is None else _enum(Domain, domain, "domain"),
+            data["outcome"],
+        )
+
+
+def plan_rob2(outcome_count: int) -> list[Rob2Step]:
+    """The steps :meth:`Rob2Agent.assess` takes, in its order.
+
+    D1 once, then for each outcome its domains D2 to D5 and its escalation.
+    No outcome plans nothing (not even D1), as ``assess`` refuses that input
+    before any request.
+    """
+    if outcome_count <= 0:
+        return []
+    plan = [Rob2Step("domain", Domain.D1, None)]
+    for outcome in range(outcome_count):
+        plan.extend(Rob2Step("domain", d, outcome) for d in _OUTCOME_DOMAINS)
+        plan.append(Rob2Step("escalation", None, outcome))
+    return plan
+
+
+@dataclass(frozen=True)
+class EscalationFailed:
+    """An escalation question that was asked and not answered.
+
+    Attributes:
+        reason: Why: the unreadable field or the failed request.
+        retryable: Whether asking again may succeed.
+        status: The HTTP status the failed request was answered with, if any.
+    """
+
+    reason: str
+    retryable: bool
+    status: int | None
+
+
+class Rob2Digests:
+    """The condensations of one paper, kept by the caller across ``assess_domain`` calls.
+
+    Each domain's digest is made once and reused for every outcome.  A failed
+    condensation is not kept, so the next call for its domain condenses again
+    (within one :meth:`Rob2Agent.assess` it is kept, and fails each later
+    outcome without another attempt).  The digests are for one paper and one
+    condensation budget: given another text or budget, they start again.  They
+    are not stored, so a resume from storage condenses again.
+    """
+
+    def __init__(self) -> None:
+        self._made_for: tuple[str, int] | None = None
+        self._papers: dict[Domain, str] = {}
+        self._failed: dict[Domain, _CallFailedError] | None = None
+
+    @classmethod
+    def _for_run(cls) -> Rob2Digests:
+        """Digests that keep a failure too, for one :meth:`Rob2Agent.assess`."""
+        digests = cls()
+        digests._failed = {}
+        return digests
+
+    def _start(self, stripped: str, budget: int) -> None:
+        """Forget what was made for another text or budget than *stripped* and *budget*."""
+        if self._made_for != (stripped, budget):
+            self._made_for = (stripped, budget)
+            self._papers.clear()
+            if self._failed is not None:
+                self._failed.clear()
 
 
 class Rob2Agent(_FullTextAgent):
@@ -1002,38 +1167,113 @@ class Rob2Agent(_FullTextAgent):
         self._check_provider()
         self._raise_if_stopped()
 
-        papers: dict[Domain, str | _CallFailedError] = {}
-        study = self._domain(Domain.D1, title, stripped, original, None, similarity, papers)
-        results = []
-        for outcome in outcomes:
-            domains = [
-                self._domain(d, title, stripped, original, outcome, similarity, papers)
-                for d in _OUTCOME_DOMAINS
-            ]
-            results.append(self._outcome(title, outcome, study, domains))
+        digests = Rob2Digests._for_run()
+        study: DomainResult | None = None
+        domains: list[DomainResult] = []
+        results: list[OutcomeRob2] = []
+        for step in plan_rob2(len(outcomes)):
+            if step.kind == "domain":
+                assert step.domain is not None
+                proposed = None if step.outcome is None else outcomes[step.outcome]
+                result = self.assess_domain(
+                    step.domain, title, text, proposed, min_similarity=similarity, digests=digests
+                )
+                if step.outcome is None:
+                    study = result
+                else:
+                    domains.append(result)
+            else:
+                assert step.outcome is not None and study is not None
+                proposed = outcomes[step.outcome]
+                escalation = self.escalate_outcome(title, proposed, study, domains)
+                results.append(combine_outcome(proposed, study, domains, escalation))
+                domains = []
+        assert study is not None  # outcomes is not empty, so the plan judges D1
         return Rob2Run(ROB2_ALGORITHM_VERSION, ROB2_PROMPT_VERSION, study, results)
+
+    def assess_domain(
+        self,
+        domain: Domain,
+        title: str | None,
+        text: str | None,
+        outcome: ProposedOutcome | None,
+        *,
+        min_similarity: float,
+        digests: Rob2Digests,
+    ) -> DomainResult:
+        """Assess one domain: D1 for the trial (*outcome* ``None``), D2-D5 for one outcome.
+
+        Args:
+            domain: The domain to judge.
+            title: The paper's title.
+            text: The paper's full text.  Citation offsets are code points into
+                it, exactly as passed.
+            outcome: The outcome for D2-D5; ``None`` for D1.
+            min_similarity: How close a quote must be to a span of *text*.
+            digests: This paper's condensations, carried from call to call
+                (see :class:`Rob2Digests`).
+
+        Returns:
+            The domain's result; a call that failed is a :class:`DomainFailed`.
+
+        Raises:
+            Rob2RunError: The input was refused before any request, or the
+                stop was set.
+            ValueError: The model's provider is unknown.
+            ImportError: The provider's SDK is not installed.
+        """
+        try:
+            similarity = check_min_similarity(min_similarity)
+        except ValueError as exc:
+            raise Rob2RunError(Rob2RunErrorKind.INVALID_SIMILARITY, str(exc)) from exc
+        original = text or ""
+        stripped = original.strip()
+        if not stripped:
+            raise Rob2RunError(Rob2RunErrorKind.EMPTY_INPUT, "the paper's text is empty")
+        if (domain is Domain.D1) != (outcome is None):
+            raise Rob2RunError(
+                Rob2RunErrorKind.WRONG_OUTCOME,
+                "D1 is assessed for the trial, D2-D5 for an outcome",
+            )
+        self._check_provider()
+        self._raise_if_stopped()
+        return self._domain(
+            domain,
+            (title or "").strip(),
+            stripped,
+            original,
+            outcome,
+            similarity,
+            digests,
+        )
 
     def _paper(
         self,
         domain: Domain,
         title: str,
         stripped: str,
-        papers: dict[Domain, str | _CallFailedError],
+        digests: Rob2Digests,
     ) -> tuple[str, bool]:
-        """The text *domain*'s call sends and whether it is a digest; condensed once per run."""
-        if len(stripped) <= self.condense_config.max_context_chars:
+        """The text *domain*'s call sends and whether it is a digest; condensed once per
+        :class:`Rob2Digests`."""
+        budget = self.condense_config.max_context_chars
+        if len(stripped) <= budget:
             return stripped, False
-        if domain not in papers:
+        digests._start(stripped, budget)
+        failed = digests._failed
+        if failed is not None and domain in failed:
+            kept = failed[domain]
+            raise _CallFailedError(str(kept), kept.retryable, kept.status)
+        if domain not in digests._papers:
             try:
-                papers[domain] = self._condense_once(
+                digests._papers[domain] = self._condense_once(
                     title, stripped, condense_query(domain), f"the RoB 2 {domain.value} assessment"
                 )
             except _CallFailedError as exc:
-                papers[domain] = exc
-        paper = papers[domain]
-        if isinstance(paper, _CallFailedError):
-            raise _CallFailedError(str(paper), paper.retryable, paper.status)
-        return paper, True
+                if failed is not None:
+                    failed[domain] = exc
+                raise
+        return digests._papers[domain], True
 
     def _domain(
         self,
@@ -1043,15 +1283,15 @@ class Rob2Agent(_FullTextAgent):
         original: str,
         outcome: ProposedOutcome | None,
         similarity: float,
-        papers: dict[Domain, str | _CallFailedError],
+        digests: Rob2Digests,
     ) -> DomainResult:
         """Ask one domain's questions (D5: its facts); a failed call comes back as
         :class:`DomainFailed`."""
         if domain is Domain.D5 and outcome is not None:
-            return self._d5(title, stripped, original, outcome, similarity, papers)
+            return self._d5(title, stripped, original, outcome, similarity, digests)
         label = f"RoB 2 {domain.value} of {title[:LABEL_CHARS]!r}"
         try:
-            paper, condensed = self._paper(domain, title, stripped, papers)
+            paper, condensed = self._paper(domain, title, stripped, digests)
             assessment = self._ask_until_readable(
                 ROB2_SYSTEM_PROMPT,
                 domain_prompt(domain, title, paper, outcome),
@@ -1071,7 +1311,7 @@ class Rob2Agent(_FullTextAgent):
         original: str,
         outcome: ProposedOutcome,
         similarity: float,
-        papers: dict[Domain, str | _CallFailedError],
+        digests: Rob2Digests,
     ) -> DomainResult:
         """D5 from facts (design §4.6): one facts call, then a second look, in list order, at
         each other measurement that names no result; then the rules.
@@ -1082,7 +1322,7 @@ class Rob2Agent(_FullTextAgent):
         """
         label = f"RoB 2 D5 of {title[:LABEL_CHARS]!r}"
         try:
-            paper, condensed = self._paper(Domain.D5, title, stripped, papers)
+            paper, condensed = self._paper(Domain.D5, title, stripped, digests)
             facts = self._ask_until_readable(
                 D5_FACTS_SYSTEM_PROMPT,
                 facts_prompt(title, paper, outcome),
@@ -1110,38 +1350,100 @@ class Rob2Agent(_FullTextAgent):
         assessment.condensed = condensed
         return assessment
 
-    def _outcome(
+    def escalate_outcome(
         self,
-        title: str,
+        title: str | None,
         outcome: ProposedOutcome,
         study: DomainResult,
-        domains: list[DomainResult],
-    ) -> OutcomeRob2:
-        """Combine one outcome's domains, asking the escalation question when it is needed."""
-        escalation: Escalation | None = None
-        error: str | None = None
-        retryable, status = False, None
+        domains: Sequence[DomainResult],
+    ) -> Escalation | EscalationFailed | None:
+        """Ask the escalation question for one outcome, when the rule needs it.
+
+        Args:
+            title: The paper's title.
+            outcome: The outcome *domains* were assessed for.
+            study: D1's result.
+            domains: D2-D5 of *outcome*.
+
+        Run this step again whenever its outcome's D1 or any of its D2-D5 is
+        run again: it sends no request when the question is not needed, and an
+        escalation kept from the earlier domains may no longer fit the new
+        ones.  :func:`combine_outcome` refuses one only where the need for the
+        question has changed; where both sets call for it, it cannot tell.
+
+        Returns:
+            ``None`` when the domains do not call for the question (nothing was
+            asked); the model's :class:`Escalation`; or an
+            :class:`EscalationFailed` when it was asked and not answered.
+
+        Raises:
+            Rob2RunError: The stop was set while the question was asked.
+            ValueError: *study* is not D1 or *domains* is not D2-D5 in order,
+                or the model's provider is unknown; before any request.
+            ImportError: The provider's SDK is not installed.
+        """
+        _check_outcome_domains(study, domains)
+        self._check_provider()
         judgements = _judgements(study, domains)
-        if judgements is not None and needs_escalation_decision(judgements):
-            assessed = [d for d in domains if isinstance(d, DomainAssessment)]
-            assert isinstance(study, DomainAssessment)  # _judgements returned five
-            label = f"RoB 2 escalation of {title[:LABEL_CHARS]!r}"
-            try:
-                escalation = self._ask_until_readable(
-                    ROB2_SYSTEM_PROMPT,
-                    escalation_message(outcome, study, assessed),
-                    read_escalation_reply,
-                    label,
-                )
-            except _CallFailedError as exc:
-                logger.warning("%s not had: %s", label, exc)
-                error, retryable, status = str(exc), exc.retryable, exc.status
-        return OutcomeRob2(
-            outcome.name,
-            domains,
-            escalation,
-            rob2_overall(study, domains, escalation),
-            error,
-            retryable,
-            status,
-        )
+        if judgements is None or not needs_escalation_decision(judgements):
+            return None
+        assessed = [d for d in domains if isinstance(d, DomainAssessment)]
+        assert isinstance(study, DomainAssessment)  # _judgements returned five
+        label = f"RoB 2 escalation of {(title or '').strip()[:LABEL_CHARS]!r}"
+        try:
+            return self._ask_until_readable(
+                ROB2_SYSTEM_PROMPT,
+                escalation_message(outcome, study, assessed),
+                read_escalation_reply,
+                label,
+            )
+        except _CallFailedError as exc:
+            logger.warning("%s not had: %s", label, exc)
+            return EscalationFailed(str(exc), exc.retryable, exc.status)
+
+
+def _check_outcome_domains(study: DomainResult, domains: Sequence[DomainResult]) -> None:
+    """Refuse a *study* that is not D1, or *domains* that are not D2, D3, D4, D5 in order."""
+    if study.domain is not Domain.D1:
+        raise ValueError("the study's domain is not D1")
+    if [d.domain for d in domains] != list(_OUTCOME_DOMAINS):
+        raise ValueError("domains are not D2, D3, D4, D5 in order")
+
+
+def combine_outcome(
+    outcome: ProposedOutcome,
+    study: DomainResult,
+    domains: Sequence[DomainResult],
+    escalation: Escalation | EscalationFailed | None,
+) -> OutcomeRob2:
+    """Combine one outcome's domains and its escalation into its :class:`OutcomeRob2`.
+
+    Args:
+        outcome: The outcome.
+        study: D1's result.
+        domains: D2, D3, D4, D5 of *outcome*, in that order.
+        escalation: What :meth:`Rob2Agent.escalate_outcome` gave.
+
+    Raises:
+        ValueError: *study* is not D1 or *domains* is not D2-D5 in order, or
+            *escalation* does not fit them: one given (an answer or a failure)
+            where the domains do not call for the question, or ``None`` where
+            they do (a stale escalation; see :meth:`Rob2Agent.escalate_outcome`).
+    """
+    _check_outcome_domains(study, domains)
+    answer = escalation if isinstance(escalation, Escalation) else None
+    failed = escalation if isinstance(escalation, EscalationFailed) else None
+    combined = OutcomeRob2(
+        outcome.name,
+        list(domains),
+        answer,
+        rob2_overall(study, domains, answer),
+        None if failed is None else failed.reason,
+        False if failed is None else failed.retryable,
+        None if failed is None else failed.status,
+    )
+    _check_overall(study, combined)
+    judgements = _judgements(study, domains)
+    if escalation is None and judgements is not None and needs_escalation_decision(judgements):
+        raise ValueError("the domains need the escalation, and none was given")
+    return combined

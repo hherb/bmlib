@@ -26,7 +26,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bmlib.agents.base import ChatJsonError, ChatJsonTruncatedError
+from bmlib.agents.base import JSON_CORRECTION_NOTE, ChatJsonError, ChatJsonTruncatedError
 from bmlib.citations import PassageContradiction
 from bmlib.context_processor import ProcessingConfig, ProcessingStatus
 from bmlib.llm.data_types import LLMResponse
@@ -40,7 +40,12 @@ from bmlib.quality.design_agent import (
     DesignProposal,
     ProposalError,
     ProposalErrorKind,
+    design_prompt_chars,
     read_design_reply,
+)
+from bmlib.quality.pico_agent import (
+    PICO_CONDENSE_CONSOLIDATION_PROMPT,
+    PICO_CONDENSE_EXTRACTION_PROMPT,
 )
 from bmlib.quality.pico_models import PicoContradictedQuote
 
@@ -414,3 +419,14 @@ class TestTheAgent:
     def test_the_constants(self) -> None:
         assert DESIGN_PROMPT_VERSION == 1
         assert "not" in DESIGN_SYSTEM_PROMPT and DESIGN_CONDENSE_QUERY
+
+
+def test_design_prompt_chars_counts_the_sent_prompt() -> None:
+    question = DESIGN_TASK_PROMPT + "\n\nPaper Title: \n\nPaper Text:\n"
+    sent = len(DESIGN_SYSTEM_PROMPT) + len(question) + len("\n\n") + len(JSON_CORRECTION_NOTE)
+    assert design_prompt_chars() == sent
+    condensing = max(
+        len(t.replace("{query}", DESIGN_CONDENSE_QUERY).replace("{content}", ""))
+        for t in (PICO_CONDENSE_EXTRACTION_PROMPT, PICO_CONDENSE_CONSOLIDATION_PROMPT)
+    )
+    assert len(question) >= condensing

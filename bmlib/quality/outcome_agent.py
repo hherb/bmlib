@@ -53,6 +53,7 @@ from bmlib.quality._full_text_agent import (
     UnreadableReplyError,
     _FullTextAgent,
     check_min_similarity,
+    step_prompt_chars,
 )
 from bmlib.quality.design_agent import ProposalError, ProposalErrorKind, _prompt_version
 from bmlib.quality.evidence_ladder import U32_MAX, EffectScale, ReportedResult
@@ -67,6 +68,7 @@ __all__ = [
     "OutcomeAgent",
     "OutcomeProposal",
     "ProposedOutcome",
+    "outcome_prompt_chars",
     "read_outcome_reply",
 ]
 
@@ -390,6 +392,18 @@ class OutcomeProposal:
             condensed=_wire(data, "condensed", bool, "a boolean"),
             prompt_version=_prompt_version(data),
         )
+
+
+def outcome_prompt_chars() -> int:
+    """The characters of the longest prompt the outcome step sends, without the paper.
+
+    The system prompt plus the longer of the question (as sent, with an empty
+    title and paper) and the two condensation prompts, each as a retry after an
+    unparseable reply sends it.  A caller subtracts it from the window when
+    sizing the paper's budget.
+    """
+    question = f"{OUTCOME_TASK_PROMPT}\n\nPaper Title: \n\nPaper Text:\n"
+    return step_prompt_chars([(OUTCOME_SYSTEM_PROMPT, question)], OUTCOME_CONDENSE_QUERY)
 
 
 def read_outcome_reply(data: dict[str, Any], text: str, min_similarity: float) -> OutcomeProposal:

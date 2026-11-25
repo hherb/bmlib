@@ -1,7 +1,7 @@
 # HANDOVER — bmlib development
 
-_Last updated: 2026-11-24 (**the evidence-weight manuals, #811, the PR on
-`docs/evidence-weight-manual`**).
+_Last updated: 2026-11-25 (**RoB 2 a step at a time, the branch
+`feat/rob2-steps`**).
 **0.14.0 is tagged and released on GitHub** (`v0.14.0` on `e7b7c98a`, PR
 #801); `release.yml` run 44306259452 **still waits at the `pypi` gate for the
 maintainer** (last checked 2026-11-22), so PyPI still serves 0.13.0. **Crate
@@ -9,23 +9,41 @@ maintainer** (last checked 2026-11-22), so PyPI still serves 0.13.0. **Crate
 worktree of `e7b7c98a` (`HANDOVER_RUST.md`, *Publishing to crates.io*: remake
 the token link first, remove it after)._
 
-## This session: the evidence weight reaches the manuals (#811, PR open)
+## This session: RoB 2 a step at a time (branch `feat/rob2-steps`, PR #815)
 
-- **Docs, plus three Rust doc comments.** `docs/manual/quality.md` gains
-  *Unattended evidence weight* (`assess_unattended` and its three results,
-  the design and outcome proposals, RoB 2's rules, the RoB 2 assessor with D5
-  from facts, the ladder, long papers). Its examples were run against a
-  scripted client. `rust/bmlib/docs/manual/quality.md` gains *Evidence
-  weight*, doc-tested. The Python import list equals `bmlib.quality.__all__`
-  again (128 names, checked with `ast`). Three Rust constructors' doc
-  comments said "the Cochrane assessor's defaults" though their `max_tokens`
-  is 16384; fixed.
-- **Filed #813** (a decision): a stored ladder is not rebuilt on read, so
-  one contradicting its outcome's RoB 2 judgement reads back, in both
-  languages. Every other derived value in the result is re-checked.
+For StudyAnalyzer's Evidence weight tab (design
+`2026-11-24-evidence-weight-tab-design.md` §4), `assess` is a loop over steps
+a caller drives itself, both languages, held by `tests/fixtures/rob2_steps.json`:
+
+- `plan_rob2(outcome_count)` and `Rob2Step`; `Rob2Agent::assess_domain` with
+  `Rob2Digests` (one paper's condensations, held by the caller);
+  `escalate_outcome` (Rust `Rob2Escalation`, Python `None | Escalation |
+  EscalationFailed`) and `combine_outcome`, which refuse domains out of D2-D5
+  order before any request.
+- `design_prompt_chars`, `outcome_prompt_chars`, `domain_prompt_chars`
+  (a step's longest prompt without the paper; D5's omits a second look's
+  label and named passages). Rust `LlmQueryCondenser::with_progress`.
+- Final review (finalcheck): a caller's `Rob2Digests` no longer keeps a failed
+  condensation (a Retry could never succeed; `assess` still keeps it for the
+  run) and starts again for another text or budget; a study that is not D1 is
+  refused; `Rob2Step` validates and reads back (`from_dict` / `from_json`,
+  refusals in `rob2_steps.json`); Rust `combine_outcome` returns `Result`
+  rather than panicking on a stale escalation. **Open by design:** a stale
+  escalation whose need did not change cannot be detected (`Escalation`
+  records nothing of the domains it answered), so the docs say the caller
+  re-runs it.
+- `assess`'s results and the fixtures `rob2_run.json`, `rob2_replies.json`
+  and `evidence_weight.json` are unchanged. One narrow change: the stop is
+  read before every domain, so a stop set mid-run ends it as Stopped even at
+  a step that sends no request (a cached failed digest).
+- Docs: both quality manuals gain *RoB 2 a step at a time* (Rust's
+  doc-tested), both CHANGELOGs `[Unreleased]`. **Next:** StudyAnalyzer's plan 2
+  (the tab) starts on this PR's merge, with a re-pin. **#813 stays open**.
 
 ## Merged since the 0.14.0 release (all Unreleased; detail in the CHANGELOGs)
 
+- **The evidence-weight manuals** (#811, PR #814); filed #813 (a stored
+  ladder is not rebuilt on read).
 - **The PRISMA 2020 agent and `omlx` in the manuals** (PR #812): both quality
   pages gain a PRISMA section (the Rust one doc-tested); `llm.md` an oMLX
   section and window row.
@@ -219,9 +237,6 @@ the argument. **Bump `EMBEDDING_RECIPE_VERSION` with any change that can move
 a vector.** Filed from their reviews and open: #581, #582, #585, #577 (its point 3 left open by PR #696; #583, #572 and #618 since fixed), **#566** (Python's `get_model_metadata()` guesses), **#561** (Rust's
 `chat()` retries nothing).
 
-Plans 2a-2c (`lookup_record`, the embedder and its store, `PicoAgent`) have
-their app-side steps in those PRs' CHANGELOG entries.
-
 **Earlier StudyAnalyzer sessions** (PRs #524-#559; argument in
 `CHANGELOG.md`). Still open from them: **#537** (#507's Rust/FFI half),
 **#520** (the Rust store's import owes `RetractionIndex::build`'s all-`Other`
@@ -256,15 +271,11 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache; **0.14.0 makes nothing stored stale** and labels bioRxiv and
   medRxiv full-text sources with their version on a re-fetch. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests on `docs/evidence-weight-manual`** (2026-11-24, PostgreSQL 18 DSN
-  on port 5532, `BMLIB_REQUIRE_POSTGRESQL=1`): Python 11,332 passed + 23
-  skipped; ruff 0.15.20 and mypy clean; Rust
-  `cargo test -p bmlib --doc manual` 63 passed, `cargo fmt --check` and
-  `cargo doc -D warnings` clean. On `feat/prisma-unasked-807` (2026-11-22)
-  Rust `cargo test -p bmlib -p bmlib-ffi` 1,951 passed on macOS, clippy and
-  `cargo fmt --check` clean; the Rust oracle 46 clean. `postgres_live` was not
-  re-run (no Rust SQL changed; 15 passed on #794's branch). At the release
-  (2026-11-17) the release gates were rehearsed: `uv build`,
+- **Tests on `feat/rob2-steps`** (2026-11-25, no PostgreSQL DSN): Python
+  11,179 passed + 201 skipped; ruff 0.15.20, ruff format and mypy clean;
+  Rust `cargo test` 1,981 passed, clippy, `cargo fmt --check` and
+  `cargo doc -D warnings` clean (the manual's new example is a doc-test).
+  At the release (2026-11-17) the release gates were rehearsed: `uv build`,
   `twine check --strict`, `py.typed` in the wheel, and 126 of 126 modules
   imported, one fresh interpreter each, in a core-only venv. On `main` before
   the release PR, `-p bmlib --no-default-features` passed 1,464 and clippy was
@@ -296,9 +307,9 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 
 ### Open GitHub issues
 
-**126 open** (2026-11-24, #811 closing with this PR): **#813** (re-derive a
-stored ladder on read? above), **#806** (PR #804's review: the one-row wrong
-link, above), Europe PMC's **#792** and **#793** (PR #790's review, above),
+**126 open** (2026-11-25): **#813** (re-derive a stored ladder on read?
+above), **#806** (PR #804's review: the one-row wrong link, above),
+Europe PMC's **#792** and **#793** (PR #790's review, above),
 the library's #755, #762 and **#778** (PR #777's review follow-ups, above),
 **#776** (PR #775's MECA follow-ups) and **#759** (measure the `/details`
 settle period) are the newest; #734, #733, #731, #730, #726, #725, #722, #718,

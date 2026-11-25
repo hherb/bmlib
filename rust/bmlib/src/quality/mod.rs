@@ -141,9 +141,9 @@ pub use data_models::{
     VALID_BIAS_VALUES,
 };
 pub use design_agent::{
-    read_design_reply, DesignAgent, DesignProposal, LlmQueryCondenser, ProposalError,
-    QueryCondenser, DESIGN_CONDENSE_QUERY, DESIGN_PROMPT_VERSION, DESIGN_SYSTEM_PROMPT,
-    DESIGN_TASK_PROMPT,
+    design_prompt_chars, read_design_reply, DesignAgent, DesignProposal, LlmQueryCondenser,
+    ProposalError, QueryCondenser, DESIGN_CONDENSE_QUERY, DESIGN_PROMPT_VERSION,
+    DESIGN_SYSTEM_PROMPT, DESIGN_TASK_PROMPT,
 };
 pub use evidence_ladder::{
     build_ladder, paper_weight, start_level, EffectScale, EvidenceLadder, LadderReason,
@@ -163,8 +163,8 @@ pub use extractors::{
     SINGULAR_ONLY_STUDY_TYPES, STUDY_TYPE_EXCLUSIONS, STUDY_TYPE_PATTERNS, STUDY_TYPE_PRIORITY,
 };
 pub use outcome_agent::{
-    read_outcome_reply, OutcomeAgent, OutcomeProposal, ProposedOutcome, OUTCOME_CONDENSE_QUERY,
-    OUTCOME_PROMPT_VERSION, OUTCOME_SYSTEM_PROMPT, OUTCOME_TASK_PROMPT,
+    outcome_prompt_chars, read_outcome_reply, OutcomeAgent, OutcomeProposal, ProposedOutcome,
+    OUTCOME_CONDENSE_QUERY, OUTCOME_PROMPT_VERSION, OUTCOME_SYSTEM_PROMPT, OUTCOME_TASK_PROMPT,
 };
 pub use pico_agent::{
     read_extraction, read_part, read_suitability, verify_quotes, PicoAgent, QuoteCheck,
@@ -190,9 +190,10 @@ pub use prisma2020_models::{
 pub use prisma2020_parts::{part_query, plan_parts, PartPlan, PartsError, PART_OVERHEAD_CHARS};
 pub use quality_agent::{QualityAgent, ASSESSMENT_SYSTEM_PROMPT, ASSESSMENT_USER_TEMPLATE};
 pub use rob2_agent::{
-    domain_prompt, escalation_message, read_domain_reply, read_escalation_reply, rob2_overall,
-    DomainAssessment, DomainResult, Escalation, MachineAnswer, OutcomeRob2, Rob2Agent, Rob2Run,
-    Rob2RunError, NOT_APPLICABLE, ROB2_DOMAIN_PROMPT, ROB2_SYSTEM_PROMPT,
+    combine_outcome, domain_prompt, domain_prompt_chars, escalation_message, plan_rob2,
+    read_domain_reply, read_escalation_reply, rob2_overall, DomainAssessment, DomainResult,
+    Escalation, MachineAnswer, OutcomeRob2, Rob2Agent, Rob2Digests, Rob2Escalation, Rob2Run,
+    Rob2RunError, Rob2Step, NOT_APPLICABLE, ROB2_DOMAIN_PROMPT, ROB2_SYSTEM_PROMPT,
 };
 pub use rob2_algorithm::{
     applicable_questions, domain_judgement, needs_escalation_decision, overall_judgement,

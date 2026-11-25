@@ -21,10 +21,12 @@
 //! wording and its renderings, each domain and escalation reply's reading or
 //! refusal, and a whole run that must round-trip unchanged.
 
-use bmlib::quality::outcome_agent::ProposedOutcome;
+use bmlib::quality::design_agent::design_prompt_chars;
+use bmlib::quality::outcome_agent::{outcome_prompt_chars, ProposedOutcome};
 use bmlib::quality::rob2_agent::{
-    domain_prompt, escalation_message, read_domain_reply, read_escalation_reply, DomainAssessment,
-    Escalation, Rob2Run, ROB2_DOMAIN_PROMPT, ROB2_SYSTEM_PROMPT,
+    domain_prompt, domain_prompt_chars, escalation_message, plan_rob2, read_domain_reply,
+    read_escalation_reply, DomainAssessment, Escalation, Rob2Run, Rob2Step, ROB2_DOMAIN_PROMPT,
+    ROB2_SYSTEM_PROMPT,
 };
 use bmlib::quality::rob2_algorithm::{questions, Domain};
 use bmlib::quality::rob2_questions::{
@@ -35,6 +37,7 @@ use serde_json::{json, Value};
 
 const REPLIES: &str = include_str!("../../../tests/fixtures/rob2_replies.json");
 const RUN: &str = include_str!("../../../tests/fixtures/rob2_run.json");
+const STEPS: &str = include_str!("../../../tests/fixtures/rob2_steps.json");
 
 fn replies() -> Value {
     serde_json::from_str(REPLIES).expect("the fixture is JSON")
@@ -170,4 +173,54 @@ fn the_run_round_trips_unchanged() {
         serde_json::to_value(overall).expect("json"),
         json!(["high", null, null])
     );
+}
+
+#[test]
+fn the_plan_is_the_contracts() {
+    let fixture: Value = serde_json::from_str(STEPS).expect("the fixture is JSON");
+    for case in fixture["plans"].as_array().expect("plans") {
+        let count = usize::try_from(case["outcomes"].as_u64().expect("outcomes")).expect("count");
+        let plan: Vec<Value> = plan_rob2(count).iter().map(|s| s.to_json()).collect();
+        assert_eq!(Value::Array(plan), case["steps"]);
+        let read: Result<Vec<Rob2Step>, String> = case["steps"]
+            .as_array()
+            .expect("steps")
+            .iter()
+            .map(Rob2Step::from_json)
+            .collect();
+        assert_eq!(read, Ok(plan_rob2(count)));
+    }
+}
+
+#[test]
+fn the_refused_steps_are_the_contracts() {
+    let fixture: Value = serde_json::from_str(STEPS).expect("the fixture is JSON");
+    let refused = fixture["refused"].as_array().expect("refused");
+    assert!(!refused.is_empty());
+    for case in refused {
+        assert_eq!(
+            Rob2Step::from_json(&case["step"]),
+            Err(case["error"].as_str().expect("an error").to_string()),
+            "{}",
+            case["step"]
+        );
+    }
+}
+
+#[test]
+fn the_prompt_sizes_are_the_contracts() {
+    let sizes =
+        serde_json::from_str::<Value>(STEPS).expect("the fixture is JSON")["prompt_chars"].clone();
+    let as_size = |value: &Value| usize::try_from(value.as_u64().expect("a size")).expect("size");
+    assert_eq!(design_prompt_chars(), as_size(&sizes["design"]));
+    assert_eq!(outcome_prompt_chars(), as_size(&sizes["outcomes"]));
+    let outcome =
+        ProposedOutcome::from_json(&replies()["outcome"]).expect("the fixture's first outcome");
+    let domains = sizes["domains"].as_object().expect("domains");
+    assert_eq!(domains.len(), Domain::ALL.len());
+    for d in Domain::ALL {
+        let given = (d != Domain::D1).then_some(&outcome);
+        let size = domain_prompt_chars(d, given).expect("a matching outcome");
+        assert_eq!(size, as_size(&domains[&format!("{d:?}")]), "{d:?}");
+    }
 }

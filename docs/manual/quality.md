@@ -134,6 +134,8 @@ from bmlib.quality import (
     ProposedOutcome,
     QueryCondenser,
     RctLayout,
+    design_prompt_chars,
+    outcome_prompt_chars,
     read_design_reply,
     read_outcome_reply,
     # ... RoB 2's rules and its assessor
@@ -149,21 +151,27 @@ from bmlib.quality import (
     DomainFailed,
     DomainResult,
     Escalation,
+    EscalationFailed,
     Judgement,  # RoB 2's; PRISMA's is in prisma2020_models
     MachineAnswer,
     OutcomeRob2,
     Rob2Agent,
+    Rob2Digests,
     Rob2Error,
     Rob2Run,
     Rob2RunError,
     Rob2RunErrorKind,
+    Rob2Step,
     Scope,
     applicable_questions,
+    combine_outcome,
     domain_judgement,
     domain_prompt,
+    domain_prompt_chars,
     escalation_message,
     needs_escalation_decision,
     overall_judgement,
+    plan_rob2,
     questions,
     read_domain_reply,
     read_escalation_reply,
@@ -1535,6 +1543,37 @@ A `Rob2Run` carries `algorithm_version`, `prompt_version`, `study` (D1) and `out
 
 **A stored run is re-checked as it is read.** `Rob2Run.from_dict` refuses another `algorithm_version`, a study that is not D1, an escalation given where none is asked, and an `overall` that does not follow from the domains. Reading a `DomainAssessment` back recomputes its judgement from its answers, refuses an answer to a question that does not apply, and for a D5 stored with its facts recomputes the answers from them. `domain_result_from_dict` and `d5_assessment` are in `bmlib.quality.rob2_agent`. `domain_prompt` builds the user turn of D1-D4 (D5's are `facts_prompt` and `second_look_prompt`, in `bmlib.quality.rob2_d5_facts`), and `ROB2_SYSTEM_PROMPT` and `ROB2_DOMAIN_PROMPT` are the fixed text around it.
 
+### RoB 2 a step at a time
+
+`assess` runs the whole plan at once. An app that shows progress, lets the reader stop and resume, or keeps each domain as it arrives drives the same steps itself. `plan_rob2(outcome_count)` lists them, in `assess`'s order: D1 once, then for each outcome D2 to D5 and its escalation. It is empty for no outcomes. A `Rob2Step` has `kind` (`"domain"` or `"escalation"`), `domain` (`None` for an escalation), `outcome` (an index into the outcomes you pass, `None` for D1) and `to_dict()`, whose wire form `tests/fixtures/rob2_steps.json` pins in both languages.
+
+```python
+from bmlib.quality import Rob2Digests, combine_outcome, plan_rob2
+
+digests = Rob2Digests()                  # one paper's condensations; a new one condenses again
+study, domains = None, {}
+for step in plan_rob2(len(outcomes)):
+    if step.kind == "domain":
+        outcome = None if step.outcome is None else outcomes[step.outcome]
+        result = agent.assess_domain(
+            step.domain, title, text, outcome, min_similarity=0.9, digests=digests
+        )
+        if step.outcome is None:
+            study = result
+        else:
+            domains.setdefault(step.outcome, []).append(result)
+    else:
+        i = step.outcome
+        escalation = agent.escalate_outcome(title, outcomes[i], study, domains[i])
+        rob2 = combine_outcome(outcomes[i], study, domains[i], escalation)
+```
+
+- `assess_domain` makes one domain's requests: more than one when a reply is retried or re-asked, when the paper is condensed first, and for D5 one second look per other measurement that names no result. It returns a `DomainAssessment` or a `DomainFailed`, as `assess` records them. After its input checks and before any request it reads the stop, so a stop set between two calls ends the next as a `Rob2RunError` `STOPPED`; `assess` does the same. A `WRONG_OUTCOME` refusal (before any request) means D1 was given an outcome, or D2-D5 none.
+- `escalate_outcome(title, outcome, study, domains)` returns `None` when no question is needed, an `Escalation` the model's answer, or an `EscalationFailed` (`reason`, `retryable`, `status`). `combine_outcome` turns the outcome's four domains and that answer into its `OutcomeRob2`, with `overall` computed exactly as `assess` does. Both refuse a `study` that is not D1, or domains that are not D2, D3, D4, D5 in order (`ValueError`), before any request. **Run the escalation step again whenever its outcome's D1 or any of its D2-D5 is run again**: it sends no request when the question is not needed, and an escalation kept from the earlier domains may no longer fit the new ones. `combine_outcome` refuses a stale one (`ValueError`) only where the need for the question has changed: an answer or a failure where the domains do not call for the question, or `None` where they do. Where both sets call for it, it cannot tell, so the caller runs the escalation again. `escalate_outcome` also checks the model's provider before anything else, so an unknown one raises `ValueError`, even where no question is needed, rather than coming back as an `EscalationFailed`.
+- The `Rob2Digests` is the caller's to keep for one paper within one process, so later steps reuse its condensations. A failed condensation is not kept, so retrying the step condenses again (inside `assess` it is kept for the run). Given another text or condensation budget, the digests start again. They are not stored, so a Continue from storage condenses again.
+- `Rob2Step.to_dict()` and `Rob2Step.from_dict(data)` store and read a step. Constructing or reading a step no plan holds (D1 with an outcome, D2-D5 without one, an escalation with a domain) raises `ValueError`.
+- Size the paper to the window before a step with `design_prompt_chars()`, `outcome_prompt_chars()` and `domain_prompt_chars(domain, outcome)`: the characters of the longest prompt the step sends without the title and paper, counted as `part_prompt_chars` counts (a retry's correction note included). `domain_prompt_chars` raises `ValueError` for a wrong outcome. D5's measure leaves out a second look's measurement label and named passages, which vary with the paper's reply.
+
 ### The evidence ladder
 
 ```python
@@ -1576,7 +1615,7 @@ ladder.level, ladder.weight
 
 ### Long papers
 
-Nothing is truncated. Each of the three agents condenses a paper over `condense_config.max_context_chars` by the verbatim-passage map-reduce `PicoAgent` uses, gathering what its own question needs: `DESIGN_CONDENSE_QUERY`, `OUTCOME_CONDENSE_QUERY`, and one query per RoB 2 domain (condensed once per run per domain). Quotes are always located in the original text. Each result says whether the model saw a digest (`condensed`), and `Assessed.condensed` is true when any step did.
+Nothing is truncated. Each of the three agents condenses a paper over `condense_config.max_context_chars` by the verbatim-passage map-reduce `PicoAgent` uses, gathering what its own question needs: `DESIGN_CONDENSE_QUERY`, `OUTCOME_CONDENSE_QUERY`, and one query per RoB 2 domain (condensed once per domain per `Rob2Digests`, one per `assess`). Quotes are always located in the original text. Each result says whether the model saw a digest (`condensed`), and `Assessed.condensed` is true when any step did.
 
 The condenser is a seam. `QueryCondenser` is a protocol with one method, `condense(query, text, label, config, *, stage)`, returning `(digest, notes, status)`. `LlmQueryCondenser(agent, progress=None)` is the default, the map-reduce over the agent's own model, stop and `num_ctx`. Pass your own as `condenser=`, to `assess_unattended` or to any agent, for a cheaper model or a cached digest.
 

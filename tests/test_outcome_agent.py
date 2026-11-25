@@ -26,6 +26,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bmlib.agents.base import JSON_CORRECTION_NOTE
 from bmlib.citations import PassageContradiction
 from bmlib.context_processor import ProcessingConfig, ProcessingStatus
 from bmlib.llm.data_types import LLMResponse
@@ -39,7 +40,12 @@ from bmlib.quality.outcome_agent import (
     OutcomeAgent,
     OutcomeProposal,
     ProposedOutcome,
+    outcome_prompt_chars,
     read_outcome_reply,
+)
+from bmlib.quality.pico_agent import (
+    PICO_CONDENSE_CONSOLIDATION_PROMPT,
+    PICO_CONDENSE_EXTRACTION_PROMPT,
 )
 from bmlib.quality.pico_models import PicoContradictedQuote
 
@@ -440,3 +446,14 @@ class TestTheAgent:
     def test_the_constants(self) -> None:
         assert OUTCOME_PROMPT_VERSION == 1
         assert "primary" in OUTCOME_SYSTEM_PROMPT and OUTCOME_CONDENSE_QUERY
+
+
+def test_outcome_prompt_chars_counts_the_sent_prompt() -> None:
+    question = OUTCOME_TASK_PROMPT + "\n\nPaper Title: \n\nPaper Text:\n"
+    sent = len(OUTCOME_SYSTEM_PROMPT) + len(question) + len("\n\n") + len(JSON_CORRECTION_NOTE)
+    assert outcome_prompt_chars() == sent
+    condensing = max(
+        len(t.replace("{query}", OUTCOME_CONDENSE_QUERY).replace("{content}", ""))
+        for t in (PICO_CONDENSE_EXTRACTION_PROMPT, PICO_CONDENSE_CONSOLIDATION_PROMPT)
+    )
+    assert len(question) >= condensing
