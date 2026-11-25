@@ -566,6 +566,39 @@ mod tests {
         let text = "A sentence about the trial. ".repeat(200);
         let config = ProcessingConfig::default().with_max_context_chars(500);
         let _ = condenser.condense("anything", &text, "label", &config);
-        assert!(reports.load(Ordering::SeqCst) >= 1);
+        let first = reports.load(Ordering::SeqCst);
+        assert!(first >= 1);
+        // Each condensation builds its own condenser; the callback must reach every one.
+        let _ = condenser.condense("anything", &text, "label", &config);
+        assert_eq!(reports.load(Ordering::SeqCst), 2 * first);
+    }
+
+    #[test]
+    fn step_prompt_chars_takes_the_longest_ask_and_the_condensation() {
+        let query = "the trial's randomisation";
+        let condensing = [
+            PICO_CONDENSE_EXTRACTION_PROMPT,
+            PICO_CONDENSE_CONSOLIDATION_PROMPT,
+        ]
+        .iter()
+        .map(|t| {
+            t.replace("{query}", query)
+                .replace("{content}", "")
+                .chars()
+                .count()
+        })
+        .max()
+        .expect("two prompts");
+        let correction = 2 + JSON_CORRECTION_NOTE.chars().count();
+        assert_eq!(
+            step_prompt_chars(&[("S", "q".to_string())], query),
+            1 + condensing + correction
+        );
+        let long = "q".repeat(condensing + 7);
+        let asks = [("S", "q".to_string()), ("SS", long.clone())];
+        assert_eq!(
+            step_prompt_chars(&asks, query),
+            2 + long.chars().count() + correction
+        );
     }
 }

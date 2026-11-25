@@ -40,6 +40,7 @@ from bmlib.quality.rob2_agent import (
     DomainAssessment,
     Escalation,
     Rob2Run,
+    Rob2Step,
     domain_prompt,
     domain_prompt_chars,
     escalation_message,
@@ -161,6 +162,16 @@ def test_the_plan_is_the_contracts() -> None:
     steps: dict[str, Any] = json.loads((FIXTURES / "rob2_steps.json").read_text("utf-8"))
     for case in steps["plans"]:
         assert [s.to_dict() for s in plan_rob2(case["outcomes"])] == case["steps"]
+        assert [Rob2Step.from_dict(s) for s in case["steps"]] == plan_rob2(case["outcomes"])
+
+
+def test_the_refused_steps_are_the_contracts() -> None:
+    steps: dict[str, Any] = json.loads((FIXTURES / "rob2_steps.json").read_text("utf-8"))
+    assert steps["refused"]
+    for case in steps["refused"]:
+        with pytest.raises(ValueError) as raised:
+            Rob2Step.from_dict(case["step"])
+        assert str(raised.value) == case["error"], case["step"]
 
 
 def test_the_prompt_sizes_are_the_contracts() -> None:

@@ -9,7 +9,7 @@ maintainer** (last checked 2026-11-22), so PyPI still serves 0.13.0. **Crate
 worktree of `e7b7c98a` (`HANDOVER_RUST.md`, *Publishing to crates.io*: remake
 the token link first, remove it after)._
 
-## This session: RoB 2 a step at a time (branch `feat/rob2-steps`, PR to follow)
+## This session: RoB 2 a step at a time (branch `feat/rob2-steps`, PR #815)
 
 For StudyAnalyzer's Evidence weight tab (design
 `2026-11-24-evidence-weight-tab-design.md` §4), `assess` is a loop over steps
@@ -22,7 +22,16 @@ a caller drives itself, both languages, held by `tests/fixtures/rob2_steps.json`
   order before any request.
 - `design_prompt_chars`, `outcome_prompt_chars`, `domain_prompt_chars`
   (a step's longest prompt without the paper; D5's omits a second look's
-  label, named text and passages). Rust `LlmQueryCondenser::with_progress`.
+  label and named passages). Rust `LlmQueryCondenser::with_progress`.
+- Final review (finalcheck): a caller's `Rob2Digests` no longer keeps a failed
+  condensation (a Retry could never succeed; `assess` still keeps it for the
+  run) and starts again for another text or budget; a study that is not D1 is
+  refused; `Rob2Step` validates and reads back (`from_dict` / `from_json`,
+  refusals in `rob2_steps.json`); Rust `combine_outcome` returns `Result`
+  rather than panicking on a stale escalation. **Open by design:** a stale
+  escalation whose need did not change cannot be detected (`Escalation`
+  records nothing of the domains it answered), so the docs say the caller
+  re-runs it.
 - `assess`'s results and the fixtures `rob2_run.json`, `rob2_replies.json`
   and `evidence_weight.json` are unchanged. One narrow change: the stop is
   read before every domain, so a stop set mid-run ends it as Stopped even at

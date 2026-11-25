@@ -766,7 +766,7 @@ for step in &plan {
             let study = study.as_ref().expect("D1 comes first");
             // D5 had no stated plan: one domain has some concerns, so no question is asked.
             let escalation = agent.escalate_outcome("A trial", &outcome, study, &domains)?;
-            let rob2 = combine_outcome(&outcome, study, domains.clone(), escalation);
+            let rob2 = combine_outcome(&outcome, study, domains.clone(), escalation)?;
             assert!(matches!(domains[3], DomainResult::Assessed(_)));
             assert_eq!(rob2.overall, Some(Judgement::SomeConcerns));
         }
@@ -776,31 +776,39 @@ for step in &plan {
 ```
 
 `assess_domain(domain, title, text, outcome, min_similarity, &mut digests)`
-makes one domain's request or requests (more than one when a reply is
-re-asked or the paper condensed first) and returns a `DomainResult`, as
-`assess` records it. It reads the stop first, so a stop set between two
-calls ends the next as `Rob2RunError::Stopped` even where no request would
-have been sent (a cached failed digest); `assess` does the same.
+makes one domain's requests and returns a `DomainResult`, as `assess`
+records it: more than one request when a reply is retried or re-asked, when
+the paper is condensed first, and for D5 one second look per other
+measurement that names no result. After its input checks and before any
+request it reads the stop, so a stop set between two calls ends the next as
+`Rob2RunError::Stopped`; `assess` does the same.
 `Rob2RunError::WrongOutcome` (before any request) means D1 was given an
 outcome, or D2-D5 none. `Rob2Digests` is the caller's to keep for one paper
-within one process; it is not stored, so a Continue from storage condenses
-again.
+within one process, so later steps reuse its condensations. A failed
+condensation is not kept, so retrying the step condenses again (inside
+`assess` it is kept for the run). Given another text or condensation budget,
+the digests start again. They are not stored, so a Continue from storage
+condenses again. `Rob2Step::from_json` reads a stored step back, refusing
+one no plan holds.
 `escalate_outcome(title, outcome, study, domains)` is a `Rob2Escalation`:
 `NotNeeded`, `Asked(Escalation)` or `Failed { reason, retryable, status }`.
-It and `combine_outcome` panic, before any request, when `domains` is not
-D2, D3, D4, D5 in order (Python raises `ValueError`). Run the escalation
-step again whenever its outcome's D1 or any of its D2-D5 is run again: it
-sends no request when the question is not needed, and an escalation kept from
-the earlier domains no longer fits the new ones. `combine_outcome` panics on
-such a stale one: `Asked` or `Failed` where the domains do not call for the
-question, or `NotNeeded` where they do.
+It panics, before any request, when `study` is not D1 or `domains` is not
+D2, D3, D4, D5 in order (Python raises `ValueError`); `combine_outcome`
+returns those as an `Err(String)`. Run the escalation step again whenever
+its outcome's D1 or any of its D2-D5 is run again: it sends no request when
+the question is not needed, and an escalation kept from the earlier domains
+may no longer fit the new ones. `combine_outcome` refuses a stale one, with
+an `Err(String)`, only where the need for the question has changed: `Asked`
+or `Failed` where the domains do not call for the question, or `NotNeeded`
+where they do. Where both sets call for it, it cannot tell, so the caller
+runs the escalation again.
 
 To size the paper to the window, `design_prompt_chars()`,
 `outcome_prompt_chars()` and `domain_prompt_chars(domain, outcome)` (an
 `Err(String)` for a wrong outcome) give the characters of the longest prompt
 each step sends without the title and paper, counted as `part_prompt_chars`
-counts. D5's measure leaves out a second look's measurement label, named
-text and passages, which vary with the reply. `LlmQueryCondenser::new(..)`
+counts. D5's measure leaves out a second look's measurement label and named
+passages, which vary with the reply. `LlmQueryCondenser::new(..)`
 also has `with_progress(callback)`, as Python's takes `progress`.
 
 Every result type has `to_json`, Python's `to_dict`, and a checked

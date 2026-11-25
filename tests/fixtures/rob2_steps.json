@@ -96,6 +96,138 @@
    ]
   }
  ],
+ "refused": [
+  {
+   "step": [],
+   "error": "the step is not an object"
+  },
+  {
+   "step": {
+    "kind": "domain",
+    "domain": "D2"
+   },
+   "error": "outcome is absent"
+  },
+  {
+   "step": {
+    "domain": "D2",
+    "outcome": 0
+   },
+   "error": "kind is absent"
+  },
+  {
+   "step": {
+    "kind": "bogus",
+    "domain": null,
+    "outcome": 0
+   },
+   "error": "kind is not domain or escalation"
+  },
+  {
+   "step": {
+    "kind": 1,
+    "domain": null,
+    "outcome": 0
+   },
+   "error": "kind is not domain or escalation"
+  },
+  {
+   "step": {
+    "kind": "domain",
+    "domain": "D9",
+    "outcome": 0
+   },
+   "error": "domain \"D9\" is not one of D1, D2, D3, D4, D5"
+  },
+  {
+   "step": {
+    "kind": "domain",
+    "domain": 2,
+    "outcome": 0
+   },
+   "error": "domain is not text"
+  },
+  {
+   "step": {
+    "kind": "domain",
+    "domain": "D2",
+    "outcome": -1
+   },
+   "error": "outcome is not an index"
+  },
+  {
+   "step": {
+    "kind": "domain",
+    "domain": "D2",
+    "outcome": true
+   },
+   "error": "outcome is not an index"
+  },
+  {
+   "step": {
+    "kind": "domain",
+    "domain": "D2",
+    "outcome": 1.5
+   },
+   "error": "outcome is not an index"
+  },
+  {
+   "step": {
+    "kind": "domain",
+    "domain": "D2",
+    "outcome": "0"
+   },
+   "error": "outcome is not an index"
+  },
+  {
+   "step": {
+    "kind": "domain",
+    "domain": "D2",
+    "outcome": 4294967296
+   },
+   "error": "outcome is not an index"
+  },
+  {
+   "step": {
+    "kind": "domain",
+    "domain": "D1",
+    "outcome": 0
+   },
+   "error": "D1 is judged for the trial, D2-D5 for an outcome"
+  },
+  {
+   "step": {
+    "kind": "domain",
+    "domain": "D2",
+    "outcome": null
+   },
+   "error": "D1 is judged for the trial, D2-D5 for an outcome"
+  },
+  {
+   "step": {
+    "kind": "domain",
+    "domain": null,
+    "outcome": 0
+   },
+   "error": "a domain step names no domain"
+  },
+  {
+   "step": {
+    "kind": "escalation",
+    "domain": "D3",
+    "outcome": 0
+   },
+   "error": "an escalation step names an outcome and no domain"
+  },
+  {
+   "step": {
+    "kind": "escalation",
+    "domain": null,
+    "outcome": null
+   },
+   "error": "an escalation step names an outcome and no domain"
+  }
+ ],
  "prompt_chars": {
   "design": 2024,
   "outcomes": 2616,

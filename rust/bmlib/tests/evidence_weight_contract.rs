@@ -208,12 +208,10 @@ fn the_assessed_case_step_by_step() {
                 let escalation = agent
                     .escalate_outcome(title, proposed, study, &domains)
                     .expect("an escalation");
-                results.push(combine_outcome(
-                    proposed,
-                    study,
-                    std::mem::take(&mut domains),
-                    escalation,
-                ));
+                let combined =
+                    combine_outcome(proposed, study, std::mem::take(&mut domains), escalation)
+                        .expect("the steps fit");
+                results.push(combined);
             }
         }
     }

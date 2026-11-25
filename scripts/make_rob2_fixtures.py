@@ -25,7 +25,9 @@ Python implementation:
   same for escalation replies.
 - ``rob2_run.json``: a whole run's dict, which both languages read and write
   back unchanged.
-- ``rob2_steps.json``: the plan of steps for one and two outcomes.
+- ``rob2_steps.json``: the plan of steps for one and two outcomes, the stored
+  steps a reader refuses (each with its message), and each step's prompt size
+  without the paper.
 
     python scripts/make_rob2_fixtures.py [output-directory]
 
@@ -51,6 +53,7 @@ from bmlib.quality.rob2_agent import (
     Escalation,
     OutcomeRob2,
     Rob2Run,
+    Rob2Step,
     d5_assessment,
     domain_prompt,
     domain_prompt_chars,
@@ -79,6 +82,27 @@ STEPS_NAME = "rob2_steps.json"
 
 #: The outcome counts whose plans the steps contract pins.
 STEP_PLAN_OUTCOMES = (1, 2)
+
+#: Stored steps no plan holds, each refused by ``Rob2Step.from_dict``.
+REFUSED_STEPS: list[Any] = [
+    [],
+    {"kind": "domain", "domain": "D2"},
+    {"domain": "D2", "outcome": 0},
+    {"kind": "bogus", "domain": None, "outcome": 0},
+    {"kind": 1, "domain": None, "outcome": 0},
+    {"kind": "domain", "domain": "D9", "outcome": 0},
+    {"kind": "domain", "domain": 2, "outcome": 0},
+    {"kind": "domain", "domain": "D2", "outcome": -1},
+    {"kind": "domain", "domain": "D2", "outcome": True},
+    {"kind": "domain", "domain": "D2", "outcome": 1.5},
+    {"kind": "domain", "domain": "D2", "outcome": "0"},
+    {"kind": "domain", "domain": "D2", "outcome": 4294967296},
+    {"kind": "domain", "domain": "D1", "outcome": 0},
+    {"kind": "domain", "domain": "D2", "outcome": None},
+    {"kind": "domain", "domain": None, "outcome": 0},
+    {"kind": "escalation", "domain": "D3", "outcome": 0},
+    {"kind": "escalation", "domain": None, "outcome": None},
+]
 
 RANDOM = "Participants were randomly assigned using a computer-generated list."
 CENTRAL = "Allocation was concealed by a central web-based service."
@@ -356,13 +380,24 @@ def _dump(data: dict[str, Any]) -> str:
     return json.dumps(data, ensure_ascii=False, indent=1) + "\n"
 
 
+def _refusal(data: Any) -> str:
+    """The message ``Rob2Step.from_dict`` refuses *data* with."""
+    try:
+        Rob2Step.from_dict(data)
+    except ValueError as exc:
+        return str(exc)
+    raise AssertionError(f"accepted {data!r}")
+
+
 def build_steps() -> dict[str, Any]:
-    """The plan of steps for one and two outcomes, as both languages must plan them."""
+    """The plans of steps for one and two outcomes, as both languages must plan
+    them; the stored steps both readers refuse; each step's prompt size."""
     return {
         "plans": [
             {"outcomes": n, "steps": [step.to_dict() for step in plan_rob2(n)]}
             for n in STEP_PLAN_OUTCOMES
         ],
+        "refused": [{"step": data, "error": _refusal(data)} for data in REFUSED_STEPS],
         "prompt_chars": {
             "design": design_prompt_chars(),
             "outcomes": outcome_prompt_chars(),
@@ -375,7 +410,7 @@ def build_steps() -> dict[str, Any]:
 
 
 def main() -> None:
-    """Write both contracts to the directory given, or to the committed fixtures."""
+    """Write the three contracts to the directory given, or to the committed fixtures."""
     directory = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_DIRECTORY
     (directory / REPLIES_NAME).write_text(_dump(build_replies()), encoding="utf-8")
     (directory / RUN_NAME).write_text(_dump(build_run()), encoding="utf-8")

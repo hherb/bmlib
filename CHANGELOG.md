@@ -14,17 +14,21 @@ All notable changes to bmlib are documented here. The format is based on
   lists the steps `Rob2Agent.assess` takes (D1, then per outcome D2 to D5 and
   its escalation; none for no outcomes) as `Rob2Step`s;
   `Rob2Agent.assess_domain(...)` judges one domain per call, with a
-  `Rob2Digests` the caller keeps so a paper condenses once (a wrong outcome
-  is `Rob2RunErrorKind.WRONG_OUTCOME`); `escalate_outcome(...)` returns
-  `None`, an `Escalation` or an `EscalationFailed`; `combine_outcome(...)`
-  builds the `OutcomeRob2`. Both refuse domains not in D2 to D5 order before
-  any request. `assess` is now a loop over these steps; its results, and the
+  `Rob2Digests` the caller keeps so a paper condenses once (a failed
+  condensation is not kept, so a retry condenses again; another text or
+  budget starts the digests again; a wrong outcome is
+  `Rob2RunErrorKind.WRONG_OUTCOME`); `escalate_outcome(...)` returns `None`,
+  an `Escalation` or an `EscalationFailed`; `combine_outcome(...)` builds the
+  `OutcomeRob2`. Both refuse a study that is not D1 and domains not in D2 to
+  D5 order before any request, and `combine_outcome` an escalation whose
+  need the domains contradict. `Rob2Step.from_dict` reads a stored step,
+  and a step no plan holds is refused. `assess` is now a loop over these steps; its results, and the
   fixtures `rob2_run.json`, `rob2_replies.json` and `evidence_weight.json`,
   are unchanged. `design_prompt_chars()`, `outcome_prompt_chars()` and
   `domain_prompt_chars(domain, outcome)` measure the longest prompt each
   step sends without the title and paper, as `part_prompt_chars` does, so a
   caller can size the paper to the window (D5's omits a second look's
-  label, named text and passages).
+  label and named passages).
 - **An `omlx` provider**: a local [oMLX](https://github.com/jundot/omlx)
   server (MLX on Apple silicon) through its OpenAI-compatible API at
   `http://127.0.0.1:8000`, keyless and free, in both languages

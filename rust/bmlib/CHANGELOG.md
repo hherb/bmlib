@@ -13,11 +13,12 @@ The Python library is documented separately, in the repository's
 
 - **RoB 2 a step at a time** (as in Python; the argument is the root
   `CHANGELOG.md`'s). `quality::plan_rob2` and `Rob2Step`,
-  `Rob2Agent::assess_domain` with `Rob2Digests`,
+  `Rob2Step::from_json`, `Rob2Agent::assess_domain` with `Rob2Digests`,
   `Rob2Agent::escalate_outcome` returning `Rob2Escalation` (`NotNeeded`,
-  `Asked`, `Failed`), `combine_outcome` (it and `escalate_outcome` panic on
-  domains not in D2 to D5 order, Python's `ValueError`; `combine_outcome`
-  also panics on an escalation the domains do not fit) and
+  `Asked`, `Failed`; it panics on a study that is not D1 or domains not in
+  D2 to D5 order, Python's `ValueError`), `combine_outcome` (returning
+  `Result<OutcomeRob2, String>`: those, and an escalation the domains do not
+  fit, are an `Err`) and
   `Rob2RunError::WrongOutcome` (**Breaking** for an exhaustive `match` on
   `Rob2RunError`, which is not `#[non_exhaustive]`). `design_prompt_chars`,
   `outcome_prompt_chars` and `domain_prompt_chars` (`Result<usize, String>`)

@@ -27,9 +27,10 @@ import pytest
 
 from bmlib.agents.base import JSON_CORRECTION_NOTE
 from bmlib.citations import PassageContradiction
-from bmlib.context_processor import ProcessingConfig, ProcessingStatus
+from bmlib.context_processor import ProcessingConfig, ProcessingStatus, ProcessingStoppedError
 from bmlib.llm.data_types import LLMResponse
 from bmlib.quality._condense import CondensationRefusedError
+from bmlib.quality._full_text_agent import step_prompt_chars
 from bmlib.quality.evidence_ladder import EffectScale, ReportedResult
 from bmlib.quality.outcome_agent import ProposedOutcome
 from bmlib.quality.pico_agent import (
@@ -50,6 +51,7 @@ from bmlib.quality.rob2_agent import (
     Rob2Run,
     Rob2RunError,
     Rob2RunErrorKind,
+    Rob2Step,
     combine_outcome,
     domain_prompt,
     domain_prompt_chars,
@@ -667,24 +669,130 @@ class TestTheAgent:
         self._two_outcomes_d2(condenser, [Rob2Digests(), Rob2Digests()])
         assert len(condenser.queries) == 2
 
-    def test_a_failed_digest_fails_every_outcome_once(self) -> None:
-        class Refusing(ScriptedCondenser):
-            def condense(self, query: str, *args: Any, **kwargs: Any) -> Any:
-                self.queries.append(query)
-                raise CondensationRefusedError("the digest does not fit")
+    _LONG = TEXT + " " + "Filler sentence about nothing. " * 20
 
-        text = TEXT + " " + "Filler sentence about nothing. " * 20
-        condenser = Refusing("unused")
+    class _Failing(ScriptedCondenser):
+        """Raises each of ``failures`` in turn, then returns the digest."""
+
+        def __init__(self, digest: str, *failures: BaseException) -> None:
+            super().__init__(digest)
+            self.failures = list(failures)
+
+        def condense(self, query: str, *args: Any, **kwargs: Any) -> Any:
+            self.queries.append(query)
+            if self.failures:
+                raise self.failures.pop(0)
+            return self.digest, [], ProcessingStatus.COMPLETED
+
+    @staticmethod
+    def _down() -> CondensationRefusedError:
+        cause = ConnectionError("down")
+        cause.status_code = 503  # type: ignore[attr-defined]
+        refused = CondensationRefusedError("the model is down")
+        refused.__cause__ = cause
+        return refused
+
+    def test_a_failed_digest_is_not_kept_by_the_caller_s_digests(self) -> None:
+        condenser = self._Failing("unused", *[CondensationRefusedError("does not fit")] * 2)
         agent = make_agent(
             condenser=condenser, condense_config=ProcessingConfig(max_context_chars=200)
         )
         held = Rob2Digests()
         for outcome in (OUTCOME, SECOND):
             result = agent.assess_domain(
-                Domain.D2, "A trial", text, outcome, min_similarity=SIM, digests=held
+                Domain.D2, "A trial", self._LONG, outcome, min_similarity=SIM, digests=held
             )
             assert isinstance(result, DomainFailed) and result.domain is Domain.D2
-        assert len(condenser.queries) == 1
+        assert len(condenser.queries) == 2
+        agent.llm.chat.assert_not_called()
+
+    def test_a_retryable_condensation_failure_succeeds_on_retry(self) -> None:
+        condenser = self._Failing("A digest.", self._down())
+        agent = make_agent(
+            reply(Domain.D2),
+            condenser=condenser,
+            condense_config=ProcessingConfig(max_context_chars=200),
+        )
+        held = Rob2Digests()
+        first, second = (
+            agent.assess_domain(
+                Domain.D2, "A trial", self._LONG, OUTCOME, min_similarity=SIM, digests=held
+            )
+            for _ in range(2)
+        )
+        assert isinstance(first, DomainFailed)
+        assert (first.retryable, first.status) == (True, 503)
+        assert assessed(second).condensed
+        assert len(condenser.queries) == 2
+
+    def test_assess_keeps_a_failed_digest_for_the_run(self) -> None:
+        refusals = [CondensationRefusedError("does not fit")] * 5
+        condenser = self._Failing("unused", *refusals)
+        agent = make_agent(
+            condenser=condenser, condense_config=ProcessingConfig(max_context_chars=200)
+        )
+        run = agent.assess("A trial", self._LONG, [OUTCOME, SECOND], min_similarity=SIM)
+        assert len(condenser.queries) == 5  # once per domain, not per outcome
+        assert all(isinstance(d, DomainFailed) for o in run.outcomes for d in o.domains)
+        agent.llm.chat.assert_not_called()
+
+    def test_a_stop_during_condensation_is_not_kept(self) -> None:
+        condenser = self._Failing("A digest.", ProcessingStoppedError("stopped"))
+        agent = make_agent(
+            reply(Domain.D2),
+            condenser=condenser,
+            condense_config=ProcessingConfig(max_context_chars=200),
+        )
+        held = Rob2Digests()
+        with pytest.raises(Rob2RunError) as raised:
+            agent.assess_domain(
+                Domain.D2, "A trial", self._LONG, OUTCOME, min_similarity=SIM, digests=held
+            )
+        assert raised.value.kind is Rob2RunErrorKind.STOPPED
+        result = agent.assess_domain(
+            Domain.D2, "A trial", self._LONG, OUTCOME, min_similarity=SIM, digests=held
+        )
+        assert assessed(result).condensed
+        assert len(condenser.queries) == 2
+
+    @pytest.mark.parametrize("change", ["text", "budget"])
+    def test_digests_start_again_for_another_paper_or_budget(self, change: str) -> None:
+        condenser = ScriptedCondenser("A digest.")
+        other = self._LONG + " More." if change == "text" else self._LONG
+        budget = 300 if change == "budget" else 200
+        held = Rob2Digests()
+        for text, window in ((self._LONG, 200), (other, budget), (other, budget)):
+            agent = make_agent(
+                reply(Domain.D2),
+                condenser=condenser,
+                condense_config=ProcessingConfig(max_context_chars=window),
+            )
+            agent.assess_domain(
+                Domain.D2, "A trial", text, OUTCOME, min_similarity=SIM, digests=held
+            )
+        assert len(condenser.queries) == 2
+
+    @pytest.mark.parametrize(
+        ("text", "similarity", "kind"),
+        [
+            ("  ", SIM, Rob2RunErrorKind.EMPTY_INPUT),
+            (TEXT, 0.0, Rob2RunErrorKind.INVALID_SIMILARITY),
+        ],
+    )
+    def test_assess_domain_refuses_its_input_before_any_request(
+        self, text: str, similarity: float, kind: Rob2RunErrorKind
+    ) -> None:
+        agent = make_agent(*low_run())
+        with pytest.raises(Rob2RunError) as raised:
+            agent.assess_domain(
+                Domain.D2,
+                "A trial",
+                text,
+                OUTCOME,
+                min_similarity=similarity,
+                digests=Rob2Digests(),
+            )
+        assert raised.value.kind is kind
         agent.llm.chat.assert_not_called()
 
     def test_a_stop_during_a_second_look_stops_the_step(self) -> None:
@@ -1136,12 +1244,23 @@ def test_combine_outcome_refuses_an_escalation_the_domains_do_not_call_for() -> 
     assert combine_outcome(OUTCOME, study, domains, failed).escalation_error == "down"
 
 
-def test_escalate_outcome_refuses_an_unknown_provider_before_any_request() -> None:
-    agent = make_agent(*_concerns_replies())
+@pytest.mark.parametrize("needed", [True, False])
+def test_escalate_outcome_refuses_an_unknown_provider_before_any_request(needed: bool) -> None:
+    agent = make_agent(*(_concerns_replies() if needed else low_run()))
     study, domains = _domains_of(agent)
     agent.llm._get_provider = MagicMock(side_effect=ValueError("Unknown provider 'nosuch'"))
     with pytest.raises(ValueError, match="nosuch"):
         agent.escalate_outcome("A trial", OUTCOME, study, domains)
+    assert agent.llm.chat.call_count == 5
+
+
+def test_a_study_that_is_not_d1_is_refused() -> None:
+    agent = make_agent(*_concerns_replies(), {"escalate": True})
+    study, domains = _domains_of(agent)
+    with pytest.raises(ValueError, match="^the study's domain is not D1$"):
+        agent.escalate_outcome("A trial", OUTCOME, domains[0], domains)
+    with pytest.raises(ValueError, match="^the study's domain is not D1$"):
+        combine_outcome(OUTCOME, domains[0], domains, None)
     assert agent.llm.chat.call_count == 5
 
 
@@ -1186,3 +1305,32 @@ def test_d5_counts_the_larger_of_facts_and_second_look() -> None:
     look = OtherMeasurement(label="", named=[], result=[])
     second = len(D5_SECOND_LOOK_SYSTEM_PROMPT) + len(second_look_prompt("", "", OUTCOME, look))
     assert domain_prompt_chars(Domain.D5, OUTCOME) == max(facts, second) + _CORRECTION
+
+
+@pytest.mark.parametrize(
+    ("kind", "domain", "outcome", "message"),
+    [
+        ("bogus", None, 0, "kind is not domain or escalation"),
+        ("domain", Domain.D2, -1, "outcome is not an index"),
+        ("domain", Domain.D2, True, "outcome is not an index"),
+        ("domain", Domain.D1, 0, "D1 is judged for the trial, D2-D5 for an outcome"),
+        ("domain", Domain.D2, None, "D1 is judged for the trial, D2-D5 for an outcome"),
+        ("domain", None, 0, "a domain step names no domain"),
+        ("escalation", Domain.D3, 0, "an escalation step names an outcome and no domain"),
+        ("escalation", None, None, "an escalation step names an outcome and no domain"),
+    ],
+)
+def test_a_step_no_plan_holds_is_refused(
+    kind: Any, domain: Domain | None, outcome: Any, message: str
+) -> None:
+    with pytest.raises(ValueError) as raised:
+        Rob2Step(kind, domain, outcome)
+    assert str(raised.value) == message
+
+
+def test_step_prompt_chars_takes_the_longest_ask_and_the_condensation() -> None:
+    query = condense_query(Domain.D2)
+    assert step_prompt_chars([("S", "q")], query) == 1 + _condensing(query) + _CORRECTION
+    long = "q" * (_condensing(query) + 7)
+    asks = [("S", "q"), ("SS", long)]
+    assert step_prompt_chars(asks, query) == 2 + len(long) + _CORRECTION

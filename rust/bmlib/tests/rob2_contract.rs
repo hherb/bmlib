@@ -25,7 +25,7 @@ use bmlib::quality::design_agent::design_prompt_chars;
 use bmlib::quality::outcome_agent::{outcome_prompt_chars, ProposedOutcome};
 use bmlib::quality::rob2_agent::{
     domain_prompt, domain_prompt_chars, escalation_message, plan_rob2, read_domain_reply,
-    read_escalation_reply, DomainAssessment, Escalation, Rob2Run, ROB2_DOMAIN_PROMPT,
+    read_escalation_reply, DomainAssessment, Escalation, Rob2Run, Rob2Step, ROB2_DOMAIN_PROMPT,
     ROB2_SYSTEM_PROMPT,
 };
 use bmlib::quality::rob2_algorithm::{questions, Domain};
@@ -182,6 +182,28 @@ fn the_plan_is_the_contracts() {
         let count = usize::try_from(case["outcomes"].as_u64().expect("outcomes")).expect("count");
         let plan: Vec<Value> = plan_rob2(count).iter().map(|s| s.to_json()).collect();
         assert_eq!(Value::Array(plan), case["steps"]);
+        let read: Result<Vec<Rob2Step>, String> = case["steps"]
+            .as_array()
+            .expect("steps")
+            .iter()
+            .map(Rob2Step::from_json)
+            .collect();
+        assert_eq!(read, Ok(plan_rob2(count)));
+    }
+}
+
+#[test]
+fn the_refused_steps_are_the_contracts() {
+    let fixture: Value = serde_json::from_str(STEPS).expect("the fixture is JSON");
+    let refused = fixture["refused"].as_array().expect("refused");
+    assert!(!refused.is_empty());
+    for case in refused {
+        assert_eq!(
+            Rob2Step::from_json(&case["step"]),
+            Err(case["error"].as_str().expect("an error").to_string()),
+            "{}",
+            case["step"]
+        );
     }
 }
 
