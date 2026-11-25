@@ -222,15 +222,26 @@ EvidenceWeight = NotCovered | NoPrimaryOutcome | Assessed
 """What :func:`assess_unattended` returns."""
 
 
+def _covered_start(design: DesignProposal) -> Level | None:
+    """The ladder's start level for *design*, or ``None`` when the ladder does not cover it."""
+    start = start_level(design.design)
+    if start is None or design.rct_layout is None or not design.rct_layout.is_covered():
+        return None
+    return start
+
+
 def evidence_weight_from_dict(data: dict[str, Any]) -> EvidenceWeight:
     """Rebuild any :data:`EvidenceWeight` from its ``to_dict`` output, by ``status``.
 
     Raises:
         ValueError: ``status`` is unknown, ``ladder_version`` is not
             :data:`LADDER_VERSION`, the settings are refused, a field is absent
-            or of the wrong type or value, or the parts disagree (a different number of
-            outcomes, RoB 2 results or assessed outcomes; a design the ladder
-            does not cover; an assessed outcome other than the one
+            or of the wrong type or value, or the parts disagree with what
+            :func:`assess_unattended` writes (a ``not_covered`` design the ladder
+            covers; a ``no_primary_outcome`` or ``assessed`` design it does not;
+            primary outcomes under ``no_primary_outcome`` or none under
+            ``assessed``; a different number of outcomes, RoB 2 results or
+            assessed outcomes; an assessed outcome other than the one
             :func:`assess_outcome` rebuilds from the design, run, outcome and
             settings, #813; a ``paper_weight`` that is not the largest ladder
             weight).
@@ -238,10 +249,17 @@ def evidence_weight_from_dict(data: dict[str, Any]) -> EvidenceWeight:
     data = _object(data, "the evidence weight")
     status = _wire(data, "status", str, "text")
     design = DesignProposal.from_dict(_object(data.get("design"), "design"))
+    start = _covered_start(design)
     if status == STATUS_NOT_COVERED:
+        if start is not None:
+            raise ValueError("a not_covered result's design is one the ladder covers")
         return NotCovered(design)
     outcomes = OutcomeProposal.from_dict(_object(data.get("outcomes"), "outcomes"))
     if status == STATUS_NO_PRIMARY_OUTCOME:
+        if start is None:
+            raise ValueError("the design is not one the ladder covers")
+        if outcomes.outcomes:
+            raise ValueError("a no_primary_outcome result has primary outcomes")
         return NoPrimaryOutcome(design, outcomes)
     if status != STATUS_ASSESSED:
         raise ValueError(
@@ -257,20 +275,25 @@ def evidence_weight_from_dict(data: dict[str, Any]) -> EvidenceWeight:
     weight = data.get("paper_weight")
     if len(assessed) != len(run.outcomes) or len(assessed) != len(outcomes.outcomes):
         raise ValueError("outcomes, run and assessed do not have the same length")
-    start = start_level(design.design)
-    if start is None or design.rct_layout is None or not design.rct_layout.is_covered():
+    if start is None:
         raise ValueError("the design is not one the ladder covers")
+    if not assessed:
+        raise ValueError("an assessed result has no primary outcomes")
     for index, (one, proposed, rob2) in enumerate(
         zip(assessed, outcomes.outcomes, run.outcomes, strict=True)
     ):
         if one.outcome != proposed or one.rob2 != rob2:
             raise ValueError(f"assessed[{index}] is not outcome {index} of outcomes and run")
-        if one != assess_outcome(start, run.study, proposed, rob2, settings):
+        rebuilt = assess_outcome(start, run.study, proposed, rob2, settings)
+        if one != rebuilt:
+            part = "ladder" if one.ladder != rebuilt.ladder else "ladder_error"
             raise ValueError(
-                f"assessed[{index}]'s ladder or ladder_error is not the one its design, "
+                f"assessed[{index}]'s {part} is not the one its design, "
                 "RoB 2 result, reported result and settings give"
             )
     expected = paper_weight([a.ladder for a in assessed if a.ladder is not None])
+    if weight is not None and (isinstance(weight, bool) or not isinstance(weight, int | float)):
+        raise ValueError("paper_weight is not a number")
     if weight != expected:
         raise ValueError(f"paper_weight {weight!r} is not the largest ladder weight {expected!r}")
     return Assessed(
@@ -299,7 +322,12 @@ def _not_assessed(study: Any, rob2: OutcomeRob2) -> str:
 
 
 def _ladder_error(study: Any, outcome: ProposedOutcome, rob2: OutcomeRob2) -> str | None:
-    """Why no ladder can be built for this outcome, or ``None`` when one can."""
+    """Why no ladder can be built for this outcome, or ``None`` when one can.
+
+    The text is stored and compared on read (#813), here and in Rust's twin: reword
+    it (or :func:`_not_assessed`'s) only with a ``LADDER_VERSION`` bump, or every
+    stored result with such an outcome reads as edited.
+    """
     if rob2.overall is None:
         return _not_assessed(study, rob2)
     if outcome.result_error is not None:
@@ -414,8 +442,8 @@ def assess_unattended(
         design = DesignAgent(llm_client, model, **kwargs).propose(
             title, text, min_similarity=min_similarity
         )
-        start = start_level(design.design)
-        if start is None or design.rct_layout is None or not design.rct_layout.is_covered():
+        start = _covered_start(design)
+        if start is None:
             return NotCovered(design)
         outcomes = OutcomeAgent(llm_client, model, **kwargs).propose(
             title, text, min_similarity=min_similarity

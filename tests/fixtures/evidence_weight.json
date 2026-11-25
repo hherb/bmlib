@@ -3089,6 +3089,58 @@
    "error": "the design is not one the ladder covers"
   },
   {
+   "name": "a design with no start level",
+   "change": {
+    "path": [
+     "design",
+     "design"
+    ],
+    "set": "cohort_prospective"
+   },
+   "error": "the design is not one the ladder covers"
+  },
+  {
+   "name": "an RCT with no layout",
+   "change": {
+    "path": [
+     "design",
+     "rct_layout"
+    ],
+    "set": null
+   },
+   "error": "the design is not one the ladder covers"
+  },
+  {
+   "name": "a not_covered result the ladder covers",
+   "change": {
+    "path": [
+     "status"
+    ],
+    "set": "not_covered"
+   },
+   "error": "a not_covered result's design is one the ladder covers"
+  },
+  {
+   "name": "a no_primary_outcome result with outcomes",
+   "change": {
+    "path": [
+     "status"
+    ],
+    "set": "no_primary_outcome"
+   },
+   "error": "a no_primary_outcome result has primary outcomes"
+  },
+  {
+   "name": "a paper_weight that is not a number",
+   "change": {
+    "path": [
+     "paper_weight"
+    ],
+    "set": true
+   },
+   "error": "paper_weight is not a number"
+  },
+  {
    "name": "a ladder its RoB 2 judgement does not build",
    "change": {
     "path": [
@@ -3103,7 +3155,7 @@
      "risk_of_bias": "high"
     }
    },
-   "error": "assessed[0]'s ladder or ladder_error is not the one its design, RoB 2 result, reported result and settings give"
+   "error": "assessed[0]'s ladder is not the one its design, RoB 2 result, reported result and settings give"
   },
   {
    "name": "a ladder its settings do not build",
@@ -3114,7 +3166,7 @@
     ],
     "set": 0.9
    },
-   "error": "assessed[0]'s ladder or ladder_error is not the one its design, RoB 2 result, reported result and settings give"
+   "error": "assessed[0]'s ladder is not the one its design, RoB 2 result, reported result and settings give"
   },
   {
    "name": "a ladder error its inputs do not give",
@@ -3126,7 +3178,7 @@
     ],
     "set": "x"
    },
-   "error": "assessed[1]'s ladder or ladder_error is not the one its design, RoB 2 result, reported result and settings give"
+   "error": "assessed[1]'s ladder_error is not the one its design, RoB 2 result, reported result and settings give"
   }
  ]
 }

@@ -157,8 +157,80 @@ fn a_ladder_error_where_a_ladder_can_be_built_is_refused() {
     wire["assessed"][0]["ladder_error"] = Value::from("x");
     assert_eq!(
         EvidenceWeight::from_json(&wire).expect_err("refused"),
-        "assessed[0]'s ladder or ladder_error is not the one its design, \
+        "assessed[0]'s ladder is not the one its design, \
          RoB 2 result, reported result and settings give"
+    );
+}
+
+/// #813: a ladder stored where the inputs build none is refused (two changes;
+/// Python's unit test has it too).
+#[test]
+fn a_ladder_where_none_can_be_built_is_refused() {
+    let fixture = fixture();
+    let mut wire = fixture["cases"][3]["expected"].clone();
+    assert!(wire["assessed"][1]["ladder"].is_null());
+    wire["assessed"][1]["ladder"] = wire["assessed"][0]["ladder"].clone();
+    wire["assessed"][1]["ladder_error"] = Value::Null;
+    assert_eq!(
+        EvidenceWeight::from_json(&wire).expect_err("refused"),
+        "assessed[1]'s ladder is not the one its design, \
+         RoB 2 result, reported result and settings give"
+    );
+}
+
+/// An `assessed` result with no outcomes is one `assess_unattended` never
+/// writes (it returns `no_primary_outcome`); three changes, so a unit test.
+#[test]
+fn an_assessed_result_with_no_outcomes_is_refused() {
+    let fixture = fixture();
+    let mut wire = fixture["cases"][3]["expected"].clone();
+    wire["outcomes"]["outcomes"] = Value::Array(vec![]);
+    wire["run"]["outcomes"] = Value::Array(vec![]);
+    wire["assessed"] = Value::Array(vec![]);
+    wire["paper_weight"] = Value::Null;
+    assert_eq!(
+        EvidenceWeight::from_json(&wire).expect_err("refused"),
+        "an assessed result has no primary outcomes"
+    );
+}
+
+/// The assessed case under settings other than the defaults reads back to
+/// itself: every settings field survives the wire, so the rebuild on read
+/// (#813) gives the stored ladders.
+#[test]
+fn a_result_under_other_settings_reads_back() {
+    let fixture = fixture();
+    let case = &fixture["cases"][3];
+    let settings = LadderSettings {
+        some_concerns_steps: 2,
+        small_trial_n: 5000,
+        max_imprecision_steps: 1,
+        weight_high: 0.95,
+        weight_moderate: 0.65,
+        weight_low: 0.35,
+        weight_very_low: 0.05,
+        ..LadderSettings::default()
+    };
+    let mut chat = Scripted {
+        replies: case["replies"].as_array().expect("replies").clone(),
+        sent: 0,
+    };
+    let result = assess_unattended(
+        &mut chat,
+        None,
+        None,
+        &settings,
+        &AgentOptions::default(),
+        fixture["title"].as_str().expect("title"),
+        fixture["text"].as_str().expect("text"),
+        fixture["min_similarity"].as_f64().expect("similarity"),
+    )
+    .expect("a result");
+    let wire = result.to_json();
+    assert_ne!(wire["assessed"], case["expected"]["assessed"]);
+    assert_eq!(
+        EvidenceWeight::from_json(&wire).expect("reads back"),
+        result
     );
 }
 

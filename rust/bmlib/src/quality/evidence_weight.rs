@@ -86,7 +86,8 @@ impl Default for AgentOptions {
     }
 }
 
-/// Why the pipeline ended without a result: the step's own error.
+/// Why [`assess_unattended`] or [`assess_outcome`] ended without a result: a
+/// step's own error, or invalid settings.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum EvidenceWeightError {
@@ -123,6 +124,16 @@ impl From<Rob2RunError> for EvidenceWeightError {
     fn from(error: Rob2RunError) -> Self {
         EvidenceWeightError::Rob2(error)
     }
+}
+
+/// `from_json`'s refusal of a design the ladder does not cover.
+const NOT_COVERED: &str = "the design is not one the ladder covers";
+
+/// The ladder's start level for `design`, or `None` when the ladder does not
+/// cover it (no start level, or a layout other than parallel-group).
+fn covered_start(design: &DesignProposal) -> Option<Level> {
+    let covered = design.rct_layout.is_some_and(|layout| layout.is_covered());
+    start_level(design.design).filter(|_| covered)
 }
 
 /// One primary outcome taken through RoB 2 and the ladder.
@@ -261,22 +272,36 @@ impl EvidenceWeight {
     ///
     /// # Errors
     ///
-    /// A message when `status` is unknown, a field is absent or of the wrong
-    /// type or value, or the parts disagree (a different number of outcomes,
-    /// RoB 2 results or assessed outcomes; a design the ladder does not
-    /// cover; an assessed outcome other than the one [`assess_outcome`]
-    /// rebuilds from the design, run, outcome and settings, #813; a
-    /// `paper_weight` that is not the largest ladder weight).
+    /// A message when `status` is unknown, `ladder_version` is not
+    /// [`LADDER_VERSION`], the settings fail [`LadderSettings::validate`], a
+    /// field is absent or of the wrong type or value, or the parts disagree
+    /// with what [`assess_unattended`] writes (a `not_covered` design the
+    /// ladder covers; a `no_primary_outcome` or `assessed` design it does not;
+    /// primary outcomes under `no_primary_outcome` or none under `assessed`; a
+    /// different number of outcomes, RoB 2 results or assessed outcomes; an
+    /// assessed outcome other than the one [`assess_outcome`] rebuilds from the
+    /// design, run, outcome and settings, #813; a `paper_weight` that is not
+    /// the largest ladder weight).
     pub fn from_json(value: &Value) -> Result<Self, String> {
         let data = object(value, "the evidence weight")?;
         let status = text(data, "status")?;
         let part = |key: &str| data.get(key).unwrap_or(&Value::Null);
         let design = DesignProposal::from_json(part("design"))?;
+        let start = covered_start(&design);
         if status == STATUS_NOT_COVERED {
+            if start.is_some() {
+                return Err("a not_covered result's design is one the ladder covers".to_string());
+            }
             return Ok(EvidenceWeight::NotCovered { design });
         }
         let outcomes = OutcomeProposal::from_json(part("outcomes"))?;
         if status == STATUS_NO_PRIMARY_OUTCOME {
+            if start.is_none() {
+                return Err(NOT_COVERED.to_string());
+            }
+            if !outcomes.outcomes.is_empty() {
+                return Err("a no_primary_outcome result has primary outcomes".to_string());
+            }
             return Ok(EvidenceWeight::NoPrimaryOutcome { design, outcomes });
         }
         if status != STATUS_ASSESSED {
@@ -300,10 +325,10 @@ impl EvidenceWeight {
         if assessed.len() != run.outcomes.len() || assessed.len() != outcomes.outcomes.len() {
             return Err("outcomes, run and assessed do not have the same length".to_string());
         }
-        let covered = design.rct_layout.is_some_and(|layout| layout.is_covered());
-        let start = start_level(design.design)
-            .filter(|_| covered)
-            .ok_or("the design is not one the ladder covers")?;
+        let start = start.ok_or(NOT_COVERED)?;
+        if assessed.is_empty() {
+            return Err("an assessed result has no primary outcomes".to_string());
+        }
         for (index, ((one, proposed), rob2)) in assessed
             .iter()
             .zip(&outcomes.outcomes)
@@ -318,8 +343,13 @@ impl EvidenceWeight {
             let rebuilt = assess_outcome(start, &run.study, proposed, rob2, &settings)
                 .map_err(|e| e.to_string())?;
             if *one != rebuilt {
+                let field = if one.ladder != rebuilt.ladder {
+                    "ladder"
+                } else {
+                    "ladder_error"
+                };
                 return Err(format!(
-                    "assessed[{index}]'s ladder or ladder_error is not the one its design, \
+                    "assessed[{index}]'s {field} is not the one its design, \
                      RoB 2 result, reported result and settings give"
                 ));
             }
@@ -379,6 +409,10 @@ fn not_assessed(study: &DomainResult, rob2: &OutcomeRob2) -> String {
 }
 
 /// Why no ladder can be built for this outcome, or `None` when one can.
+///
+/// The text is stored and compared on read (#813), here and in Python's twin:
+/// reword it (or [`not_assessed`]'s) only with a [`LADDER_VERSION`] bump, or
+/// every stored result with such an outcome reads as edited.
 fn ladder_error(
     study: &DomainResult,
     outcome: &ProposedOutcome,
@@ -484,8 +518,7 @@ pub fn assess_unattended(
         }
         agent.propose(title, text, min_similarity)?
     };
-    let covered = design.rct_layout.is_some_and(|layout| layout.is_covered());
-    let Some(start) = start_level(design.design).filter(|_| covered) else {
+    let Some(start) = covered_start(&design) else {
         return Ok(EvidenceWeight::NotCovered { design });
     };
 

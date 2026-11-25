@@ -207,6 +207,14 @@ REFUSALS: list[tuple[str, dict[str, Any]]] = [
     ("ladder and ladder error both set", {"path": ["assessed", 0, "ladder_error"], "set": "x"}),
     # #813: a stored ladder or ladder_error is rebuilt from its inputs.
     ("a design the ladder does not cover", {"path": ["design", "rct_layout"], "set": "crossover"}),
+    ("a design with no start level", {"path": ["design", "design"], "set": "cohort_prospective"}),
+    ("an RCT with no layout", {"path": ["design", "rct_layout"], "set": None}),
+    ("a not_covered result the ladder covers", {"path": ["status"], "set": "not_covered"}),
+    (
+        "a no_primary_outcome result with outcomes",
+        {"path": ["status"], "set": "no_primary_outcome"},
+    ),
+    ("a paper_weight that is not a number", {"path": ["paper_weight"], "set": True}),
     (
         "a ladder its RoB 2 judgement does not build",
         {"path": ["assessed", 0, "ladder", "steps", 0, "reason"], "set": {"risk_of_bias": "high"}},

@@ -17,18 +17,23 @@ The maintainer's choices: #818 by validating at entry, #813 by re-deriving.
 
 - **#818 (Rust only)**: `assess_unattended` returns
   `Err(EvidenceWeightError::InvalidSettings(msg))` before any request for
-  `LadderSettings` that fail `validate()` (only a struct literal can build
-  them), and `assess_outcome` now returns `Result<AssessedOutcome, _>` with the
+  `LadderSettings` that fail `validate()` (built in code; deserialising
+  refuses them), and `assess_outcome` now returns `Result<AssessedOutcome, _>` with the
   same error rather than an outcome's `ladder_error`. `EvidenceWeightError` is
   `#[non_exhaustive]`, done while the crate is unpublished. Python's frozen
   `LadderSettings` cannot be invalid, so it is unchanged.
 - **#813 (both languages)**: reading an `assessed` result rebuilds each
   outcome with `assess_outcome(start_level(design), run.study, outcome, rob2,
-  settings)` and refuses it unless it is equal, and refuses a design the ladder
-  does not cover. Nothing `assess_unattended` wrote goes stale. Four new
-  refusals in `evidence_weight.json` (cases unchanged), and unit tests for the
-  two-change cases (a `ladder_error` where a ladder can be built, a ladder
-  where none can).
+  settings)` and refuses it unless it is equal, naming `ladder` or
+  `ladder_error`. Every status is held to what `assess_unattended` writes (a
+  covered design under `not_covered`, an uncovered one or outcomes under
+  `no_primary_outcome`, none under `assessed`), and Python now refuses a
+  non-number `paper_weight` as Rust did. Nothing `assess_unattended` wrote
+  goes stale; rewording a `ladder_error` text needs a `LADDER_VERSION` bump.
+  Nine new refusals in `evidence_weight.json` (cases unchanged), unit tests in
+  both languages for the multi-change cases (a `ladder_error` where a ladder
+  can be built, a ladder where none can, an `assessed` result with no
+  outcomes), and a round trip under non-default settings in both.
 - Filed **#819**: Rust `quality_extractors`' multicenter test asserts
   wall time (< 2 s) and failed once under a full parallel run. It is #533's
   flake class.
@@ -194,8 +199,9 @@ MedicalFactChecker's step 3 (re-pin the xcframework). Unreleased.
 
 `biorxiv-details`/`medrxiv-details` are in `sync(sources=None)`; one row per
 DOI, newest posting by `version`. **`DETAILS_SETTLE_DAYS` = 7 is a bound;
-measuring it is #759.** A JATS cached with the PDF-beside option off is not
-covered (the `shortcut:` in `_check_cache`).
+measuring it is #759.** Full-text tests script `content`, not `json()`. A
+JATS cached with the PDF-beside option off is not covered (the `shortcut:` in
+`_check_cache`).
 
 ## Release 0.13.0 / Rust crate 0.4.0 (released 2026-11-10)
 
@@ -203,7 +209,9 @@ PR #736, on PyPI and crates.io; its downstream cost is the CHANGELOG's
 `[0.13.0]` *Changed — breaking*. Left open past it: #694, #495, #722, #733,
 #734, #730/#731, #716, #718, #725, the PDF path's #605, #623, #628, and
 **Mistral's default** (`mistral-large-latest` 403s on the probed key;
-re-probe with a paid-tier key). The title corpus's next top-up bumps
+re-probe with a paid-tier key). Whether a misreported PICO part's confidence
+lifts `overall_confidence` is the maintainer's to revisit
+(`docs/DECISIONS.md`). The title corpus's next top-up bumps
 `ROW_DEFINITIONS_VERSION` (its `median_font_size` rows are line medians).
 
 ## Rules carried forward, and previous sessions

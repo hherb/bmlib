@@ -56,9 +56,10 @@ The Python library is documented separately, in the repository's
 ### Fixed
 
 - **Invalid `LadderSettings` are the call's error, before any request**
-  (#818). A struct literal can build settings `validate()` refuses;
-  `assess_unattended` paid for every request and then reported them as each
-  outcome's `ladder_error`. It now returns
+  (#818). Settings built in code (a struct literal or a field assignment) can
+  fail `validate()`, which only deserialising runs; `assess_unattended` paid
+  for every request and then reported them as the `ladder_error` of every
+  outcome that would otherwise have had a ladder. It now returns
   `Err(EvidenceWeightError::InvalidSettings(message))` first, and
   `assess_outcome` returns `Result<AssessedOutcome, EvidenceWeightError>`
   with the same error, never an outcome's `ladder_error`. Python's frozen

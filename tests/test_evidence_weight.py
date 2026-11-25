@@ -99,14 +99,9 @@ def run(*replies: Any, text: str = TEXT, **kwargs: Any) -> tuple[Any, MagicMock]
             for r in replies
         ]
     )
+    kwargs.setdefault("settings", SETTINGS)
     result = assess_unattended(
-        llm,
-        "test:model",
-        settings=SETTINGS,
-        title="A trial",
-        text=text,
-        min_similarity=SIM,
-        **kwargs,
+        llm, "test:model", title="A trial", text=text, min_similarity=SIM, **kwargs
     )
     return result, llm.chat
 
@@ -308,6 +303,40 @@ class TestTheWireForm:
             wire = json.loads(json.dumps(original.to_dict()))
             assert evidence_weight_from_dict(wire) == original
 
+    def test_a_result_under_other_settings_round_trips(self) -> None:
+        # Every settings field must survive the wire, or the rebuild on read refuses (#813).
+        settings = LadderSettings(
+            some_concerns_steps=2,
+            no_interval_steps=2,
+            small_trial_n=5000,
+            max_imprecision_steps=1,
+            weight_high=0.95,
+            weight_moderate=0.65,
+            weight_low=0.35,
+            weight_very_low=0.05,
+        )
+        no_interval = outcome("Hospitalisation", ci_low=None, ci_high=None, ci_level=None)
+        result, _ = run(
+            design(),
+            {"primary_outcomes": [outcome("Mortality"), no_interval]},
+            *rob2_replies(2),
+            settings=settings,
+        )
+        assert isinstance(result, Assessed)
+        assert all(a.ladder is not None for a in result.assessed)
+        assert (
+            result.assessed[0].ladder
+            != run(
+                design(),
+                {"primary_outcomes": [outcome("Mortality"), no_interval]},
+                *rob2_replies(2),
+            )[0]
+            .assessed[0]
+            .ladder
+        )
+        wire = json.loads(json.dumps(result.to_dict()))
+        assert evidence_weight_from_dict(wire) == result
+
     def test_a_ladder_round_trips(self) -> None:
         ladder = self.assessed().assessed[0].ladder
         assert ladder is not None
@@ -337,20 +366,58 @@ class TestTheWireForm:
             (lambda w: w["design"].update(rct_layout="crossover"), "not one the ladder covers"),
             (
                 lambda w: w["assessed"][0].update(ladder=None, ladder_error="x"),
-                r"assessed\[0\]'s ladder or ladder_error is not the one",
+                r"^assessed\[0\]'s ladder is not the one",
             ),
             (
                 lambda w: w["assessed"][1].update(
                     ladder=w["assessed"][0]["ladder"], ladder_error=None
                 ),
-                r"assessed\[1\]'s ladder or ladder_error is not the one",
+                r"^assessed\[1\]'s ladder is not the one",
             ),
             (
                 lambda w: w["assessed"][0]["ladder"]["steps"][0].update(
                     reason={"risk_of_bias": "high"}, levels=2
                 ),
-                r"assessed\[0\]'s ladder or ladder_error is not the one",
+                r"^assessed\[0\]'s ladder is not the one",
             ),
+            (
+                lambda w: w["assessed"][1].update(ladder_error="x"),
+                r"^assessed\[1\]'s ladder_error is not the one",
+            ),
+            # The status is held to what assess_unattended writes for the design and outcomes.
+            (
+                lambda w: w["design"].update(design="cohort_prospective"),
+                "^the design is not one the ladder covers$",
+            ),
+            (
+                lambda w: w["design"].update(rct_layout=None),
+                "^the design is not one the ladder covers$",
+            ),
+            (
+                lambda w: w.update(status="not_covered"),
+                "^a not_covered result's design is one the ladder covers$",
+            ),
+            (
+                lambda w: w.update(status="no_primary_outcome"),
+                "^a no_primary_outcome result has primary outcomes$",
+            ),
+            (
+                lambda w: (
+                    w.update(status="no_primary_outcome"),
+                    w["design"].update(rct_layout=None),
+                ),
+                "^the design is not one the ladder covers$",
+            ),
+            (
+                lambda w: (
+                    w["outcomes"].update(outcomes=[]),
+                    w["run"].update(outcomes=[]),
+                    w.update(assessed=[], paper_weight=None),
+                ),
+                "^an assessed result has no primary outcomes$",
+            ),
+            (lambda w: w.update(paper_weight=True), "^paper_weight is not a number$"),
+            (lambda w: w.update(paper_weight="1.0"), "^paper_weight is not a number$"),
         ],
     )
     def test_what_does_not_add_up_is_refused(self, change: Any, message: str) -> None:

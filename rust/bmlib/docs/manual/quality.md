@@ -636,14 +636,15 @@ failed, so `rob2.overall` is `None`; the reported result was refused; the
 result cannot be laddered). `paper_weight` is the largest ladder weight,
 `None` when no ladder was built. A failure is never a score.
 
-**Errors.** `assess_unattended` is `Err(EvidenceWeightError)` only when a
-step could not be made at all, wrapping that step's own error:
+**Errors.** `assess_unattended` is `Err(EvidenceWeightError)` only when the
+settings are invalid or a step could not be made at all, wrapping that step's
+own error:
 `Proposal(ProposalError)` for the design or outcome proposal (`EmptyInput`,
 `CondensationFailed`, `RequestFailed { message, retryable, status }`,
 `Unreadable`, `Stopped` and `InvalidSimilarity`), or `Rob2(Rob2RunError)`
 (`EmptyInput`, `NoOutcomes`, `Stopped`, `InvalidSimilarity`), or
 `InvalidSettings(String)` for `LadderSettings` that fail `validate()`
-(possible only from a struct literal), refused before any request. A domain whose
+(settings built in code; deserialising refuses them), refused before any request. A domain whose
 request fails or whose reply stays unreadable is not an error: it is
 `DomainResult::Failed { domain, reason, retryable, status }` in the run, and
 the outcomes it touches are not assessed. A failed escalation is
