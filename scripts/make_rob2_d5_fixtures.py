@@ -351,6 +351,7 @@ def _looked() -> dict[str, Any]:
     oswestry, unnamed, function = facts.measurements[1:4]
     oswestry.second_look = []
     unnamed.second_look_error = "HTTP 503: overloaded"
+    unnamed.second_look_retryable, unnamed.second_look_status = True, 503
     function.second_look_error = "found is true but no quote was found in the paper"
     assessment = d5_assessment(facts)
     return {

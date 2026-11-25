@@ -29,6 +29,7 @@ import copy
 import importlib.util
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -38,8 +39,12 @@ import pytest
 
 from bmlib.llm.data_types import LLMResponse
 from bmlib.quality.design_agent import DesignAgent
-from bmlib.quality.evidence_ladder import LadderSettings
-from bmlib.quality.evidence_weight import assess_unattended, evidence_weight_from_dict
+from bmlib.quality.evidence_ladder import LadderSettings, paper_weight, start_level
+from bmlib.quality.evidence_weight import (
+    assess_outcome,
+    assess_unattended,
+    evidence_weight_from_dict,
+)
 from bmlib.quality.outcome_agent import OutcomeAgent
 from bmlib.quality.rob2_agent import (
     Rob2Agent,
@@ -102,7 +107,10 @@ def test_every_case_runs_to_the_expected_result_and_reads_back() -> None:
 
 
 def test_the_assessed_case_step_by_step() -> None:
-    """Design, outcomes, then plan_rob2's steps with one Rob2Digests give the fixture's run."""
+    """Design, outcomes, plan_rob2's steps with one Rob2Digests, then assess_outcome.
+
+    They give the fixture's run, assessed outcomes and paper weight.
+    """
     case = CONTRACT["cases"][-1]
     title, text, similarity = CONTRACT["title"], CONTRACT["text"], CONTRACT["min_similarity"]
     llm = MagicMock()
@@ -111,7 +119,7 @@ def test_the_assessed_case_step_by_step() -> None:
             LLMResponse(json.dumps(r), "test:model", 1, 1, "stop") for r in case["replies"]
         ]
     )
-    DesignAgent(llm, "test:model").propose(title, text, min_similarity=similarity)
+    design = DesignAgent(llm, "test:model").propose(title, text, min_similarity=similarity)
     outcomes = OutcomeAgent(llm, "test:model").propose(title, text, min_similarity=similarity)
     agent = Rob2Agent(llm, "test:model")
     digests = Rob2Digests()
@@ -136,6 +144,28 @@ def test_the_assessed_case_step_by_step() -> None:
     run = Rob2Run(ROB2_ALGORITHM_VERSION, ROB2_PROMPT_VERSION, study, results)
     assert run.to_dict() == case["expected"]["run"]
     assert llm.chat.call_count == len(case["replies"])
+    # #816: the ladder step, outcome by outcome, gives the pipeline's assessed and weight.
+    start = start_level(design.design)
+    assert start is not None
+    settings = LadderSettings()
+    assessed = [
+        assess_outcome(start, run.study, proposed, rob2, settings)
+        for proposed, rob2 in zip(outcomes.outcomes, run.outcomes, strict=True)
+    ]
+    assert [a.to_dict() for a in assessed] == case["expected"]["assessed"]
+    ladders = [a.ladder for a in assessed if a.ladder is not None]
+    assert paper_weight(ladders) == case["expected"]["paper_weight"]
+    # The two ladder errors the fixture's outcomes do not reach, worded as Rust's test has them.
+    proposed, rob2 = outcomes.outcomes[0], run.outcomes[0]
+    assert proposed.result is not None and rob2.overall is not None
+    failed = replace(rob2, overall=None, escalation_error="HTTP 503: overloaded")
+    assert assess_outcome(start, run.study, proposed, failed, settings).ladder_error == (
+        "the outcome's risk of bias was not assessed: "
+        "the escalation question failed (HTTP 503: overloaded)"
+    )
+    unladdered = replace(proposed, result=replace(proposed.result, ci_low=0.75))
+    one = assess_outcome(start, run.study, unladdered, rob2, settings)
+    assert (one.ladder, one.ladder_error) == (None, "ci_low <= estimate <= ci_high does not hold")
 
 
 def test_every_refusal_names_what_does_not_add_up() -> None:

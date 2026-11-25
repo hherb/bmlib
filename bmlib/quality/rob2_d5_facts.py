@@ -44,7 +44,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from bmlib.quality._full_text_agent import UnreadableReplyError, check_min_similarity
+from bmlib.quality._full_text_agent import (
+    UnreadableReplyError,
+    _status_code,
+    check_min_similarity,
+)
 from bmlib.quality.outcome_agent import ProposedOutcome
 from bmlib.quality.pico_agent import verify_quotes
 from bmlib.quality.pico_models import PicoCitation, PicoContradictedQuote
@@ -264,6 +268,13 @@ class OtherMeasurement:
         quotes_not_found: Its naming and result quotes not located in the paper.
         contradicted: Its quotes the paper contradicts, each with the reason.
         quotes_dropped: How many of its quote members were not usable text.
+        second_look_retryable: Whether sending the failed second-look request
+            again may succeed; ``False`` unless ``second_look_error`` came
+            from a request.
+        second_look_status: The HTTP status that request was answered with
+            (401 or 403 is a refused key); ``None`` where no HTTP answer came
+            or ``second_look_error`` is not from a request.  Written as
+            ``second_look_status_code``.
     """
 
     label: str
@@ -274,6 +285,8 @@ class OtherMeasurement:
     quotes_not_found: list[str] = field(default_factory=list)
     contradicted: list[PicoContradictedQuote] = field(default_factory=list)
     quotes_dropped: int = 0
+    second_look_retryable: bool = False
+    second_look_status: int | None = None
 
     def counts(self) -> bool:
         """Whether a passage naming it was found in the paper."""
@@ -311,6 +324,8 @@ class OtherMeasurement:
                 None if self.second_look is None else [c.to_dict() for c in self.second_look]
             ),
             "second_look_error": self.second_look_error,
+            "second_look_retryable": self.second_look_retryable,
+            "second_look_status_code": self.second_look_status,
             "quotes_not_found": list(self.quotes_not_found),
             "contradicted": [q.to_dict() for q in self.contradicted],
             "quotes_dropped": self.quotes_dropped,
@@ -387,8 +402,10 @@ class D5Facts:
         """Rebuild from :meth:`to_dict` output, recomputing every verdict.
 
         Raises:
-            ValueError: A field is absent or of the wrong type, or a stored
-                verdict is not the one the checks give, naming it.
+            ValueError: A field is absent or of the wrong type, a second look's
+                status is not an HTTP status, a retry flag or status is given
+                without an error, or a stored verdict is not the one the checks
+                give, naming it.
         """
         data = _object(data, "the facts")
         outcome = _field(data, "outcome", str, "text")
@@ -424,6 +441,23 @@ class D5Facts:
             error = item.get("second_look_error")
             if error is not None and not isinstance(error, str):
                 raise ValueError(f"{path}.second_look_error is not text")
+            # Absent in facts stored before the two fields existed: not retryable, no status.
+            retryable = item.get("second_look_retryable", False)
+            if not isinstance(retryable, bool):
+                raise ValueError(f"{path}.second_look_retryable is not a boolean")
+            try:
+                status = (
+                    _status_code(item, "second_look_status_code")
+                    if "second_look_status_code" in item
+                    else None
+                )
+            except ValueError as exc:
+                raise ValueError(f"{path}.{exc}") from None
+            if error is None and (retryable or status is not None):
+                raise ValueError(
+                    f"{path}.second_look_retryable or second_look_status_code "
+                    "given without an error"
+                )
             measurements.append(
                 OtherMeasurement(
                     _field(item, "label", str, "text", path),
@@ -432,6 +466,8 @@ class D5Facts:
                     None if look is None else _citations(item, "second_look", path),
                     error,
                     *_lost(item, path),
+                    second_look_retryable=retryable,
+                    second_look_status=status,
                 )
             )
         check = _object(data.get(MAIN_ANALYSIS_KEY), MAIN_ANALYSIS_KEY)

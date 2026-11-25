@@ -127,6 +127,70 @@ fn stored_facts_give_the_contracts_answers_and_round_trip() {
     assert_eq!(back.to_json(), looked["assessment"]);
 }
 
+/// #816: a failed second look keeps whether a retry may succeed and its HTTP
+/// status; facts stored before the two fields existed read as no failed request.
+#[test]
+fn a_failed_second_looks_retry_info_reads_back_and_is_checked() {
+    let data = facts_fixture();
+    let stored = &data["looked"]["facts"];
+    let facts = D5Facts::from_json(stored).expect("stored facts");
+    let unnamed = &facts.measurements[2];
+    assert_eq!(
+        unnamed.second_look_error.as_deref(),
+        Some("HTTP 503: overloaded")
+    );
+    assert_eq!(
+        (unnamed.second_look_retryable, unnamed.second_look_status),
+        (true, Some(503))
+    );
+
+    let mut older = stored.clone();
+    for item in older["other_measurements"].as_array_mut().expect("a list") {
+        let item = item.as_object_mut().expect("an object");
+        item.remove("second_look_retryable");
+        item.remove("second_look_status_code");
+    }
+    let read_back = D5Facts::from_json(&older).expect("older facts");
+    assert!(read_back
+        .measurements
+        .iter()
+        .all(|m| !m.second_look_retryable && m.second_look_status.is_none()));
+
+    for (key, value, message) in [
+        (
+            "second_look_retryable",
+            json!("yes"),
+            "other_measurements[2].second_look_retryable is not a boolean",
+        ),
+        (
+            "second_look_status_code",
+            json!(99),
+            "other_measurements[2].second_look_status_code is not null or an HTTP status",
+        ),
+        (
+            "second_look_error",
+            Value::Null,
+            "other_measurements[2].second_look_retryable or second_look_status_code given without an error",
+        ),
+    ] {
+        let mut tampered = stored.clone();
+        tampered["other_measurements"][2][key] = value;
+        assert_eq!(D5Facts::from_json(&tampered).expect_err(key), message);
+    }
+    // Either one alone, with no error, is refused too.
+    for (retryable, status) in [(json!(true), Value::Null), (json!(false), json!(503))] {
+        let mut tampered = stored.clone();
+        let item = &mut tampered["other_measurements"][2];
+        item["second_look_error"] = Value::Null;
+        item["second_look_retryable"] = retryable;
+        item["second_look_status_code"] = status;
+        assert_eq!(
+            D5Facts::from_json(&tampered).expect_err("given alone"),
+            "other_measurements[2].second_look_retryable or second_look_status_code given without an error"
+        );
+    }
+}
+
 #[test]
 fn a_stored_verdict_the_checks_do_not_give_is_refused() {
     let data = facts_fixture();

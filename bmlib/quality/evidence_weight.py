@@ -50,6 +50,7 @@ from bmlib.quality.evidence_ladder import (
     LADDER_VERSION,
     EvidenceLadder,
     LadderSettings,
+    Level,
     build_ladder,
     paper_weight,
     settings_from_wire,
@@ -60,6 +61,7 @@ from bmlib.quality.outcome_agent import OutcomeAgent, OutcomeProposal, ProposedO
 from bmlib.quality.rob2_agent import (
     DomainAssessment,
     DomainFailed,
+    DomainResult,
     OutcomeRob2,
     Rob2Agent,
     Rob2Run,
@@ -294,6 +296,44 @@ def _ladder_error(study: Any, outcome: ProposedOutcome, rob2: OutcomeRob2) -> st
     return None
 
 
+def assess_outcome(
+    start: Level,
+    study: DomainResult,
+    outcome: ProposedOutcome,
+    rob2: OutcomeRob2,
+    settings: LadderSettings,
+) -> AssessedOutcome:
+    """Take one outcome's combined RoB 2 result through the evidence ladder.
+
+    The step after :func:`~bmlib.quality.rob2_agent.combine_outcome` for a
+    caller that drives RoB 2 a step at a time; :func:`assess_unattended` calls
+    it for every outcome.  An outcome whose risk of bias was not assessed
+    (naming each failed domain and a failed escalation), whose reported result
+    was refused, or whose result cannot be laddered has ``ladder`` ``None`` and
+    the reason in ``ladder_error``, never a score.  The paper's weight is then
+    :func:`~bmlib.quality.evidence_ladder.paper_weight` of the ladders built.
+
+    Args:
+        start: The design's :func:`~bmlib.quality.evidence_ladder.start_level`.
+        study: The run's D1.
+        outcome: The proposed outcome.
+        rob2: Its combined RoB 2 result.
+        settings: The ladder's numbers.
+
+    Returns:
+        The outcome with its ladder or the reason there is none.
+    """
+    error = _ladder_error(study, outcome, rob2)
+    ladder = None
+    if error is None:
+        assert rob2.overall is not None
+        try:
+            ladder = build_ladder(start, rob2.overall, outcome.result, settings)
+        except ValueError as exc:
+            error = str(exc)
+    return AssessedOutcome(outcome, rob2, ladder, error)
+
+
 def _any_condensed(design: DesignProposal, outcomes: OutcomeProposal, run: Rob2Run) -> bool:
     """Whether the model saw a digest in the design, outcome or any RoB 2 step."""
     domains = [run.study] + [d for o in run.outcomes for d in o.domains]
@@ -377,17 +417,10 @@ def assess_unattended(
     except (ProposalError, Rob2RunError) as exc:
         raise EvidenceWeightError(exc) from exc
 
-    assessed = []
-    for proposed, rob2 in zip(outcomes.outcomes, run.outcomes, strict=True):
-        error = _ladder_error(run.study, proposed, rob2)
-        ladder = None
-        if error is None:
-            assert rob2.overall is not None
-            try:
-                ladder = build_ladder(start, rob2.overall, proposed.result, settings)
-            except ValueError as exc:
-                error = str(exc)
-        assessed.append(AssessedOutcome(proposed, rob2, ladder, error))
+    assessed = [
+        assess_outcome(start, run.study, proposed, rob2, settings)
+        for proposed, rob2 in zip(outcomes.outcomes, run.outcomes, strict=True)
+    ]
     weight = paper_weight([a.ladder for a in assessed if a.ladder is not None])
     condensed = _any_condensed(design, outcomes, run)
     return Assessed(design, outcomes, run, assessed, weight, condensed, LADDER_VERSION, settings)

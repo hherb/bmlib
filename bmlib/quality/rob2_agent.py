@@ -54,11 +54,15 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
 
+# Public names of 0.14.0's rob2_agent, now defined beside _status_code; still importable here.
+from bmlib.quality._full_text_agent import HTTP_STATUS_MAX as HTTP_STATUS_MAX
+from bmlib.quality._full_text_agent import HTTP_STATUS_MIN as HTTP_STATUS_MIN
 from bmlib.quality._full_text_agent import (
     LABEL_CHARS,
     AgentFailure,
     UnreadableReplyError,
     _FullTextAgent,
+    _status_code,
     check_min_similarity,
     step_prompt_chars,
 )
@@ -199,25 +203,6 @@ def _object(value: object, what: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"{what} is not an object")
     return value
-
-
-#: The lowest and highest HTTP status a stored ``status_code`` may hold.
-HTTP_STATUS_MIN = 100
-HTTP_STATUS_MAX = 599
-
-
-def _status_code(data: dict[str, Any], key: str) -> int | None:
-    """``data[key]``: required, an HTTP status or null, else ``ValueError``."""
-    if key not in data:
-        raise ValueError(f"{key} is absent")
-    status = data[key]
-    if status is not None and (
-        isinstance(status, bool)
-        or not isinstance(status, int)
-        or not HTTP_STATUS_MIN <= status <= HTTP_STATUS_MAX
-    ):
-        raise ValueError(f"{key} is not null or an HTTP status")
-    return status
 
 
 def _optional_text(data: dict[str, Any], key: str) -> str | None:
@@ -1317,8 +1302,8 @@ class Rob2Agent(_FullTextAgent):
         each other measurement that names no result; then the rules.
 
         A failed facts call (asked twice when unreadable) comes back as :class:`DomainFailed`;
-        a failed second look leaves its measurement undecided, its error kept; a stop ends the
-        run (``Rob2RunError``, raised by the call).
+        a failed second look leaves its measurement undecided, its error kept with whether a retry
+        may succeed and the HTTP status; a stop ends the run (``Rob2RunError``, raised by the call).
         """
         label = f"RoB 2 D5 of {title[:LABEL_CHARS]!r}"
         try:
@@ -1346,6 +1331,8 @@ class Rob2Agent(_FullTextAgent):
             except _CallFailedError as exc:
                 logger.warning("%s not had: %s", look, exc)
                 item.second_look_error = str(exc)
+                item.second_look_retryable = exc.retryable
+                item.second_look_status = exc.status
         assessment = d5_assessment(facts)
         assessment.condensed = condensed
         return assessment

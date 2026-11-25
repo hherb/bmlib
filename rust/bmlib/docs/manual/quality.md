@@ -792,16 +792,28 @@ condenses again. `Rob2Step::from_json` reads a stored step back, refusing
 one no plan holds.
 `escalate_outcome(title, outcome, study, domains)` is a `Rob2Escalation`:
 `NotNeeded`, `Asked(Escalation)` or `Failed { reason, retryable, status }`.
-It panics, before any request, when `study` is not D1 or `domains` is not
-D2, D3, D4, D5 in order (Python raises `ValueError`); `combine_outcome`
-returns those as an `Err(String)`. Run the escalation step again whenever
-its outcome's D1 or any of its D2-D5 is run again: it sends no request when
-the question is not needed, and an escalation kept from the earlier domains
-may no longer fit the new ones. `combine_outcome` refuses a stale one, with
-an `Err(String)`, only where the need for the question has changed: `Asked`
-or `Failed` where the domains do not call for the question, or `NotNeeded`
-where they do. Where both sets call for it, it cannot tell, so the caller
-runs the escalation again.
+Before any request it is `Err(Rob2RunError::InvalidDomains(message))` when
+`study` is not D1 or `domains` is not D2, D3, D4, D5 in order (Python raises
+`ValueError`), so a damaged stored row is an error to report, never a panic;
+`combine_outcome` returns the same message as an `Err(String)`. Run the
+escalation step again whenever its outcome's D1 or any of its D2-D5 is run
+again: it sends no request when the question is not needed, and an escalation
+kept from the earlier domains may no longer fit the new ones.
+`combine_outcome` refuses a stale one, with an `Err(String)`, only where the
+need for the question has changed: `Asked` or `Failed` where the domains do
+not call for the question, or `NotNeeded` where they do. Where both sets call
+for it, it cannot tell, so the caller runs the escalation again.
+
+`evidence_weight::assess_outcome(start, study, outcome, rob2, settings)` is
+the step after `combine_outcome`: the outcome's `AssessedOutcome`, with its
+ladder or the reason there is none, exactly as `assess_unattended` builds
+it (`start` is `start_level` of the design). The paper's weight is
+`paper_weight` of the ladders built. A failed second look in D5 keeps
+`second_look_error` with `second_look_retryable` and `second_look_status`
+(written as `second_look_status_code`) on its `OtherMeasurement`, as
+`DomainResult::Failed` does, so the caller can back off on a passing failure
+and stop on a refused key (401, 403). Facts stored before those two fields
+read as not retryable and with no status.
 
 To size the paper to the window, `design_prompt_chars()`,
 `outcome_prompt_chars()` and `domain_prompt_chars(domain, outcome)` (an

@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 import pytest
@@ -210,6 +211,51 @@ def test_facts_round_trip_and_a_stored_verdict_is_checked():
     tampered["facts"]["plan_dated_early"]["verdict"] = "present"
     with pytest.raises(ValueError, match="plan_dated_early"):
         D5Facts.from_dict(tampered)
+
+
+def test_a_failed_second_looks_retry_info_round_trips_and_is_checked():
+    # #816: a failed second look keeps whether a retry may succeed and its HTTP status.
+    facts = read(reply([item("Oswestry", ["the Oswestry index at 12 weeks"])], **FIXED))
+    one = facts.measurements[0]
+    one.second_look_error, one.second_look_retryable, one.second_look_status = "HTTP 503", True, 503
+    stored = facts.to_dict()
+    assert D5Facts.from_dict(stored) == facts
+    older = copy.deepcopy(stored)  # facts stored before the two fields existed
+    for key in ("second_look_retryable", "second_look_status_code"):
+        del older["other_measurements"][0][key]
+    read_back = D5Facts.from_dict(older).measurements[0]
+    assert (read_back.second_look_retryable, read_back.second_look_status) == (False, None)
+    for key, value, message in (
+        (
+            "second_look_retryable",
+            "yes",
+            r"^other_measurements\[0\]\.second_look_retryable is not a boolean$",
+        ),
+        (
+            "second_look_status_code",
+            99,
+            r"^other_measurements\[0\]\.second_look_status_code is not null or an HTTP status$",
+        ),
+        (
+            "second_look_error",
+            None,
+            r"\.second_look_retryable or second_look_status_code given without an error$",
+        ),
+    ):
+        tampered = copy.deepcopy(stored)
+        tampered["other_measurements"][0][key] = value
+        with pytest.raises(ValueError, match=message):
+            D5Facts.from_dict(tampered)
+    # Either one alone, with no error, is refused too.
+    for retryable, status in ((True, None), (False, 503)):
+        tampered = copy.deepcopy(stored)
+        tampered["other_measurements"][0].update(
+            second_look_error=None,
+            second_look_retryable=retryable,
+            second_look_status_code=status,
+        )
+        with pytest.raises(ValueError, match=r"given without an error$"):
+            D5Facts.from_dict(tampered)
 
 
 def test_the_prompts_carry_the_outcome_the_facts_and_the_paper():

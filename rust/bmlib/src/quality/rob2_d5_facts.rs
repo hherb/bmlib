@@ -49,7 +49,7 @@ use crate::quality::full_text_agent::check_similarity;
 use crate::quality::outcome_agent::ProposedOutcome;
 use crate::quality::pico_agent::verify_quotes;
 use crate::quality::pico_models::{PicoCitation, PicoContradictedQuote};
-use crate::quality::rob2_agent::outcome_block;
+use crate::quality::rob2_agent::{outcome_block, status_code};
 use crate::quality::rob2_algorithm::Answer;
 use crate::quality::rob2_d5_checks::{fact_verdict, shows_result, D5Fact, FactVerdict, D5_FACTS};
 
@@ -256,6 +256,13 @@ pub struct OtherMeasurement {
     pub second_look: Option<Vec<PicoCitation>>,
     /// Why the second look failed, when it did.
     pub second_look_error: Option<String>,
+    /// Whether sending the failed second-look request again may succeed;
+    /// `false` unless `second_look_error` came from a request.
+    pub second_look_retryable: bool,
+    /// The HTTP status that request was answered with (401 or 403 is a
+    /// refused key); `None` where no HTTP answer came or `second_look_error`
+    /// is not from a request. Written as `second_look_status_code`.
+    pub second_look_status: Option<u16>,
     /// Its naming and result quotes not located in the paper.
     pub quotes_not_found: Vec<String>,
     /// Its quotes the paper contradicts, each with the reason.
@@ -314,6 +321,8 @@ impl OtherMeasurement {
             "result": citations_json(&self.result),
             "second_look": self.second_look.as_deref().map(citations_json),
             "second_look_error": self.second_look_error,
+            "second_look_retryable": self.second_look_retryable,
+            "second_look_status_code": self.second_look_status,
             "quotes_not_found": self.quotes_not_found,
             "contradicted": self.contradicted.iter().map(PicoContradictedQuote::to_json).collect::<Vec<_>>(),
             "quotes_dropped": self.quotes_dropped,
@@ -400,8 +409,10 @@ impl D5Facts {
     ///
     /// # Errors
     ///
-    /// A message naming the field that is absent or of the wrong type, or the
-    /// fact whose stored verdict is not the one the checks give.
+    /// A message naming the field that is absent or of the wrong type, a
+    /// second look's status that is not an HTTP status, a retry flag or
+    /// status given without an error, or the fact whose stored verdict is not
+    /// the one the checks give.
     pub fn from_json(value: &Value) -> Result<Self, String> {
         let data = object(value, "the facts")?;
         let outcome = field_text(data, "outcome", "")?.to_string();
@@ -469,6 +480,24 @@ impl D5Facts {
                 Some(Value::String(e)) => Some(e.clone()),
                 Some(_) => return Err(format!("{path}.second_look_error is not text")),
             };
+            // Absent in facts stored before the two fields existed: not retryable, no status.
+            let second_look_retryable = match item.get("second_look_retryable") {
+                None => false,
+                Some(Value::Bool(retryable)) => *retryable,
+                Some(_) => return Err(format!("{path}.second_look_retryable is not a boolean")),
+            };
+            let second_look_status = match item.get("second_look_status_code") {
+                None => None,
+                Some(_) => status_code(item, "second_look_status_code")
+                    .map_err(|e| format!("{path}.{e}"))?,
+            };
+            if second_look_error.is_none()
+                && (second_look_retryable || second_look_status.is_some())
+            {
+                return Err(format!(
+                    "{path}.second_look_retryable or second_look_status_code given without an error"
+                ));
+            }
             let (quotes_not_found, contradicted, quotes_dropped) = lost(item, &path)?;
             measurements.push(OtherMeasurement {
                 label: field_text(item, "label", &path)?.to_string(),
@@ -476,6 +505,8 @@ impl D5Facts {
                 result: citations_field(item, "result", &path)?,
                 second_look,
                 second_look_error,
+                second_look_retryable,
+                second_look_status,
                 quotes_not_found,
                 contradicted,
                 quotes_dropped,
@@ -693,6 +724,8 @@ pub fn read_facts_reply(
             result,
             second_look: None,
             second_look_error: None,
+            second_look_retryable: false,
+            second_look_status: None,
             quotes_not_found,
             contradicted,
             quotes_dropped,
