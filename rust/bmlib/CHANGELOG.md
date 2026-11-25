@@ -63,7 +63,9 @@ The Python library is documented separately, in the repository's
   `Err(EvidenceWeightError::InvalidSettings(message))` first, and
   `assess_outcome` returns `Result<AssessedOutcome, EvidenceWeightError>`
   with the same error, never an outcome's `ladder_error`. Python's frozen
-  `LadderSettings` refuses such values at construction, so it is unchanged.
+  `LadderSettings` refuses such values at construction; its
+  `assess_unattended` now raises `TypeError` before any request for settings
+  that are not a `LadderSettings`.
   **Breaking**: `assess_outcome`'s return type, and `EvidenceWeightError` is
   now `#[non_exhaustive]` (neither is on crates.io yet).
 - **A record whose DOI and PMID name two stored papers no longer merges one

@@ -130,7 +130,7 @@ impl From<Rob2RunError> for EvidenceWeightError {
 const NOT_COVERED: &str = "the design is not one the ladder covers";
 
 /// The ladder's start level for `design`, or `None` when the ladder does not
-/// cover it (no start level, or a layout other than parallel-group).
+/// cover it (no start level, no layout, or a layout other than parallel-group).
 fn covered_start(design: &DesignProposal) -> Option<Level> {
     let covered = design.rct_layout.is_some_and(|layout| layout.is_covered());
     start_level(design.design).filter(|_| covered)
@@ -278,10 +278,12 @@ impl EvidenceWeight {
     /// with what [`assess_unattended`] writes (a `not_covered` design the
     /// ladder covers; a `no_primary_outcome` or `assessed` design it does not;
     /// primary outcomes under `no_primary_outcome` or none under `assessed`; a
-    /// different number of outcomes, RoB 2 results or assessed outcomes; an
-    /// assessed outcome other than the one [`assess_outcome`] rebuilds from the
-    /// design, run, outcome and settings, #813; a `paper_weight` that is not
-    /// the largest ladder weight).
+    /// different number of outcomes, RoB 2 results or assessed outcomes; a RoB
+    /// 2 result named for another outcome; an assessed outcome other than the
+    /// one [`assess_outcome`] rebuilds from the design, run, outcome and
+    /// settings, #813; a `paper_weight` that is not the largest ladder weight;
+    /// a `condensed` other than what the design, outcome and RoB 2 steps
+    /// record).
     pub fn from_json(value: &Value) -> Result<Self, String> {
         let data = object(value, "the evidence weight")?;
         let status = text(data, "status")?;
@@ -335,6 +337,11 @@ impl EvidenceWeight {
             .zip(&run.outcomes)
             .enumerate()
         {
+            if rob2.outcome != proposed.name {
+                return Err(format!(
+                    "run.outcomes[{index}] is not the RoB 2 result of outcome {index}"
+                ));
+            }
             if one.outcome != *proposed || one.rob2 != *rob2 {
                 return Err(format!(
                     "assessed[{index}] is not outcome {index} of outcomes and run"
@@ -360,9 +367,22 @@ impl EvidenceWeight {
             Some(number) => Some(number.as_f64().ok_or("paper_weight is not a number")?),
         };
         if given != expected {
+            // Python's repr: `None` or the bare number, never `Some(..)`.
+            let shown = |w: Option<f64>| w.map_or("None".to_string(), |w| format!("{w:?}"));
             return Err(format!(
-                "paper_weight {given:?} is not the largest ladder weight {expected:?}"
+                "paper_weight {} is not the largest ladder weight {}",
+                shown(given),
+                shown(expected)
             ));
+        }
+        let condensed = data
+            .get("condensed")
+            .and_then(Value::as_bool)
+            .ok_or("condensed is not a boolean")?;
+        if condensed != any_condensed(&design, &outcomes, &run) {
+            return Err(
+                "condensed is not what the design, outcome and RoB 2 steps record".to_string(),
+            );
         }
         Ok(EvidenceWeight::Assessed {
             design,
@@ -370,10 +390,7 @@ impl EvidenceWeight {
             run,
             assessed,
             paper_weight: expected,
-            condensed: data
-                .get("condensed")
-                .and_then(Value::as_bool)
-                .ok_or("condensed is not a boolean")?,
+            condensed,
             ladder_version: ladder_version.to_string(),
             settings,
         })
@@ -411,8 +428,9 @@ fn not_assessed(study: &DomainResult, rob2: &OutcomeRob2) -> String {
 /// Why no ladder can be built for this outcome, or `None` when one can.
 ///
 /// The text is stored and compared on read (#813), here and in Python's twin:
-/// reword it (or [`not_assessed`]'s) only with a [`LADDER_VERSION`] bump, or
-/// every stored result with such an outcome reads as edited.
+/// reword it (or [`not_assessed`]'s, or a `build_ladder` refusal
+/// [`assess_outcome`] stores) only with a [`LADDER_VERSION`] bump, or every
+/// stored result with such an outcome reads as edited.
 fn ladder_error(
     study: &DomainResult,
     outcome: &ProposedOutcome,
@@ -905,7 +923,13 @@ mod tests {
         ];
         replies.extend(low_run(1)[1..].iter().cloned());
         let mut chat = Scripted::new(replies);
-        let (assessed, weight, _) = assessed(run(&mut chat, &text()).expect("result"));
+        let result = run(&mut chat, &text()).expect("result");
+        // A D1 failure's ladder_error and a null paper_weight both read back (#813).
+        assert_eq!(
+            EvidenceWeight::from_json(&result.to_json()),
+            Ok(result.clone())
+        );
+        let (assessed, weight, _) = assessed(result);
         let error = assessed[0].ladder_error.as_deref().expect("reason");
         assert!(
             assessed[0].ladder.is_none() && error.contains("D1 failed ("),
@@ -934,6 +958,10 @@ mod tests {
             SIM,
         )
         .expect("result");
+        assert_eq!(
+            EvidenceWeight::from_json(&result.to_json()),
+            Ok(result.clone())
+        );
         assert!(assessed(result).2);
         assert_eq!(condenser.0.len(), 2 + 5);
     }

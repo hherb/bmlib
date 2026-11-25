@@ -106,21 +106,23 @@ All notable changes to bmlib are documented here. The format is based on
   its RoB 2 result and the stored settings, and refuses the result unless it
   matches: a ladder that contradicts its RoB 2 judgement, its result or its
   settings, a `ladder_error` where a ladder can be built, and a ladder where
-  none can. The message names which of `ladder` and `ladder_error` differs.
-  The status is held to what `assess_unattended` writes too: a
-  `not_covered` design the ladder covers, a `no_primary_outcome` or
-  `assessed` design it does not, primary outcomes under
-  `no_primary_outcome` and none under `assessed` are refused, and so is a
-  `paper_weight` that is not a number (Python read `true` as 1.0; Rust
-  already refused it). Every result `assess_unattended` wrote rebuilds to
-  itself, so **nothing stored goes stale**; only an edited one is refused.
-  Nine new refusals in `tests/fixtures/evidence_weight.json`, its cases
-  unchanged. Rewording a stored `ladder_error` text now needs a
-  `LADDER_VERSION` bump. Rust only (#818): invalid `LadderSettings` built in
-  code (a struct literal or a field assignment) are now
-  `EvidenceWeightError::InvalidSettings` before any request, not the
-  `ladder_error` of every outcome that would otherwise have had a ladder (the
-  crate's CHANGELOG).
+  none can. The message names `ladder` when the ladder differs and
+  `ladder_error` otherwise. The status is held to what `assess_unattended`
+  writes too: a `not_covered` design the ladder covers, a
+  `no_primary_outcome` or `assessed` design it does not, primary outcomes
+  under `no_primary_outcome` and none under `assessed` are refused. So are a
+  RoB 2 result named for another outcome, a `condensed` flag other than what
+  the design, outcome and RoB 2 steps record, and a `paper_weight` that is
+  not a number (Python read `true` as 1.0; Rust already refused it). Every
+  result `assess_unattended` wrote rebuilds to itself, so **nothing stored
+  goes stale**; only an edited one is refused. Thirteen new refusals in
+  `tests/fixtures/evidence_weight.json`, its cases unchanged. Rewording a
+  stored `ladder_error` text now needs a `LADDER_VERSION` bump. #818: Rust's
+  invalid `LadderSettings` built in code (a struct literal or a field
+  assignment) are now `EvidenceWeightError::InvalidSettings` before any
+  request, not the `ladder_error` of every outcome that would otherwise have
+  had a ladder (the crate's CHANGELOG); Python's `assess_unattended` raises
+  `TypeError` before any request when `settings` is not a `LadderSettings`.
 - **A record whose DOI and PMID name two stored papers no longer merges one
   into the other** (#803). When a record's DOI found one row and its PMID
   another, `store_publication` consolidated them even when either already

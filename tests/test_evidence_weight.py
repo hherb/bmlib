@@ -151,6 +151,18 @@ class TestWhereItStops:
         assert isinstance(raised.value.cause, Rob2RunError)
 
 
+class TestSettings:
+    @pytest.mark.parametrize("settings", [None, {}, "default"])
+    def test_settings_of_another_type_are_refused_before_any_request(self, settings: Any) -> None:
+        # Python's twin of Rust's InvalidSettings (#818): no paid request is made first.
+        llm = MagicMock()
+        with pytest.raises(TypeError, match="^settings is not a LadderSettings$"):
+            assess_unattended(
+                llm, "test:model", settings=settings, title="A trial", text=TEXT, min_similarity=SIM
+            )
+        llm.chat.assert_not_called()
+
+
 class TestAssessed:
     def test_one_outcome_runs_through_to_a_weight(self) -> None:
         result, chat = run(design(), {"primary_outcomes": [outcome("Mortality")]}, *rob2_replies())
@@ -212,6 +224,8 @@ class TestAssessed:
         assert only.ladder is None
         assert only.ladder_error is not None and "D1 failed (" in only.ladder_error
         assert result.paper_weight is None
+        # A D1 failure's ladder_error and a null paper_weight both read back (#813).
+        assert evidence_weight_from_dict(json.loads(json.dumps(result.to_dict()))) == result
 
     def test_a_paper_over_the_window_is_flagged_condensed(self) -> None:
         digest = ScriptedCondenser(TEXT)
@@ -225,6 +239,7 @@ class TestAssessed:
         assert isinstance(result, Assessed)
         assert result.condensed is True
         assert len(digest.queries) == 2 + 5
+        assert evidence_weight_from_dict(json.loads(json.dumps(result.to_dict()))) == result
 
     def test_every_option_reaches_all_three_steps(self) -> None:
         budgets: list[int] = []
@@ -307,8 +322,11 @@ class TestTheWireForm:
         # Every settings field must survive the wire, or the rebuild on read refuses (#813).
         settings = LadderSettings(
             some_concerns_steps=2,
-            no_interval_steps=2,
+            high_steps=3,
+            crosses_no_effect_steps=2,
             small_trial_n=5000,
+            small_trial_steps=2,
+            no_interval_steps=2,
             max_imprecision_steps=1,
             weight_high=0.95,
             weight_moderate=0.65,
@@ -363,7 +381,6 @@ class TestTheWireForm:
                 "ladder reason",
             ),
             # #813: each stored ladder or ladder_error is rebuilt from its inputs.
-            (lambda w: w["design"].update(rct_layout="crossover"), "not one the ladder covers"),
             (
                 lambda w: w["assessed"][0].update(ladder=None, ladder_error="x"),
                 r"^assessed\[0\]'s ladder is not the one",
@@ -384,7 +401,11 @@ class TestTheWireForm:
                 lambda w: w["assessed"][1].update(ladder_error="x"),
                 r"^assessed\[1\]'s ladder_error is not the one",
             ),
-            # The status is held to what assess_unattended writes for the design and outcomes.
+            # #813: each status is held to what assess_unattended writes.
+            (
+                lambda w: w["design"].update(rct_layout="crossover"),
+                "^the design is not one the ladder covers$",
+            ),
             (
                 lambda w: w["design"].update(design="cohort_prospective"),
                 "^the design is not one the ladder covers$",
@@ -418,6 +439,18 @@ class TestTheWireForm:
             ),
             (lambda w: w.update(paper_weight=True), "^paper_weight is not a number$"),
             (lambda w: w.update(paper_weight="1.0"), "^paper_weight is not a number$"),
+            # The rest of what assess_unattended writes, re-derived on read.
+            (
+                lambda w: (
+                    w["run"]["outcomes"][0].update(outcome="Pain"),
+                    w["assessed"][0]["rob2"].update(outcome="Pain"),
+                ),
+                r"^run\.outcomes\[0\] is not the RoB 2 result of outcome 0$",
+            ),
+            (
+                lambda w: w.update(condensed=True),
+                "^condensed is not what the design, outcome and RoB 2 steps record$",
+            ),
         ],
     )
     def test_what_does_not_add_up_is_refused(self, change: Any, message: str) -> None:
@@ -425,6 +458,13 @@ class TestTheWireForm:
         change(wire)
         with pytest.raises(ValueError, match=message):
             evidence_weight_from_dict(wire)
+
+    def test_an_integer_paper_weight_reads_as_its_float(self) -> None:
+        result = self.assessed()
+        wire = json.loads(json.dumps(result.to_dict()))
+        assert result.paper_weight == 1.0
+        wire["paper_weight"] = 1
+        assert evidence_weight_from_dict(wire) == result
 
     def test_an_assessed_outcome_needs_a_ladder_or_a_reason(self) -> None:
         data = self.assessed().assessed[0].to_dict()

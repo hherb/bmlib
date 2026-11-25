@@ -15,25 +15,33 @@ the token link first, remove it after)._
 
 The maintainer's choices: #818 by validating at entry, #813 by re-deriving.
 
-- **#818 (Rust only)**: `assess_unattended` returns
+- **#818**: Rust's `assess_unattended` returns
   `Err(EvidenceWeightError::InvalidSettings(msg))` before any request for
   `LadderSettings` that fail `validate()` (built in code; deserialising
-  refuses them), and `assess_outcome` now returns `Result<AssessedOutcome, _>` with the
-  same error rather than an outcome's `ladder_error`. `EvidenceWeightError` is
-  `#[non_exhaustive]`, done while the crate is unpublished. Python's frozen
-  `LadderSettings` cannot be invalid, so it is unchanged.
+  refuses them), and `assess_outcome` now returns
+  `Result<AssessedOutcome, _>` with the same error rather than an outcome's
+  `ladder_error`. `EvidenceWeightError` is `#[non_exhaustive]`, done while
+  the crate is unpublished. Python's frozen `LadderSettings` cannot be
+  invalid, but a value of another type (a config dict, `None`) reached the
+  ladder only after every request; `assess_unattended` now raises
+  `TypeError` first.
 - **#813 (both languages)**: reading an `assessed` result rebuilds each
   outcome with `assess_outcome(start_level(design), run.study, outcome, rob2,
   settings)` and refuses it unless it is equal, naming `ladder` or
   `ladder_error`. Every status is held to what `assess_unattended` writes (a
   covered design under `not_covered`, an uncovered one or outcomes under
   `no_primary_outcome`, none under `assessed`), and Python now refuses a
-  non-number `paper_weight` as Rust did. Nothing `assess_unattended` wrote
-  goes stale; rewording a `ladder_error` text needs a `LADDER_VERSION` bump.
-  Nine new refusals in `evidence_weight.json` (cases unchanged), unit tests in
-  both languages for the multi-change cases (a `ladder_error` where a ladder
-  can be built, a ladder where none can, an `assessed` result with no
-  outcomes), and a round trip under non-default settings in both.
+  non-number `paper_weight` as Rust did. The finalcheck review added a RoB 2
+  result named for another outcome and a `condensed` other than
+  `_any_condensed` gives, and Rust's `paper_weight` mismatch message now
+  prints Python's `None` / bare number, not `Some(..)`. Nothing
+  `assess_unattended` wrote goes stale; rewording a `ladder_error` text needs
+  a `LADDER_VERSION` bump. Thirteen new refusals in `evidence_weight.json`
+  (cases unchanged), unit tests in both languages for the multi-change cases
+  (a `ladder_error` where a ladder can be built, a ladder where none can, an
+  `assessed` result with no outcomes, a `no_primary_outcome` result the
+  ladder does not cover), read-backs of an all-unladdered and a condensed
+  result, and a round trip with every settings field non-default in both.
 - Filed **#819**: Rust `quality_extractors`' multicenter test asserts
   wall time (< 2 s) and failed once under a full parallel run. It is #533's
   flake class.
@@ -274,11 +282,12 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
   (#95); **0.11.0 moves stored values broadly** (see above); **0.12.0 re-renders cached full text by itself** (`RENDERER_VERSION` 7) and moves OpenAlex `pmcid` and extractor `study_type` (its CHANGELOG summary); **0.13.0 makes stored PDF and Markdown canonical texts stale** (pdf-7, markdown-2) and keeps the full-text cache; **0.14.0 makes nothing stored stale** and labels bioRxiv and
   medRxiv full-text sources with their version on a re-fetch. The two questions are independent, and a downstream reading only the
   number must still read this list.
-- **Tests on `fix/ladder-settings-818-813`** (2026-11-26, no PostgreSQL
-  DSN): Python 11,207 passed + 201 skipped; ruff 0.15.20, ruff format and
-  mypy clean; the Rust oracle 46 of 46 clean; Rust `cargo test --workspace
-  --no-fail-fast` 1,993 passed (#819's timing test failed once under load),
-  clippy, `cargo fmt --check` and `cargo doc -D warnings` clean.
+- **Tests on `fix/ladder-settings-818-813`** (2026-11-26, after the
+  finalcheck review, PostgreSQL 18 required): Python 11,401 passed + 23
+  skipped; ruff 0.15.20, ruff format and mypy clean; the Rust oracle 46 of 46
+  clean; Rust `cargo test -p bmlib` passed (before the review, `cargo test
+  --workspace --no-fail-fast` 1,993 passed; #819's timing test failed once
+  under load), clippy, `cargo fmt --check` and `cargo doc -D warnings` clean.
   At the release (2026-11-17) the release gates were rehearsed: `uv build`,
   `twine check --strict`, `py.typed` in the wheel, and 126 of 126 modules
   imported, one fresh interpreter each, in a core-only venv. On `main` before
@@ -312,7 +321,8 @@ expectations the port cannot yet meet, and add the enum's wire name in Rust.
 ### Open GitHub issues
 
 **125 open once this PR merges** (2026-11-26; #813 and #818 close with it,
-#819 is new): **#819** (a Rust wall-time test, above), **#806** (PR #804's review: the one-row wrong link, above),
+#819 is new): **#819** (a Rust wall-time test, above), **#806** (PR #804's
+review: the one-row wrong link, above),
 Europe PMC's **#792** and **#793** (PR #790's review, above),
 the library's #755, #762 and **#778** (PR #777's review follow-ups, above),
 **#776** (PR #775's MECA follow-ups) and **#759** (measure the `/details`

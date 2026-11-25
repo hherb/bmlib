@@ -179,7 +179,7 @@ fn a_ladder_where_none_can_be_built_is_refused() {
 }
 
 /// An `assessed` result with no outcomes is one `assess_unattended` never
-/// writes (it returns `no_primary_outcome`); three changes, so a unit test.
+/// writes (it returns `no_primary_outcome`); several changes, so a unit test.
 #[test]
 fn an_assessed_result_with_no_outcomes_is_refused() {
     let fixture = fixture();
@@ -194,6 +194,22 @@ fn an_assessed_result_with_no_outcomes_is_refused() {
     );
 }
 
+/// A `no_primary_outcome` result whose design the ladder does not cover is
+/// one `assess_unattended` never writes (it stops at `not_covered`); two
+/// changes, so a unit test. Its outcomes are left in, so dropping the check
+/// would give the next refusal instead.
+#[test]
+fn a_no_primary_outcome_result_the_ladder_does_not_cover_is_refused() {
+    let fixture = fixture();
+    let mut wire = fixture["cases"][3]["expected"].clone();
+    wire["status"] = Value::from("no_primary_outcome");
+    wire["design"]["rct_layout"] = Value::Null;
+    assert_eq!(
+        EvidenceWeight::from_json(&wire).expect_err("refused"),
+        "the design is not one the ladder covers"
+    );
+}
+
 /// The assessed case under settings other than the defaults reads back to
 /// itself: every settings field survives the wire, so the rebuild on read
 /// (#813) gives the stored ladders.
@@ -203,13 +219,16 @@ fn a_result_under_other_settings_reads_back() {
     let case = &fixture["cases"][3];
     let settings = LadderSettings {
         some_concerns_steps: 2,
+        high_steps: 3,
+        crosses_no_effect_steps: 2,
         small_trial_n: 5000,
+        small_trial_steps: 2,
+        no_interval_steps: 2,
         max_imprecision_steps: 1,
         weight_high: 0.95,
         weight_moderate: 0.65,
         weight_low: 0.35,
         weight_very_low: 0.05,
-        ..LadderSettings::default()
     };
     let mut chat = Scripted {
         replies: case["replies"].as_array().expect("replies").clone(),

@@ -3179,6 +3179,50 @@
     "set": "x"
    },
    "error": "assessed[1]'s ladder_error is not the one its design, RoB 2 result, reported result and settings give"
+  },
+  {
+   "name": "settings whose weights increase",
+   "change": {
+    "path": [
+     "settings",
+     "weight_low"
+    ],
+    "set": 0.99
+   },
+   "error": "the weights must not increase from weight_high to weight_very_low"
+  },
+  {
+   "name": "a RoB 2 result for another outcome",
+   "change": {
+    "path": [
+     "run",
+     "outcomes",
+     0,
+     "outcome"
+    ],
+    "set": "Pain"
+   },
+   "error": "run.outcomes[0] is not the RoB 2 result of outcome 0"
+  },
+  {
+   "name": "a paper_weight other than the largest",
+   "change": {
+    "path": [
+     "paper_weight"
+    ],
+    "set": 0.5
+   },
+   "error": "paper_weight 0.5 is not the largest ladder weight 1.0"
+  },
+  {
+   "name": "a condensed the steps do not record",
+   "change": {
+    "path": [
+     "condensed"
+    ],
+    "set": true
+   },
+   "error": "condensed is not what the design, outcome and RoB 2 steps record"
   }
  ]
 }

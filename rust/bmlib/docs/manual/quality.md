@@ -644,8 +644,9 @@ own error:
 `Unreadable`, `Stopped` and `InvalidSimilarity`), or `Rob2(Rob2RunError)`
 (`EmptyInput`, `NoOutcomes`, `Stopped`, `InvalidSimilarity`), or
 `InvalidSettings(String)` for `LadderSettings` that fail `validate()`
-(settings built in code; deserialising refuses them), refused before any request. A domain whose
-request fails or whose reply stays unreadable is not an error: it is
+(settings built in code; deserialising refuses them), refused before any
+request. A domain whose request fails or whose reply stays unreadable is
+not an error: it is
 `DomainResult::Failed { domain, reason, retryable, status }` in the run, and
 the outcomes it touches are not assessed. A failed escalation is
 `OutcomeRob2::escalation_error`, with `escalation_retryable` and
@@ -831,8 +832,10 @@ also has `with_progress(callback)`, as Python's takes `progress`.
 Every result type has `to_json`, Python's `to_dict`, and a checked
 `from_json`. `EvidenceWeight::from_json` reads any status and refuses
 another `ladder_version`, settings that do not validate, parts of different
-lengths, a design the ladder does not cover and a `paper_weight` that is
-not the largest ladder weight, and rebuilds each stored ladder or ladder
-error with `assess_outcome`, refusing the result unless it matches (#813);
+lengths, a `no_primary_outcome` or `assessed` result whose design the ladder
+does not cover, a RoB 2 result named for another outcome, a `paper_weight`
+that is not the largest ladder weight and a `condensed` other than what the
+steps record, and rebuilds each stored ladder or ladder error with
+`assess_outcome`, refusing the result unless it matches (#813);
 `Rob2Run::from_json` refuses a run judged by other rules and an `overall`
 that does not follow from its domains.
