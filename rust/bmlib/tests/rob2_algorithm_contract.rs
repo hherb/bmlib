@@ -20,7 +20,7 @@
 //! refusals, the answer parser and the overall judgement.
 
 use bmlib::quality::rob2_algorithm::{
-    applicable_questions, domain_judgement, needs_escalation_decision, overall_judgement, Answer,
+    allowed_answers, applicable_questions, domain_judgement, needs_escalation_decision, overall_judgement, Answer,
     Answers, Domain, Judgement, Rob2Error, ROB2_ALGORITHM_VERSION,
 };
 use serde_json::Value;
@@ -127,6 +127,23 @@ fn every_refusal_is_refused_with_its_kind_and_question() {
         };
         assert_eq!(question, case["question"], "{}", case["name"]);
     }
+}
+
+#[test]
+fn the_allowed_answers_are_the_contracts() {
+    let fixture = fixture();
+    let allowed = fixture["allowed_answers"].as_object().expect("an object");
+    assert_eq!(allowed.len(), 22);
+    for (question, expected) in allowed {
+        let expected: Vec<Answer> = wire(expected);
+        assert_eq!(allowed_answers(question), expected.as_slice(), "{question}");
+    }
+}
+
+#[test]
+#[should_panic(expected = "2.9 is not a RoB 2 question")]
+fn an_unknown_question_has_no_allowed_answers() {
+    let _ = allowed_answers("2.9");
 }
 
 #[test]

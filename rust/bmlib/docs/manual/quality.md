@@ -688,7 +688,9 @@ constants (`DESIGN_SYSTEM_PROMPT`, `DESIGN_TASK_PROMPT`,
 (`DESIGN_PROMPT_VERSION`, `OUTCOME_PROMPT_VERSION`,
 `rob2_questions::ROB2_PROMPT_VERSION`) and the rules that judged them
 (`ROB2_ALGORITHM_VERSION`). In `rob2_algorithm`, `questions(domain)` lists a
-domain's ids, `applicable_questions` those the answers so far open,
+domain's ids, `allowed_answers(question)` the answers a question allows (all
+five, but `[Y, PY, PN, N]` for 3.2; it panics on an unknown id, where Python
+raises `Rob2Error`), `applicable_questions` those the answers so far open,
 `needs_escalation_decision` whether the assessor must decide, and
 `Domain::ALL` is Python's `DOMAINS_ALL`; D1 is `Scope::Study`, the rest
 `Scope::Outcome`.

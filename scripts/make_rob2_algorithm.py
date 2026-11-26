@@ -23,7 +23,8 @@ The shared RoB 2 contract, which Python and Rust both assert against. Sections:
   disagrees with them.
 - ``exhaustive``: every walk of every domain over Y / N / NI (PY and PN judge
   as Y and N, which the unit tests check), with Python's judgement.
-- ``applicable``, ``parse``, ``refusals``, ``overall``: the rest of the surface.
+- ``applicable``, ``parse``, ``refusals``, ``allowed_answers``, ``overall``: the rest of the
+  surface.
 
     python scripts/make_rob2_algorithm.py [tests/fixtures/rob2_algorithm.json]
 
@@ -44,10 +45,12 @@ from bmlib.quality.rob2_algorithm import (
     Domain,
     Judgement,
     Rob2Error,
+    allowed_answers,
     applicable_questions,
     domain_judgement,
     needs_escalation_decision,
     overall_judgement,
+    questions,
 )
 
 DEFAULT_OUTPUT = Path(__file__).resolve().parent.parent / "tests/fixtures/rob2_algorithm.json"
@@ -216,6 +219,9 @@ def build_contract() -> dict[str, Any]:
         contract["refusals"].append(
             {"name": name, "domain": domain, "answers": answers, "kind": kind, "question": question}
         )
+    contract["allowed_answers"] = {
+        q: [a.value for a in allowed_answers(q)] for d in Domain for q in questions(d)
+    }
     contract["overall"] = []
     for domains, escalate in OVERALL:
         judgements = [Judgement(d) for d in domains]

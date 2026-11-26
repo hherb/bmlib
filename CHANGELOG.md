@@ -8,6 +8,14 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Added
 
+- **`allowed_answers(question)`** in `bmlib.quality.rob2_algorithm` (and
+  `bmlib.quality`; both languages, held together by the `allowed_answers`
+  section of `tests/fixtures/rob2_algorithm.json`): the answers RoB 2 allows
+  for a question, in `Answer`'s order, which is all five except that 3.2 has
+  no NI. A reader's appraisal form offers exactly these instead of copying
+  the rule; `domain_judgement` refuses through it (`NotAllowed`), so the rule
+  lives once. An id that is not one of the 22 raises `Rob2Error` of kind
+  `UnknownQuestion`.
 - **RoB 2 a step at a time** (StudyAnalyzer's Evidence weight tab, design
   `2026-11-24-evidence-weight-tab-design.md` §4; both languages, held
   together by `tests/fixtures/rob2_steps.json`). `plan_rob2(outcome_count)`

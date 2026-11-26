@@ -105,6 +105,9 @@ _QUESTIONS: dict[Domain, tuple[str, ...]] = {
 _NO_NI_QUESTIONS = frozenset({"3.2"})
 """Questions whose allowed answers exclude NI."""
 
+_ALL_ANSWERS = list(Answer)
+_ANSWERS_WITHOUT_NI = [a for a in Answer if a is not Answer.NI]
+
 _YES = frozenset({Answer.Y, Answer.PY})
 _NO = frozenset({Answer.N, Answer.PN})
 _YES_NI = _YES | {Answer.NI}
@@ -181,6 +184,21 @@ def applicable_questions(domain: Domain, answers: Answers) -> list[str]:
     return asked
 
 
+def allowed_answers(question: str) -> list[Answer]:
+    """The answers RoB 2 allows for *question*, in ``Answer``'s order.
+
+    All five, except that 3.2 has no NI. A form offers exactly these, and
+    ``domain_judgement`` refuses any other with ``NotAllowed``, so the rule
+    lives here once.
+
+    Raises ``Rob2Error`` of kind ``UnknownQuestion`` for an id that is not one
+    of the 22 (Rust panics, as a defect of the caller).
+    """
+    if not any(question in ids for ids in _QUESTIONS.values()):
+        raise Rob2Error("UnknownQuestion", question=question)
+    return list(_ANSWERS_WITHOUT_NI if question in _NO_NI_QUESTIONS else _ALL_ANSWERS)
+
+
 def _checked(domain: Domain, answers: Answers) -> dict[str, str]:
     """Validate ``answers`` and return the applicable ones collapsed to Y / N / NI."""
     for question in answers:
@@ -193,7 +211,7 @@ def _checked(domain: Domain, answers: Answers) -> dict[str, str]:
             raise Rob2Error("MissingAnswer", question=question)
         if not isinstance(answer, Answer):
             raise Rob2Error("UnreadableAnswer", question=question, value=repr(answer))
-        if answer is Answer.NI and question in _NO_NI_QUESTIONS:
+        if answer not in allowed_answers(question):
             raise Rob2Error("NotAllowed", question=question, answer=answer)
         collapsed[question] = "Y" if answer in _YES else "N" if answer in _NO else "NI"
     return collapsed
