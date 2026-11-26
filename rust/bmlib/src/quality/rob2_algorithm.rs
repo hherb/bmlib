@@ -208,6 +208,41 @@ pub fn questions(domain: Domain) -> &'static [&'static str] {
     }
 }
 
+/// Every answer, in [`Answer`]'s order.
+const ALL_ANSWERS: [Answer; 5] = [Answer::Y, Answer::Py, Answer::Pn, Answer::N, Answer::Ni];
+
+/// The answers a question that has no NI allows.
+const ANSWERS_WITHOUT_NI: [Answer; 4] = [Answer::Y, Answer::Py, Answer::Pn, Answer::N];
+
+/// The questions whose allowed answers exclude NI.
+const NO_NI_QUESTIONS: [&str; 1] = ["3.2"];
+
+/// The answers RoB 2 allows for `question`, in [`Answer`]'s order.
+///
+/// All five, except that 3.2 has no NI. A form offers exactly these, and
+/// `domain_judgement` refuses any other with [`Rob2Error::NotAllowed`], so the
+/// rule lives here once.
+///
+/// # Panics
+///
+/// When `question` is not one of the 22 ids of [`questions`]: a defect of the
+/// caller, as for `question_text` (Python raises `Rob2Error` of kind
+/// `UnknownQuestion`).
+#[must_use]
+pub fn allowed_answers(question: &str) -> &'static [Answer] {
+    assert!(
+        Domain::ALL
+            .iter()
+            .any(|d| questions(*d).contains(&question)),
+        "{question} is not a RoB 2 question"
+    );
+    if NO_NI_QUESTIONS.contains(&question) {
+        &ANSWERS_WITHOUT_NI
+    } else {
+        &ALL_ANSWERS
+    }
+}
+
 /// The answer to `question` collapsed to Y / N / NI, if there is one.
 fn code(answers: &Answers, question: &str) -> Option<Code> {
     answers.get(question).map(|a| a.collapsed())
@@ -278,7 +313,7 @@ fn checked(domain: Domain, answers: &Answers) -> Result<Collapsed, Rob2Error> {
             .ok_or_else(|| Rob2Error::MissingAnswer {
                 question: question.to_string(),
             })?;
-        if answer == Answer::Ni && question == "3.2" {
+        if !allowed_answers(question).contains(&answer) {
             return Err(Rob2Error::NotAllowed {
                 question: question.to_string(),
                 answer,

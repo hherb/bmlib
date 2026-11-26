@@ -11,6 +11,11 @@ The Python library is documented separately, in the repository's
 
 ### Added
 
+- **`quality::allowed_answers(question)`** (as in Python; the argument is the
+  root `CHANGELOG.md`'s): returns `&'static [Answer]`, all five in `Answer`'s
+  order except `[Y, PY, PN, N]` for 3.2. It panics on an id that is not one of
+  the 22 (a defect of the caller, as `question_text` does; Python raises
+  `Rob2Error` of kind `UnknownQuestion`).
 - **RoB 2 a step at a time** (as in Python; the argument is the root
   `CHANGELOG.md`'s). `quality::plan_rob2` and `Rob2Step`,
   `Rob2Step::from_json`, `Rob2Agent::assess_domain` with `Rob2Digests`,

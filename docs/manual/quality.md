@@ -1498,6 +1498,7 @@ overall_judgement(five, escalate=False)    # Judgement.SOME_CONCERNS
 | `Domain`, `DOMAINS_ALL` | `D1` to `D5`. `scope()` is a `Scope`: `STUDY` for D1 (randomisation), `OUTCOME` for the rest |
 | `Answers` | A mapping from question id (`"2.3"`) to `Answer`; a question not asked is absent |
 | `questions(domain)` | The domain's question ids, in order (22 in all) |
+| `allowed_answers(question)` | The answers RoB 2 allows for a question, in `Answer`'s order: all five, but 3.2 has no NI. A form offers these; `domain_judgement` refuses any other (`NotAllowed`). An id outside the 22 raises `Rob2Error` (`UnknownQuestion`) |
 | `applicable_questions(domain, answers)` | The questions to ask, given the answers so far. A question whose prerequisite is unanswered is not listed |
 | `domain_judgement(domain, answers)` | The domain's judgement. Answers to questions that do not apply are ignored |
 | `needs_escalation_decision(five)` | True when no domain is high and two or more have some concerns: the guidance then leaves the overall judgement to the assessor |

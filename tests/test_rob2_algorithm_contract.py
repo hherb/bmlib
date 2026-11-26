@@ -38,6 +38,7 @@ from bmlib.quality.rob2_algorithm import (
     Domain,
     Judgement,
     Rob2Error,
+    allowed_answers,
     applicable_questions,
     domain_judgement,
     needs_escalation_decision,
@@ -89,6 +90,19 @@ def test_every_refusal_is_refused_with_its_kind_and_question() -> None:
         with pytest.raises(Rob2Error) as caught:
             domain_judgement(Domain(c["domain"]), _answers(c["answers"]))
         assert (caught.value.kind, caught.value.question) == (c["kind"], c["question"]), c["name"]
+
+
+def test_the_allowed_answers_are_the_contracts() -> None:
+    allowed = CONTRACT["allowed_answers"]
+    assert len(allowed) == 22
+    for question, expected in allowed.items():
+        assert [a.value for a in allowed_answers(question)] == expected, question
+
+
+def test_an_unknown_question_has_no_allowed_answers() -> None:
+    with pytest.raises(Rob2Error) as caught:
+        allowed_answers("2.9")
+    assert (caught.value.kind, caught.value.question) == ("UnknownQuestion", "2.9")
 
 
 def test_the_overall_judgement_is_the_expected_one() -> None:
