@@ -197,8 +197,9 @@ pub use rob2_agent::{
     Rob2RunError, Rob2Step, NOT_APPLICABLE, ROB2_DOMAIN_PROMPT, ROB2_SYSTEM_PROMPT,
 };
 pub use rob2_algorithm::{
-    allowed_answers, applicable_questions, domain_judgement, needs_escalation_decision, overall_judgement,
-    questions, Answer, Answers, Domain, Judgement, Rob2Error, Scope, ROB2_ALGORITHM_VERSION,
+    allowed_answers, applicable_questions, domain_judgement, needs_escalation_decision,
+    overall_judgement, questions, Answer, Answers, Domain, Judgement, Rob2Error, Scope,
+    ROB2_ALGORITHM_VERSION,
 };
 pub use scoring_models::{
     AssessmentDetail, DimensionScore, ALL_DIMENSIONS, DIMENSION_METHODOLOGICAL_QUALITY,

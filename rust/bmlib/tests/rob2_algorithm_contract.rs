@@ -20,8 +20,8 @@
 //! refusals, the answer parser and the overall judgement.
 
 use bmlib::quality::rob2_algorithm::{
-    allowed_answers, applicable_questions, domain_judgement, needs_escalation_decision, overall_judgement, Answer,
-    Answers, Domain, Judgement, Rob2Error, ROB2_ALGORITHM_VERSION,
+    allowed_answers, applicable_questions, domain_judgement, needs_escalation_decision,
+    overall_judgement, Answer, Answers, Domain, Judgement, Rob2Error, ROB2_ALGORITHM_VERSION,
 };
 use serde_json::Value;
 
