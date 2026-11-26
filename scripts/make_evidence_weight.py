@@ -205,6 +205,34 @@ REFUSALS: list[tuple[str, dict[str, Any]]] = [
     ("an assessed outcome missing", {"path": ["assessed"], "remove": True}),
     ("assessed out of order", {"path": ["assessed"], "reverse": True}),
     ("ladder and ladder error both set", {"path": ["assessed", 0, "ladder_error"], "set": "x"}),
+    # #813: each status is held to what assess_unattended writes.
+    ("a design the ladder does not cover", {"path": ["design", "rct_layout"], "set": "crossover"}),
+    ("a design with no start level", {"path": ["design", "design"], "set": "cohort_prospective"}),
+    ("an RCT with no layout", {"path": ["design", "rct_layout"], "set": None}),
+    ("a not_covered result the ladder covers", {"path": ["status"], "set": "not_covered"}),
+    (
+        "a no_primary_outcome result with outcomes",
+        {"path": ["status"], "set": "no_primary_outcome"},
+    ),
+    ("a paper_weight that is not a number", {"path": ["paper_weight"], "set": True}),
+    # #813: a stored ladder or ladder_error is rebuilt from its inputs.
+    (
+        "a ladder its RoB 2 judgement does not build",
+        {"path": ["assessed", 0, "ladder", "steps", 0, "reason"], "set": {"risk_of_bias": "high"}},
+    ),
+    ("a ladder its settings do not build", {"path": ["settings", "weight_high"], "set": 0.9}),
+    (
+        "a ladder error its inputs do not give",
+        {"path": ["assessed", 1, "ladder_error"], "set": "x"},
+    ),
+    # The rest of what assess_unattended writes, re-derived on read.
+    ("settings whose weights increase", {"path": ["settings", "weight_low"], "set": 0.99}),
+    (
+        "a RoB 2 result for another outcome",
+        {"path": ["run", "outcomes", 0, "outcome"], "set": "Pain"},
+    ),
+    ("a paper_weight other than the largest", {"path": ["paper_weight"], "set": 0.5}),
+    ("a condensed the steps do not record", {"path": ["condensed"], "set": True}),
 ]
 
 

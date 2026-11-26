@@ -99,6 +99,30 @@ All notable changes to bmlib are documented here. The format is based on
 
 ### Fixed
 
+- **A stored evidence weight's ladders are rebuilt as it is read** (#813,
+  the maintainer's choice of re-deriving). `evidence_weight_from_dict()`
+  (Rust `EvidenceWeight::from_json`) rebuilds each assessed outcome with
+  `assess_outcome` from the design's start level, the run's D1, the outcome,
+  its RoB 2 result and the stored settings, and refuses the result unless it
+  matches: a ladder that contradicts its RoB 2 judgement, its result or its
+  settings, a `ladder_error` where a ladder can be built, and a ladder where
+  none can. The message names `ladder` when the ladder differs and
+  `ladder_error` otherwise. The status is held to what `assess_unattended`
+  writes too: a `not_covered` design the ladder covers, a
+  `no_primary_outcome` or `assessed` design it does not, primary outcomes
+  under `no_primary_outcome` and none under `assessed` are refused. So are a
+  RoB 2 result named for another outcome, a `condensed` flag other than what
+  the design, outcome and RoB 2 steps record, and a `paper_weight` that is
+  not a number (Python read `true` as 1.0; Rust already refused it). Every
+  result `assess_unattended` wrote rebuilds to itself, so **nothing stored
+  goes stale**; only an edited one is refused. Thirteen new refusals in
+  `tests/fixtures/evidence_weight.json`, its cases unchanged. Rewording a
+  stored `ladder_error` text now needs a `LADDER_VERSION` bump. #818: Rust's
+  invalid `LadderSettings` built in code (a struct literal or a field
+  assignment) are now `EvidenceWeightError::InvalidSettings` before any
+  request, not the `ladder_error` of every outcome that would otherwise have
+  had a ladder (the crate's CHANGELOG); Python's `assess_unattended` raises
+  `TypeError` before any request when `settings` is not a `LadderSettings`.
 - **A record whose DOI and PMID name two stored papers no longer merges one
   into the other** (#803). When a record's DOI found one row and its PMID
   another, `store_publication` consolidated them even when either already
@@ -156,8 +180,8 @@ All notable changes to bmlib are documented here. The format is based on
   (128 names). Docs only; nothing in the API changed. The doc comments of
   Rust's `DesignAgent::new`, `OutcomeAgent::new` and `Rob2Agent::new` said
   "the Cochrane assessor's defaults", whose `max_tokens` is 4096; theirs is
-  16384, and they now say so. A stored ladder is not rebuilt on read (#813,
-  a decision), and both pages say so.
+  16384, and they now say so. A stored ladder was not rebuilt on read then;
+  it is now (#813, under Fixed).
 - **The PRISMA 2020 agent is in both quality manuals**:
   `docs/manual/quality.md` and the doc-tested
   `rust/bmlib/docs/manual/quality.md` now cover the checklist, the split,

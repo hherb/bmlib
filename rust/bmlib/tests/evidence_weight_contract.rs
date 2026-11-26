@@ -26,7 +26,7 @@ use bmlib::llm::LLMMessage;
 use bmlib::quality::agent_chat::JsonChat;
 use bmlib::quality::evidence_ladder::{paper_weight, start_level, LadderSettings};
 use bmlib::quality::evidence_weight::{
-    assess_outcome, assess_unattended, AgentOptions, EvidenceWeight,
+    assess_outcome, assess_unattended, AgentOptions, EvidenceWeight, EvidenceWeightError,
 };
 use bmlib::quality::rob2_algorithm::ROB2_ALGORITHM_VERSION;
 use bmlib::quality::rob2_questions::ROB2_PROMPT_VERSION;
@@ -147,6 +147,112 @@ fn every_refusal_names_what_does_not_add_up() {
     }
 }
 
+/// #813: a `ladder_error` stored where the inputs build a ladder is refused
+/// (two changes, so not one of the fixture's refusals; Python's unit test has it).
+#[test]
+fn a_ladder_error_where_a_ladder_can_be_built_is_refused() {
+    let fixture = fixture();
+    let mut wire = fixture["cases"][3]["expected"].clone();
+    wire["assessed"][0]["ladder"] = Value::Null;
+    wire["assessed"][0]["ladder_error"] = Value::from("x");
+    assert_eq!(
+        EvidenceWeight::from_json(&wire).expect_err("refused"),
+        "assessed[0]'s ladder is not the one its design, \
+         RoB 2 result, reported result and settings give"
+    );
+}
+
+/// #813: a ladder stored where the inputs build none is refused (two changes;
+/// Python's unit test has it too).
+#[test]
+fn a_ladder_where_none_can_be_built_is_refused() {
+    let fixture = fixture();
+    let mut wire = fixture["cases"][3]["expected"].clone();
+    assert!(wire["assessed"][1]["ladder"].is_null());
+    wire["assessed"][1]["ladder"] = wire["assessed"][0]["ladder"].clone();
+    wire["assessed"][1]["ladder_error"] = Value::Null;
+    assert_eq!(
+        EvidenceWeight::from_json(&wire).expect_err("refused"),
+        "assessed[1]'s ladder is not the one its design, \
+         RoB 2 result, reported result and settings give"
+    );
+}
+
+/// An `assessed` result with no outcomes is one `assess_unattended` never
+/// writes (it returns `no_primary_outcome`); several changes, so a unit test.
+#[test]
+fn an_assessed_result_with_no_outcomes_is_refused() {
+    let fixture = fixture();
+    let mut wire = fixture["cases"][3]["expected"].clone();
+    wire["outcomes"]["outcomes"] = Value::Array(vec![]);
+    wire["run"]["outcomes"] = Value::Array(vec![]);
+    wire["assessed"] = Value::Array(vec![]);
+    wire["paper_weight"] = Value::Null;
+    assert_eq!(
+        EvidenceWeight::from_json(&wire).expect_err("refused"),
+        "an assessed result has no primary outcomes"
+    );
+}
+
+/// A `no_primary_outcome` result whose design the ladder does not cover is
+/// one `assess_unattended` never writes (it stops at `not_covered`); two
+/// changes, so a unit test. Its outcomes are left in, so dropping the check
+/// would give the next refusal instead.
+#[test]
+fn a_no_primary_outcome_result_the_ladder_does_not_cover_is_refused() {
+    let fixture = fixture();
+    let mut wire = fixture["cases"][3]["expected"].clone();
+    wire["status"] = Value::from("no_primary_outcome");
+    wire["design"]["rct_layout"] = Value::Null;
+    assert_eq!(
+        EvidenceWeight::from_json(&wire).expect_err("refused"),
+        "the design is not one the ladder covers"
+    );
+}
+
+/// The assessed case under settings other than the defaults reads back to
+/// itself: every settings field survives the wire, so the rebuild on read
+/// (#813) gives the stored ladders.
+#[test]
+fn a_result_under_other_settings_reads_back() {
+    let fixture = fixture();
+    let case = &fixture["cases"][3];
+    let settings = LadderSettings {
+        some_concerns_steps: 2,
+        high_steps: 3,
+        crosses_no_effect_steps: 2,
+        small_trial_n: 5000,
+        small_trial_steps: 2,
+        no_interval_steps: 2,
+        max_imprecision_steps: 1,
+        weight_high: 0.95,
+        weight_moderate: 0.65,
+        weight_low: 0.35,
+        weight_very_low: 0.05,
+    };
+    let mut chat = Scripted {
+        replies: case["replies"].as_array().expect("replies").clone(),
+        sent: 0,
+    };
+    let result = assess_unattended(
+        &mut chat,
+        None,
+        None,
+        &settings,
+        &AgentOptions::default(),
+        fixture["title"].as_str().expect("title"),
+        fixture["text"].as_str().expect("text"),
+        fixture["min_similarity"].as_f64().expect("similarity"),
+    )
+    .expect("a result");
+    let wire = result.to_json();
+    assert_ne!(wire["assessed"], case["expected"]["assessed"]);
+    assert_eq!(
+        EvidenceWeight::from_json(&wire).expect("reads back"),
+        result
+    );
+}
+
 /// The assessed case driven one step at a time (design, outcomes, then
 /// `plan_rob2`'s steps with one set of digests, then `assess_outcome` for each
 /// outcome) assembles the same `Rob2Run`, assessed outcomes and paper weight
@@ -235,7 +341,8 @@ fn the_assessed_case_step_by_step() {
         .iter()
         .zip(&run.outcomes)
         .map(|(proposed, rob2)| assess_outcome(start, &run.study, proposed, rob2, &settings))
-        .collect();
+        .collect::<Result<_, _>>()
+        .expect("valid settings");
     let wire: Vec<Value> = assessed.iter().map(|a| a.to_json()).collect();
     assert_eq!(Value::Array(wire), case["expected"]["assessed"]);
     let ladders: Vec<_> = assessed.iter().filter_map(|a| a.ladder.clone()).collect();
@@ -252,7 +359,9 @@ fn the_assessed_case_step_by_step() {
         ..rob2.clone()
     };
     assert_eq!(
-        assess_outcome(start, &run.study, proposed, &failed, &settings).ladder_error,
+        assess_outcome(start, &run.study, proposed, &failed, &settings)
+            .expect("valid settings")
+            .ladder_error,
         Some(
             "the outcome's risk of bias was not assessed: \
              the escalation question failed (HTTP 503: overloaded)"
@@ -261,10 +370,22 @@ fn the_assessed_case_step_by_step() {
     );
     let mut unladdered = proposed.clone();
     unladdered.result.as_mut().expect("a result").ci_low = Some(0.75);
-    let one = assess_outcome(start, &run.study, &unladdered, rob2, &settings);
+    let one = assess_outcome(start, &run.study, &unladdered, rob2, &settings).expect("valid");
     assert!(one.ladder.is_none());
     assert_eq!(
         one.ladder_error.as_deref(),
         Some("ci_low <= estimate <= ci_high does not hold")
+    );
+
+    // #818: invalid settings are the call's error, never the outcome's ladder_error.
+    let invalid = LadderSettings {
+        weight_high: 0.2,
+        weight_low: 0.9,
+        ..LadderSettings::default()
+    };
+    let reason = invalid.validate().expect_err("invalid");
+    assert_eq!(
+        assess_outcome(start, &run.study, proposed, rob2, &invalid),
+        Err(EvidenceWeightError::InvalidSettings(reason))
     );
 }
