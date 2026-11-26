@@ -106,7 +106,10 @@ _NO_NI_QUESTIONS = frozenset({"3.2"})
 """Questions whose allowed answers exclude NI."""
 
 _ALL_ANSWERS = list(Answer)
+"""Every answer, in ``Answer``'s order."""
+
 _ANSWERS_WITHOUT_NI = [a for a in Answer if a is not Answer.NI]
+"""The answers a question that has no NI allows."""
 
 _YES = frozenset({Answer.Y, Answer.PY})
 _NO = frozenset({Answer.N, Answer.PN})
